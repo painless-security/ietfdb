@@ -1,6 +1,10 @@
 # Local to this project
 #################################################
 data/
+.factoryboy_random_state
+ietf/settings_local.py
+latest-coverage.json
+tmp-nomcom-public-keys-dir/
 
 
 
