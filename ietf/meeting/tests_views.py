@@ -1251,24 +1251,24 @@ class EditTests(TestCase):
         r, q = _set_date_offset_and_retrieve_page(meeting,
                                                   0 - 2 - meeting.days, # Meeting ended 2 days ago
                                                   self.client)
-        self.assertTrue(q("em:contains(\"You can't edit this schedule\")"))
-        self.assertTrue(q("em:contains(\"This is the official schedule for a meeting in the past\")"))
+        self.assertTrue(q("""eem:contains("You can't edit this schedule")"""))
+        self.assertTrue(q("""em:contains("This is the official schedule for a meeting in the past")"""))
 
         # 2) An ongoing meeting
         #######################################################
         r, q = _set_date_offset_and_retrieve_page(meeting,
                                                   0, # Meeting starts today
                                                   self.client)
-        self.assertFalse(q("em:contains(\"You can't edit this schedule\")"))
-        self.assertFalse(q("em:contains(\"This is the official schedule for a meeting in the past\")"))
+        self.assertFalse(q("""em:contains("You can't edit this schedule")"""))
+        self.assertFalse(q("""em:contains("This is the official schedule for a meeting in the past")"""))
 
         # 3) A meeting in the future
         #######################################################
         r, q = _set_date_offset_and_retrieve_page(meeting,
                                                   7, # Meeting starts next week
                                                   self.client)
-        self.assertFalse(q("em:contains(\"You can't edit this schedule\")"))
-        self.assertFalse(q("em:contains(\"This is the official schedule for a meeting in the past\")"))
+        self.assertFalse(q("""em:contains("You can't edit this schedule")"""))
+        self.assertFalse(q("""em:contains("This is the official schedule for a meeting in the past")"""))
 
     def test_edit_meeting_schedule(self):
         meeting = make_meeting_test_data()
