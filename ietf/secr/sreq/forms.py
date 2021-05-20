@@ -11,6 +11,7 @@ from ietf.group.models import Group
 from ietf.meeting.models import ResourceAssociation, Constraint
 from ietf.person.fields import SearchablePersonsField
 from ietf.utils.html import clean_text_field
+from ietf.utils import log
 
 # -------------------------------------------------
 # Globals
@@ -42,18 +43,6 @@ def check_conflict(groups, source_group):
 
         if not active_groups.filter(acronym=group):
             raise forms.ValidationError("Invalid or inactive group acronym: %s" % group)
-            
-def join_conflicts(data):
-    '''
-    Takes a dictionary (ie. data dict from a form) and concatenates all
-    conflict fields into one list
-    '''
-    conflicts = []
-    for groups in (data['conflict1'],data['conflict2'],data['conflict3']):
-        # convert to python list (allow space or comma separated lists)
-        items = groups.replace(',',' ').split()
-        conflicts.extend(items)
-    return conflicts
 
 # -------------------------------------------------
 # Forms
@@ -82,17 +71,12 @@ class SessionForm(forms.Form):
     attendees = forms.IntegerField()
     # FIXME: it would cleaner to have these be
     # ModelMultipleChoiceField, and just customize the widgetry, that
-    # way validation comes for free
-    conflict1 = forms.CharField(max_length=255,required=False)
-    conflict2 = forms.CharField(max_length=255,required=False)
-    conflict3 = forms.CharField(max_length=255,required=False)
+    # way validation comes for free (applies to this CharField and the
+    # constraints dynamically instantiated in __init__())
     joint_with_groups = forms.CharField(max_length=255,required=False)
+    joint_with_groups_selector = forms.ChoiceField(choices=[], required=False)  # group select widget for prev field
     joint_for_session = forms.ChoiceField(choices=JOINT_FOR_SESSION_CHOICES, required=False)
     comments = forms.CharField(max_length=200,required=False)
-    wg_selector1 = forms.ChoiceField(choices=[],required=False)
-    wg_selector2 = forms.ChoiceField(choices=[],required=False)
-    wg_selector3 = forms.ChoiceField(choices=[],required=False)
-    wg_selector4 = forms.ChoiceField(choices=[],required=False)
     third_session = forms.BooleanField(required=False)
     resources     = forms.MultipleChoiceField(widget=forms.CheckboxSelectMultiple,required=False)
     bethere       = SearchablePersonsField(label="Must be present", required=False)
@@ -100,7 +84,7 @@ class SessionForm(forms.Form):
                                                  queryset=TimerangeName.objects.all())
     adjacent_with_wg = forms.ChoiceField(required=False)
 
-    def __init__(self, group, *args, **kwargs):
+    def __init__(self, group, meeting, *args, **kwargs):
         if 'hidden' in kwargs:
             self.hidden = kwargs.pop('hidden')
         else:
@@ -109,31 +93,44 @@ class SessionForm(forms.Form):
         self.group = group
 
         super(SessionForm, self).__init__(*args, **kwargs)
-        self.fields['num_session'].widget.attrs['onChange'] = "stat_ls(this.selectedIndex);"
-        self.fields['length_session1'].widget.attrs['onClick'] = "if (check_num_session(1)) this.disabled=true;"
-        self.fields['length_session2'].widget.attrs['onClick'] = "if (check_num_session(2)) this.disabled=true;"
-        self.fields['length_session3'].widget.attrs['onClick'] = "if (check_third_session()) { this.disabled=true;}"
+        self.fields['num_session'].widget.attrs['onChange'] = "ietf_sessions.stat_ls(this.selectedIndex);"
+        self.fields['length_session1'].widget.attrs['onClick'] = "if (ietf_sessions.check_num_session(1)) this.disabled=true;"
+        self.fields['length_session2'].widget.attrs['onClick'] = "if (ietf_sessions.check_num_session(2)) this.disabled=true;"
+        self.fields['length_session3'].widget.attrs['onClick'] = "if (ietf_sessions.check_third_session()) { this.disabled=true;}"
         self.fields['comments'].widget = forms.Textarea(attrs={'rows':'3','cols':'65'})
 
         other_groups = list(allowed_conflicting_groups().exclude(pk=group.pk).values_list('acronym', 'acronym').order_by('acronym'))
         self.fields['adjacent_with_wg'].choices = [('', '--No preference')] + other_groups
         group_acronym_choices = [('','--Select WG(s)')] + other_groups
-        for i in range(1, 5):
-            self.fields['wg_selector{}'.format(i)].choices = group_acronym_choices
+        self.fields['joint_with_groups_selector'].choices = group_acronym_choices
 
-        # disabling handleconflictfield (which only enables or disables form elements) while we're hacking the meaning of the three constraints currently in use:
-        #self.fields['wg_selector1'].widget.attrs['onChange'] = "document.form_post.conflict1.value=document.form_post.conflict1.value + ' ' + this.options[this.selectedIndex].value; return handleconflictfield(1);"
-        #self.fields['wg_selector2'].widget.attrs['onChange'] = "document.form_post.conflict2.value=document.form_post.conflict2.value + ' ' + this.options[this.selectedIndex].value; return handleconflictfield(2);"
-        #self.fields['wg_selector3'].widget.attrs['onChange'] = "document.form_post.conflict3.value=document.form_post.conflict3.value + ' ' + this.options[this.selectedIndex].value; return handleconflictfield(3);"
-        self.fields['wg_selector1'].widget.attrs['onChange'] = "document.form_post.conflict1.value=document.form_post.conflict1.value + ' ' + this.options[this.selectedIndex].value; return 1;"
-        self.fields['wg_selector2'].widget.attrs['onChange'] = "document.form_post.conflict2.value=document.form_post.conflict2.value + ' ' + this.options[this.selectedIndex].value; return 1;"
-        self.fields['wg_selector3'].widget.attrs['onChange'] = "document.form_post.conflict3.value=document.form_post.conflict3.value + ' ' + this.options[this.selectedIndex].value; return 1;"
-        self.fields['wg_selector4'].widget.attrs['onChange'] = "document.form_post.joint_with_groups.value=document.form_post.joint_with_groups.value + ' ' + this.options[this.selectedIndex].value; return 1;"
+        # Set up constraints for the meeting
+        self._wg_field_data = []
+        for constraintname in meeting.session_constraintnames.all():
+            # two fields for each constraint: a CharField for the group list and a selector to add entries
+            constraint_field = forms.CharField(max_length=255, required=False)
+            # add a new class, taking care in case some already exist
+            existing_classes = constraint_field.widget.attrs.get('class', '').split()
+            constraint_field.widget.attrs['class'] = ' '.join(existing_classes + ['wg_constraint'])
+            constraint_field.widget.attrs['data-slug'] = constraintname.slug
+            constraint_field.widget.attrs['data-constraint-name'] = str(constraintname).title()
 
-        # disabling check_prior_conflict javascript while we're hacking the meaning of the three constraints currently in use
-        #self.fields['wg_selector2'].widget.attrs['onClick'] = "return check_prior_conflict(2);"
-        #self.fields['wg_selector3'].widget.attrs['onClick'] = "return check_prior_conflict(3);"
-        
+            selector_field = forms.ChoiceField(choices=group_acronym_choices, required=False)
+            existing_classes = selector_field.widget.attrs.get('class', '').split()
+            selector_field.widget.attrs['class'] = ' '.join(existing_classes + ['wg_constraint_selector'])
+            selector_field.widget.attrs['data-slug'] = constraintname.slug  # used by onChange handler
+
+            cfield_id = 'constraint_{}'.format(constraintname.slug)
+            cselector_id = 'wg_selector_{}'.format(constraintname.slug)
+            # keep an eye out for field name conflicts
+            log.assertion('cfield_id not in self.fields')
+            log.assertion('cselector_id not in self.fields')
+            self.fields[cfield_id] = constraint_field
+            self.fields[cselector_id] = selector_field
+            self.define_clean_constraint_method(cfield_id)
+            self._wg_field_data.append((constraintname, cfield_id, cselector_id))
+
+        self.fields['joint_with_groups_selector'].widget.attrs['onChange'] = "document.form_post.joint_with_groups.value=document.form_post.joint_with_groups.value + ' ' + this.options[this.selectedIndex].value; return 1;"
         self.fields['third_session'].widget.attrs['onClick'] = "if (document.form_post.num_session.selectedIndex < 2) { alert('Cannot use this field - Number of Session is not set to 2'); return false; } else { if (this.checked==true) { document.form_post.length_session3.disabled=false; } else { document.form_post.length_session3.value=0;document.form_post.length_session3.disabled=true; } }"
         self.fields["resources"].choices = [(x.pk,x.desc) for x in ResourceAssociation.objects.filter(name__used=True).order_by('name__order') ]
 
@@ -149,20 +146,51 @@ class SessionForm(forms.Form):
             self.fields['resources'].widget = forms.MultipleHiddenInput()
             self.fields['timeranges'].widget = forms.MultipleHiddenInput()
 
-    def clean_conflict1(self):
-        conflict = self.cleaned_data['conflict1']
-        check_conflict(conflict, self.group)
-        return conflict
-    
-    def clean_conflict2(self):
-        conflict = self.cleaned_data['conflict2']
-        check_conflict(conflict, self.group)
-        return conflict
-    
-    def clean_conflict3(self):
-        conflict = self.cleaned_data['conflict3']
-        check_conflict(conflict, self.group)
-        return conflict
+    def wg_constraint_fields(self):
+        """Iterates over wg constraint fields
+
+        Intended for use in the template.
+        """
+        for cname, cfield_id, cselector_id in self._wg_field_data:
+            yield cname, self[cfield_id], self[cselector_id]
+
+    def wg_constraint_field_ids(self):
+        """Iterates over wg constraint field IDs"""
+        for cname, cfield_id, _ in self._wg_field_data:
+            yield cname, cfield_id
+
+    def define_clean_constraint_method(self, cfield_id):
+        """Create a clean_* method for a constraint field"""
+        def cleaner():
+            conflict = self.cleaned_data[cfield_id]
+            check_conflict(conflict, self.group)
+            return conflict
+        setattr(self, 'clean_{}'.format(cfield_id), cleaner)
+
+    def _join_conflicts(self, cleaned_data, slugs):
+        """Concatenate constraint fields from cleaned data into a single list"""
+        conflicts = []
+        for cname, cfield_id, _ in self._wg_field_data:
+            if cname.slug in slugs:
+                groups = cleaned_data[cfield_id]
+                # convert to python list (allow space or comma separated lists)
+                items = groups.replace(',',' ').split()
+                conflicts.extend(items)
+        return conflicts
+
+    def _validate_duplicate_conflicts(self, cleaned_data):
+        """Validate that no WGs appear in more than one constraint that does not allow duplicates
+
+        Raises ValidationError
+        """
+        # Only the older constraints (conflict, conflic2, conflic3) need to be mutually exclusive.
+        all_conflicts = self._join_conflicts(cleaned_data, ['conflict', 'conflic2', 'conflic3'])
+        temp = []
+        for c in all_conflicts:
+            if c not in temp:
+                temp.append(c)
+            else:
+                raise forms.ValidationError('%s appears in conflicts more than once' % c)
 
     def clean_joint_with_groups(self):
         groups = self.cleaned_data['joint_with_groups']
@@ -174,19 +202,13 @@ class SessionForm(forms.Form):
 
     def clean(self):
         super(SessionForm, self).clean()
-        data = self.cleaned_data
         if self.errors:
             return self.cleaned_data
-            
-        # error if conflits contain dupes
-        all_conflicts = join_conflicts(data)
-        temp = []
-        for c in all_conflicts:
-            if c not in temp:
-                temp.append(c)
-            else:
-                raise forms.ValidationError('%s appears in conflicts more than once' % c)
-        
+        data = self.cleaned_data
+
+        # error if conflicts contain disallowed dupes
+        self._validate_duplicate_conflicts(data)
+
         # verify session_length and num_session correspond
         # if default (empty) option is selected, cleaned_data won't include num_session key
         if data.get('num_session','') == '2':
