@@ -481,6 +481,10 @@ class RetrievePreviousCase(TestCase):
 
 class SessionFormTest(TestCase):
     def setUp(self):
+        # Ensure meeting numbers are predictable. Temporarily needed while basing
+        # constraint types on meeting number, expected to go away when #2770 is resolved.
+        MeetingFactory.reset_sequence(0)
+
         self.meeting = MeetingFactory(type_id='ietf')
         self.group1 = GroupFactory()
         self.group2 = GroupFactory()
