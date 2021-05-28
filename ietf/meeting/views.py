@@ -15,7 +15,6 @@ import re
 import tarfile
 import tempfile
 import markdown2
-from operator import attrgetter
 
 from calendar import timegm
 from collections import OrderedDict, Counter, deque, defaultdict
@@ -1911,7 +1910,7 @@ def room_view(request, num=None, name=None, owner=None):
     )
     unavailable = meeting.timeslot_set.filter(type__slug='unavail')
     if not (assignments.exists() or unavailable.exists()):
-        return HttpResponse("No sessions/timeslot_labels available yet")
+        return HttpResponse("No sessions/timeslots available yet")
 
     earliest = None
     latest = None
