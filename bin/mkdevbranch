@@ -202,7 +202,9 @@ msg=""
 do=""
 
 if [ "$(uname)" = "Linux" ]; then
-    args=$(getopt -o "$short_options" --long "$long_options" -n "$program" -- "$SV" "$@")
+    # shellcheck disable=SC2086
+    # shellcheck disable=SC2048
+    args=$(getopt -o $short_options --long $long_options -n $program -- $SV $*)
     # shellcheck disable=SC2181
     if [ $? != 0 ]; then
         die "Terminating..." >&2
@@ -213,7 +215,9 @@ if [ "$(uname)" = "Linux" ]; then
     sed="sed -r"
 else
     # Darwin, BSDs
-    args=$(getopt -o$short_options "$SV" "$@")
+    # shellcheck disable=SC2086
+    # shellcheck disable=SC2048
+    args=$(getopt -o$short_options $SV $*)
     # shellcheck disable=SC2181
     if [ $? != 0 ]; then
         die "Terminating..." >&2
