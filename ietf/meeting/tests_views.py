@@ -54,8 +54,8 @@ from ietf.utils.text import xslugify
 from ietf.person.factories import PersonFactory
 from ietf.group.factories import GroupFactory, GroupEventFactory, RoleFactory
 from ietf.meeting.factories import ( SessionFactory, ScheduleFactory,
-    SessionPresentationFactory, MeetingFactory, FloorPlanFactory, 
-    TimeSlotFactory, SlideSubmissionFactory, RoomFactory, 
+    SessionPresentationFactory, MeetingFactory, FloorPlanFactory,
+    TimeSlotFactory, SlideSubmissionFactory, RoomFactory,
     ConstraintFactory, MeetingHostFactory, ProceedingsMaterialFactory )
 from ietf.doc.factories import DocumentFactory, WgDraftFactory
 from ietf.submit.tests import submission_file
@@ -711,10 +711,13 @@ class MeetingTests(BaseMeetingTestCase):
             if g.parent_id is not None:
                 self.assertIn('%s?show=%s' % (ical_url, g.parent.acronym.lower()), content)
 
-        # Should be a 'non-area events' link showing appropriate types        
-        non_area_labels = [
-            'BOF', 'EDU', 'Hackathon', 'IEPG', 'IESG', 'IETF', 'Plenary', 'Secretariat', 'Tools',
-        ]
+        # The 'non-area events' are those whose keywords are in the last column of buttons
+        na_col = q('#customize td.view:last-child')  # find the column
+        non_area_labels = [e.attrib['data-filter-item']
+                           for e in na_col.find('button.pickview')]
+        assert len(non_area_labels) > 0  # test setup must produce at least one label for this test
+
+        # Should be a 'non-area events' link showing appropriate types
         self.assertIn('%s?show=%s' % (ical_url, ','.join(non_area_labels).lower()), content)
 
     def test_parse_agenda_filter_params(self):
@@ -2014,7 +2017,7 @@ class EditTests(TestCase):
             meeting.date = datetime.date.today() + datetime.timedelta(days=days_offset)
             meeting.save()
             client.login(username="secretary", password="secretary+password")
-            url = urlreverse("ietf.meeting.views.edit_meeting_schedule", kwargs=dict(num=meeting.number)) 
+            url = urlreverse("ietf.meeting.views.edit_meeting_schedule", kwargs=dict(num=meeting.number))
             r = client.get(url)
             q = PyQuery(r.content)
             return(r, q)

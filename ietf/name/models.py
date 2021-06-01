@@ -64,6 +64,8 @@ class ProceedingsMaterialTypeName(NameModel):
     """social_event, host_speaker_series, supporters, wiki, additional_information"""
 class AgendaTypeName(NameModel):
     """ietf, ad, side, workshop, ..."""
+class AgendaFilterTypeName(NameModel):
+    """none, normal, heading, special"""
 class SessionStatusName(NameModel):
     """Waiting for Approval, Approved, Waiting for Scheduling, Scheduled, Cancelled, Disapproved"""
 class TimeSlotTypeName(NameModel):
