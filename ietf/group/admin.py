@@ -21,6 +21,7 @@ from django.utils.translation import ugettext as _
 from ietf.group.models import (Group, GroupFeatures, GroupHistory, GroupEvent, GroupURL, GroupMilestone,
     GroupMilestoneHistory, GroupStateTransitions, Role, RoleHistory, ChangeStateGroupEvent,
     MilestoneGroupEvent, GroupExtResource, )
+from ietf.name.models import GroupTypeName
 
 from ietf.utils.validators import validate_external_resource_value
 from ietf.utils.response import permission_denied
@@ -139,7 +140,35 @@ class GroupAdmin(admin.ModelAdmin):
 
 admin.site.register(Group, GroupAdmin)
 
+
+class GroupFeaturesAdminForm(forms.ModelForm):
+    def clean_default_parent(self):
+        # called before form clean() method -- cannot access other fields
+        parent_acro = self.cleaned_data['default_parent'].strip().lower()
+        if len(parent_acro) > 0:
+            if Group.objects.filter(acronym=parent_acro).count() == 0:
+                raise forms.ValidationError(
+                    'No group exists with acronym "%(acro)s"',
+                    params=dict(acro=parent_acro),
+                )
+        return parent_acro
+
+    def clean(self):
+        # cleaning/validation that requires multiple fields
+        parent_acro = self.cleaned_data.get('default_parent', False)
+        if parent_acro:
+            parent_type = GroupTypeName.objects.filter(group__acronym=parent_acro).first()
+            if parent_type not in self.cleaned_data['parent_types']:
+                self.add_error(
+                    'default_parent',
+                    forms.ValidationError(
+                        'Default parent group "%(acro)s" is type "%(gtype)s", which is not an allowed parent type.',
+                        params=dict(acro=parent_acro, gtype=parent_type),
+                    )
+                )
+
 class GroupFeaturesAdmin(admin.ModelAdmin):
+    form = GroupFeaturesAdminForm
     list_display = [
 
         'type',
@@ -167,6 +196,7 @@ class GroupFeaturesAdmin(admin.ModelAdmin):
         'role_order',
 
     ]
+
 admin.site.register(GroupFeatures, GroupFeaturesAdmin)
 
 class GroupHistoryAdmin(admin.ModelAdmin):
