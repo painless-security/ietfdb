@@ -70,81 +70,6 @@ function version() {
 }
 
 # ----------------------------------------------------------------------
-trap 'echo "$program($LINENO): Command failed with error code $? ([$$] $0 $*)"; exit 1' ERR
-
-# ----------------------------------------------------------------------
-# Option parsing
-
-# Options
-shortopts=hm:M:nsvV
-longopts=help,meeting=,message=,dry-run,sprint,verbose,version
-
-# Default values
-num=""
-msg=""
-do=""
-
-if [ "$(uname)" = "Linux" ]; then
-    args=$(getopt -o "$shortopts" --long "$longopts" -n '$program' -- $SV "$@")
-    if [ $? != 0 ]; then
-        die "Terminating..." >&2
-        exit 1
-    fi
-    eval set -- "$args"
-    sed="sed -r"
-else
-    # Darwin, BSDs
-    args=$(getopt -o$shortopts $SV $*)
-    if [ $? != 0 ]; then
-        die "Terminating..." >&2
-        exit 1
-    fi
-    set -- $args
-    sed="sed -E"
-fi
-
-while true; do
-    case "$1" in
-    -h | --help)
-        usage
-        exit
-        ;; # Show this help, then exit
-    -m | --meeting)
-        num=$2
-        shift
-        ;; # Specify the IETF meeting number
-    -M | --message)
-        msg=$2
-        shift
-        ;; # Specify extra message text
-    -n | --dry-run) do="echo -- ==>" ;; # Only show what would be done
-    -s | --sprint) SPRINT=1 ;; # Make branches for sprint sign-ups
-    -v | --verbose) VERBOSE=1 ;; # Be more talkative
-    -V | --version)
-        version
-        exit
-        ;; # Show program version, then exit
-    --)
-        shift
-        break
-        ;;
-    *) die "Internal error, inconsistent option specification: '$1'" ;;
-    esac
-    shift
-done
-
-# ----------------------------------------------------------------------
-# The program itself
-
-who=""
-tag=$(svn log -v https://svn.ietf.org/svn/tools/ietfdb/tags/dev/ --limit 1 | grep '/tags/' | awk '{print $2}')
-
-source="${tag:1}"
-target="${tag##*/}"
-rev="dev tag $target"
-
-[ "$1" ] && who="$1"
-[ "$2" ] && target="${target%.dev*}-$2"
 
 function check_svn_path_exists() {
     local __resultvar=$1
@@ -252,6 +177,84 @@ for line in sys.stdin:
         update "$progdir/sprint${n}.txt"
 
 }
+
+# ----------------------------------------------------------------------
+trap 'echo "$program($LINENO): Command failed with error code $? ([$$] $0 $*)"; exit 1' ERR
+
+# ----------------------------------------------------------------------
+# Option parsing
+
+# Options
+shortopts=hm:M:nsvV
+longopts=help,meeting=,message=,dry-run,sprint,verbose,version
+
+# Default values
+num=""
+msg=""
+do=""
+
+if [ "$(uname)" = "Linux" ]; then
+    args=$(getopt -o "$shortopts" --long "$longopts" -n '$program' -- $SV "$@")
+    if [ $? != 0 ]; then
+        die "Terminating..." >&2
+        exit 1
+    fi
+    eval set -- "$args"
+    sed="sed -r"
+else
+    # Darwin, BSDs
+    args=$(getopt -o$shortopts $SV $*)
+    if [ $? != 0 ]; then
+        die "Terminating..." >&2
+        exit 1
+    fi
+    set -- $args
+    sed="sed -E"
+fi
+
+while true; do
+    case "$1" in
+    -h | --help)
+        usage
+        exit
+        ;; # Show this help, then exit
+    -m | --meeting)
+        num=$2
+        shift
+        ;; # Specify the IETF meeting number
+    -M | --message)
+        msg=$2
+        shift
+        ;; # Specify extra message text
+    -n | --dry-run) do="echo -- ==>" ;; # Only show what would be done
+    -s | --sprint) SPRINT=1 ;; # Make branches for sprint sign-ups
+    -v | --verbose) VERBOSE=1 ;; # Be more talkative
+    -V | --version)
+        version
+        exit
+        ;; # Show program version, then exit
+    --)
+        shift
+        break
+        ;;
+    *) die "Internal error, inconsistent option specification: '$1'" ;;
+    esac
+    shift
+done
+
+# ----------------------------------------------------------------------
+# The program itself
+
+who=""
+tag=$(svn log -v https://svn.ietf.org/svn/tools/ietfdb/tags/dev/ --limit 1 | grep '/tags/' | awk '{print $2}')
+
+source="${tag:1}"
+target="${tag##*/}"
+rev="dev tag $target"
+
+[ "$1" ] && who="$1"
+[ "$2" ] && target="${target%.dev*}-$2"
+
 
 # dump="ietf_utf8.sql.gz"
 # echo "Copying a database dump to www.ietf.org/lib/dt/sprint/$dump"
