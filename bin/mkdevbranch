@@ -24,10 +24,10 @@ DESCRIPTION
 
 EOF
     echo -e "OPTIONS"
-    if   [ "$(uname)" = "Linux" ]; then
+    if [ "$(uname)" = "Linux" ]; then
         egrep "^[	]+[-][A-Za-z| -]+\*?\)[	]+[A-Za-z].+#" $0 | tr -s "\t|" "\t," | sed -r -e 's/\)[ \t]+([A-Z]+)=\$2[^#]*#/=\1\t/' -e 's/\)[^#]*#/\t/'
     else
-        egrep "^[	]+[-][A-Za-z| -]+\*?\)[	]+[A-Za-z].+#" $0 | sed 's/\|.*\$2[^#]*#/	/'| sed -E 's/\|.*\)[^#]*#/	/'
+        egrep "^[	]+[-][A-Za-z| -]+\*?\)[	]+[A-Za-z].+#" $0 | sed 's/\|.*\$2[^#]*#/	/' | sed -E 's/\|.*\)[^#]*#/	/'
     fi
     cat <<EOF
 
@@ -52,27 +52,25 @@ EOF
 
 # ----------------------------------------------------------------------
 function die() {
-    echo -e "\n$program: error: $*" > /dev/stderr
+    echo -e "\n$program: error: $*" >/dev/stderr
     exit 1
 }
 
-function warn() { 
-    echo "$program: Warning: $*" 1>&2; 
+function warn() {
+    echo "$program: Warning: $*" 1>&2
 }
 
-
-function note() { 
+function note() {
     if [ -n "$VERBOSE" ]; then echo -e "$*"; fi
 }
 
 # ----------------------------------------------------------------------
 function version() {
-	echo -e "$program $version"
+    echo -e "$program $version"
 }
 
 # ----------------------------------------------------------------------
 trap 'echo "$program($LINENO): Command failed with error code $? ([$$] $0 $*)"; exit 1' ERR
-
 
 # ----------------------------------------------------------------------
 # Option parsing
@@ -86,30 +84,51 @@ num=""
 msg=""
 do=""
 
-if   [ "$(uname)" = "Linux" ]; then
+if [ "$(uname)" = "Linux" ]; then
     args=$(getopt -o "$shortopts" --long "$longopts" -n '$program' -- $SV "$@")
-    if [ $? != 0 ] ; then die "Terminating..." >&2 ; exit 1 ; fi
+    if [ $? != 0 ]; then
+        die "Terminating..." >&2
+        exit 1
+    fi
     eval set -- "$args"
     sed="sed -r"
 else
     # Darwin, BSDs
     args=$(getopt -o$shortopts $SV $*)
-    if [ $? != 0 ] ; then die "Terminating..." >&2 ; exit 1 ; fi
+    if [ $? != 0 ]; then
+        die "Terminating..." >&2
+        exit 1
+    fi
     set -- $args
     sed="sed -E"
 fi
 
-while true ; do
+while true; do
     case "$1" in
-	-h| --help)	usage; exit;;		# Show this help, then exit
-	-m| --meeting)	num=$2; shift;;		# Specify the IETF meeting number
-	-M| --message)	msg=$2; shift;;		# Specify extra message text
-	-n| --dry-run)  do="echo -- ==>";;	# Only show what would be done
-	-s| --sprint)	SPRINT=1;;		# Make branches for sprint sign-ups
-	-v| --verbose)	VERBOSE=1;;		# Be more talkative
-	-V| --version)	version; exit;;		# Show program version, then exit
-	--)		shift; break;;
-	*) die "Internal error, inconsistent option specification: '$1'";;
+    -h | --help)
+        usage
+        exit
+        ;; # Show this help, then exit
+    -m | --meeting)
+        num=$2
+        shift
+        ;; # Specify the IETF meeting number
+    -M | --message)
+        msg=$2
+        shift
+        ;; # Specify extra message text
+    -n | --dry-run) do="echo -- ==>" ;; # Only show what would be done
+    -s | --sprint) SPRINT=1 ;; # Make branches for sprint sign-ups
+    -v | --verbose) VERBOSE=1 ;; # Be more talkative
+    -V | --version)
+        version
+        exit
+        ;; # Show program version, then exit
+    --)
+        shift
+        break
+        ;;
+    *) die "Internal error, inconsistent option specification: '$1'" ;;
     esac
     shift
 done
@@ -127,14 +146,26 @@ rev="dev tag $target"
 [ "$1" ] && who="$1"
 [ "$2" ] && target="${target%.dev*}-$2"
 
+function check_svn_path_exists() {
+    local __resultvar=$1
+    local __path=$2
+    local myresult
+
+    svn info "${__path}" >/dev/null 2>&1
+    myresult=$?
+
+    eval $__resultvar="'$myresult'"
+}
+
 function mksvndir() {
     who=$1
     if [ "$2" ]; then dir=$2; else dir=$who; fi
-    if ! svn info https://svn.ietf.org/svn/tools/ietfdb/personal/$dir >/dev/null 2>&1 ; then
-	$do echo "Creating personal directory area for IETF datatracker coding: /personal/$dir"
-	$do svn mkdir https://svn.ietf.org/svn/tools/ietfdb/personal/$dir -m "Personal SVN dir for $who, for IETF datatracker code"
+    check_svn_path_exists exists https://svn.ietf.org/svn/tools/ietfdb/personal/$dir
+    if [ "$exists" != "0" ]; then
+        $do echo "Creating personal directory area for IETF datatracker coding: /personal/$dir"
+        $do svn mkdir https://svn.ietf.org/svn/tools/ietfdb/personal/$dir -m "Personal SVN dir for $who, for IETF datatracker code"
     else
-	echo "Repository area personal/$dir is already in place."
+        echo "Repository area personal/$dir is already in place."
     fi
 }
 
@@ -148,17 +179,20 @@ cd $progdir
 
 if [ "$who" ]; then
     mksvndir $who
-    $do svn cp https://svn.ietf.org/svn/tools/ietfdb/$source https://svn.ietf.org/svn/tools/ietfdb/personal/$who/$target/ -m "New branch for $target"
-    echo "New branch: ^/personal/$who/$target"
+    check_svn_path_exists exists https://svn.ietf.org/svn/tools/ietfdb/personal/$who/$target
+    if [ "$exists" != "0" ]; then
+        $do svn cp https://svn.ietf.org/svn/tools/ietfdb/$source https://svn.ietf.org/svn/tools/ietfdb/personal/$who/$target/ -m "New branch for $target"
+        echo "New branch: ^/personal/$who/$target"
+    fi
 fi
 if [ "$SPRINT" ]; then
     [ "$msg" ] && msg="
 $msg
 "
-    [ "$num" ] || num=$( < /www/tools.ietf.org/meta/current-ietf-number.txt)
-    for n in $(seq $((num-3)) $num); do
-	trac-admin /www/tools.ietf.org/tools/ietfdb wiki export IETF${n}SprintSignUp	\
-	    | egrep "^\|\|" | tail -n +2 | python -c '
+    [ "$num" ] || num=$(</www/tools.ietf.org/meta/current-ietf-number.txt)
+    for n in $(seq $((num - 3)) $num); do
+        trac-admin /www/tools.ietf.org/tools/ietfdb wiki export IETF${n}SprintSignUp |
+            egrep "^\|\|" | tail -n +2 | python -c '
 import sys, re
 with open("aliases") as afile:
     try:
@@ -178,18 +212,18 @@ for line in sys.stdin:
     login, dummy  = re.split("[@.]", email, 1)
     if email in aliases:
 	login = aliases[email]
-    print "\t".join((login.strip().lower(), email.strip().lower(), name.strip())) ' \
-	    | update $progdir/sprint$n.txt
+    print "\t".join((login.strip().lower(), email.strip().lower(), name.strip())) ' |
+            update $progdir/sprint$n.txt
     done
 
-    cat $(ls $progdir/sprint*.txt | tail -n 2) $progdir/extras.txt | sed -r -e 's/[ \t]*$//' -e 's/[ \t]+/ /g' | sort | uniq | while read login email name; do 
-	echo ""
-	echo "$login ($name <$email>):"
-	mksvndir $login
-	if ! svn info https://svn.tools.ietf.org/svn/tools/ietfdb/personal/$login/$target >/dev/null 2>&1 ; then
-	    $do echo "  creating $target branch for $login ($name)."
-	    $do svn cp https://svn.tools.ietf.org/svn/tools/ietfdb/$source https://svn.tools.ietf.org/svn/tools/ietfdb/personal/$login/$target/ -m "New IETF datatracker coding branch for $name"	\
-	    && $do mail "$name <$email>" -s "A new SVN branch for you for IETF datatracker coding${rev:+, based on $rev}." -b rjsparks@nostrum.com <<-EOF
+    cat $(ls $progdir/sprint*.txt | tail -n 2) $progdir/extras.txt | sed -r -e 's/[ \t]*$//' -e 's/[ \t]+/ /g' | sort | uniq | while read login email name; do
+        echo ""
+        echo "$login ($name <$email>):"
+        mksvndir $login
+        if ! svn info https://svn.tools.ietf.org/svn/tools/ietfdb/personal/$login/$target >/dev/null 2>&1; then
+            $do echo "  creating $target branch for $login ($name)."
+            $do svn cp https://svn.tools.ietf.org/svn/tools/ietfdb/$source https://svn.tools.ietf.org/svn/tools/ietfdb/personal/$login/$target/ -m "New IETF datatracker coding branch for $name" &&
+                $do mail "$name <$email>" -s "A new SVN branch for you for IETF datatracker coding${rev:+, based on $rev}." -b rjsparks@nostrum.com <<-EOF
 		Hi,
                 $msg
 		This mail has been automatically generated by the $program script.
@@ -214,8 +248,8 @@ for line in sys.stdin:
 		       Henrik (via the $program script)
 
 	EOF
-	else
-	    $do echo "  branch personal/$login/$target already exists."
-	fi
+        else
+            $do echo "  branch personal/$login/$target already exists."
+        fi
     done
 fi
