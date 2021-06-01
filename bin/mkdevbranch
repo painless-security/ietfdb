@@ -186,6 +186,35 @@ function mksvntarget() {
     fi
 }
 
+function get_sprinters_info() {
+    local n=$1
+
+    curl -s "https://trac.ietf.org/trac/ietfdb/wiki/IETF${n}SprintSignUp?format=txt" |
+        egrep "^\|\|" | tail -n +2 | python -c '
+import sys, re
+with open("aliases") as afile:
+    try:
+        aliases = dict([ line.strip().split(None,1) for line in afile.read().splitlines() if line.strip() ])
+    except ValueError:
+        sys.stderr.write([ line.strip().split(None,1) for line in afile.read().splitlines() if line.strip() ])
+        raise
+
+for line in sys.stdin:
+    try:
+        blank, name, email, rest = line.strip().split("||", 3)
+        email = email.strip()
+    except ValueError:
+        sys.stderr.write(line+"\n")
+        raise
+	
+    login, dummy  = re.split("[@.]", email, 1)
+    if email in aliases:
+        login = aliases[email]
+    print("\t".join((login.strip().lower(), email.strip().lower(), name.strip()))) ' |
+        update "$progdir/sprint${n}.txt"
+
+}
+
 # dump="ietf_utf8.sql.gz"
 # echo "Copying a database dump to www.ietf.org/lib/dt/sprint/$dump"
 # scp /www/tools.ietf.org/tools/$dump ietfa:/a/www/www6s/lib/dt/sprint/
@@ -204,29 +233,7 @@ $msg
 "
     [ "$num" ] || num=$(curl -s "https://tools.ietf.org/meta/current-ietf-number.txt")
     for n in $(seq $((num - 3)) $num); do
-        curl -s "https://trac.ietf.org/trac/ietfdb/wiki/IETF${n}SprintSignUp?format=txt" |
-            egrep "^\|\|" | tail -n +2 | python -c '
-import sys, re
-with open("aliases") as afile:
-    try:
-	aliases = dict([ line.strip().split(None,1) for line in afile.read().splitlines() if line.strip() ])
-    except ValueError:
-	sys.stderr.write([ line.strip().split(None,1) for line in afile.read().splitlines() if line.strip() ])
-	raise
-
-for line in sys.stdin:
-    try:
-	blank, name, email, rest = line.strip().split("||", 3)
-	email = email.strip()
-    except ValueError:
-	sys.stderr.write(line+"\n")
-	raise
-	
-    login, dummy  = re.split("[@.]", email, 1)
-    if email in aliases:
-	login = aliases[email]
-    print "\t".join((login.strip().lower(), email.strip().lower(), name.strip())) ' |
-            update $progdir/sprint$n.txt
+        get_sprinters_info "$n"
     done
 
     cat $(ls $progdir/sprint*.txt | tail -n 2) $progdir/extras.txt | sed -r -e 's/[ \t]*$//' -e 's/[ \t]+/ /g' | sort | uniq | while read login email name; do
