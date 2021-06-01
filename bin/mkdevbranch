@@ -28,12 +28,12 @@ EOF
         # shellcheck disable=SC2196
         # shellcheck disable=SC2086
         # shellcheck disable=SC2016
-        egrep "^[	]+[-][A-Za-z| -]+\*?\)[	]+[A-Za-z].+#" $0 | tr -s "\t|" "\t," | $sed -e 's/\)[ \t]+([A-Z]+)=\$2[^#]*#/=\1\t/' -e 's/\)[^#]*#/\t/'
+        egrep "^\s+[-][A-Za-z| -]+\*?\)\s+[A-Za-z].+#" $0 | tr -s "\t|" "\t," | $sed -e 's/\)[ \t]+([A-Z]+)=\$2[^#]*#/=\1\t/' -e 's/\)[^#]*#/\t/'
     else
         # shellcheck disable=SC2196
         # shellcheck disable=SC2086
         # shellcheck disable=SC2016
-        egrep "^[	]+[-][A-Za-z| -]+\*?\)[	]+[A-Za-z].+#" $0 | $sed 's/\|.*\$2[^#]*#/	/' | $sed 's/\|.*\)[^#]*#/	/'
+        egrep "^\s+[-][A-Za-z| -]+\*?\)\s+[A-Za-z].+#" $0 | $sed 's/\|.*\$2[^#]*#/	/' | $sed 's/\|.*\)[^#]*#/	/'
     fi
     cat <<EOF
 
@@ -160,8 +160,11 @@ function notify_user() {
 function get_sprinters_info() {
     local n=$1
 
-    curl -s "https://trac.ietf.org/trac/ietfdb/wiki/IETF${n}SprintSignUp?format=txt" |
-        grep -E "^\|\|" | tail -n +2 | python sprintcoders.py |
+    curl -s "https://trac.ietf.org/trac/ietfdb/wiki/IETF${n}SprintSignUp?format=txt" | \
+        grep -E "^\|\|" | \
+        grep -Ev "^\|\|\s+\|\|\s+" | \
+        tail -n +2 | \
+        python3 sprintcoders.py | \
         update "$progdir/sprint${n}.txt"
 
 }
@@ -271,7 +274,11 @@ $msg
     # shellcheck disable=SC2046
     # shellcheck disable=SC2012
     # shellcheck disable=SC2162
-    cat $(ls $progdir/sprint*.txt | tail -n 2) $progdir/extras.txt | $sed -e 's/[ \t]*$//' -e 's/[ \t]+/ /g' | sort | uniq | while read login email name; do
+    # sed -E (regexp extended) breaks this usage on MacOS 10.15, so back to regular sed.
+    cat $(ls $progdir/sprint*.txt | tail -n 2) $progdir/extras.txt | \
+            sed -e 's/[ \t]*$//' -e 's/[ \t]+/ /g' | \
+            sort | uniq | \
+            while read login email name; do
         echo ""
         echo "$login ($name <$email>):"
         mksvndir "$login"
