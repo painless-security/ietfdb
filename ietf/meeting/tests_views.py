@@ -683,10 +683,13 @@ class MeetingTests(TestCase):
             if g.parent_id is not None:
                 self.assertIn('%s?show=%s' % (ical_url, g.parent.acronym.lower()), content)
 
+        # The 'non-area events' are those whose keywords are in the last column of buttons
+        na_col = q('#customize td.view:last-child')  # find the column
+        non_area_labels = [e.attrib['data-filter-item']
+                           for e in na_col.find('button.pickview')]
+        assert len(non_area_labels) > 0  # test setup must produce at least one label for this test 
+
         # Should be a 'non-area events' link showing appropriate types        
-        non_area_labels = [
-            'BoF', 'EDU', 'Hackathon', 'IEPG', 'IESG', 'IETF', 'Plenary', 'Secretariat', 'Tools',
-        ]
         self.assertIn('%s?show=%s' % (ical_url, ','.join(non_area_labels).lower()), content)
 
     def test_parse_agenda_filter_params(self):
