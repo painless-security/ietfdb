@@ -189,7 +189,7 @@ if [ "$SPRINT" ]; then
     [ "$msg" ] && msg="
 $msg
 "
-    [ "$num" ] || num=$(</www/tools.ietf.org/meta/current-ietf-number.txt)
+    [ "$num" ] || num=$(curl -s "https://tools.ietf.org/meta/current-ietf-number.txt")
     for n in $(seq $((num - 3)) $num); do
         curl -s "https://trac.ietf.org/trac/ietfdb/wiki/IETF${n}SprintSignUp?format=txt" |
             egrep "^\|\|" | tail -n +2 | python -c '
