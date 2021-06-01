@@ -22,6 +22,7 @@ from ietf.person.models import Email
 from ietf.review.models import ReviewerSettings, UnavailablePeriod, ReviewSecretarySettings
 from ietf.review.policies import get_reviewer_queue_policy
 from ietf.review.utils import close_review_request_states
+from ietf.utils import log
 from ietf.utils.textupload import get_cleaned_text_file_content
 #from ietf.utils.ordereddict import insert_after_in_ordered_dict
 from ietf.utils.fields import DatepickerDateField, MultiEmailField
@@ -77,7 +78,21 @@ class GroupForm(forms.Form):
             self.used_roles = self.group.used_roles or group_features.default_used_roles
         else:
             group_features = GroupFeatures.objects.filter(type_id=self.group_type).first()
-            self.used_roles = group_features.default_used_roles if group_features is not None else []
+
+        log.assertion('group_features is not None')
+        if group_features is not None:
+            self.used_roles = group_features.default_used_roles
+            parent_types = group_features.parent_types.all()
+            need_parent = group_features.need_parent
+            default_parent = group_features.default_parent
+        else:
+            # This should not happen, but in the absence of constraints that ensure it
+            # cannot, prevent the form from breaking if it does.
+            self.used_roles = []
+            parent_types = GroupFeatures.objects.none()
+            need_parent = False
+            default_parent = None
+
         if "field" in kwargs:
             field = kwargs["field"]
             del kwargs["field"]
@@ -114,15 +129,14 @@ class GroupForm(forms.Form):
             self.fields['acronym'].widget.attrs['readonly'] = ""
 
         # Sort out parent options
-        parent_types = group_features.parent_types.all()
         self.fields['parent'].queryset = self.fields['parent'].queryset.filter(type__in=parent_types)
-        if group_features.need_parent:
+        if need_parent:
             self.fields['parent'].required = True
             self.fields['parent'].empty_label = None
         # if this is a new group, fill in the default parent, if any
         if self.group is None or (not hasattr(self.group, 'pk')):
             self.fields['parent'].initial = self.fields['parent'].queryset.filter(
-                acronym=group_features.default_parent
+                acronym=default_parent
             ).first()
         # label the parent field as 'IETF Area' if appropriate, for consistency with past behavior
         if parent_types.count() == 1 and parent_types.first().pk == 'area':
