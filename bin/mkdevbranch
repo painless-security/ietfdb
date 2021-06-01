@@ -169,6 +169,23 @@ function mksvndir() {
     fi
 }
 
+function mksvntarget() {
+    local who=$1
+    local target=$2
+    local source=$3
+    local email=$4
+    local name=$5
+
+    check_svn_path_exists exists https://svn.ietf.org/svn/tools/ietfdb/personal/$who/$target
+    if [ "$exists" != "0" ]; then
+        $do echo "  creating $target branch for $login ($name)."
+        $do svn cp https://svn.ietf.org/svn/tools/ietfdb/$source \
+            https://svn.ietf.org/svn/tools/ietfdb/personal/$who/$target/ \
+            -m "New branch for $target"
+        $do echo "New branch: ^/personal/$who/$target"
+    fi
+}
+
 # dump="ietf_utf8.sql.gz"
 # echo "Copying a database dump to www.ietf.org/lib/dt/sprint/$dump"
 # scp /www/tools.ietf.org/tools/$dump ietfa:/a/www/www6s/lib/dt/sprint/
@@ -178,12 +195,8 @@ if [ -z "$who" -a -z "$SPRINT" ]; then die "Specify either individual developer 
 cd $progdir
 
 if [ "$who" ]; then
-    mksvndir $who
-    check_svn_path_exists exists https://svn.ietf.org/svn/tools/ietfdb/personal/$who/$target
-    if [ "$exists" != "0" ]; then
-        $do svn cp https://svn.ietf.org/svn/tools/ietfdb/$source https://svn.ietf.org/svn/tools/ietfdb/personal/$who/$target/ -m "New branch for $target"
-        echo "New branch: ^/personal/$who/$target"
-    fi
+    mksvndir "$who"
+    mksvntarget "$who" "$target" "$source"
 fi
 if [ "$SPRINT" ]; then
     [ "$msg" ] && msg="
@@ -219,7 +232,8 @@ for line in sys.stdin:
     cat $(ls $progdir/sprint*.txt | tail -n 2) $progdir/extras.txt | sed -r -e 's/[ \t]*$//' -e 's/[ \t]+/ /g' | sort | uniq | while read login email name; do
         echo ""
         echo "$login ($name <$email>):"
-        mksvndir $login
+        mksvndir "$login"
+        mksvntarget "$login" "$target" "$source" "$email" "$name"
         if ! svn info https://svn.tools.ietf.org/svn/tools/ietfdb/personal/$login/$target >/dev/null 2>&1; then
             $do echo "  creating $target branch for $login ($name)."
             $do svn cp https://svn.tools.ietf.org/svn/tools/ietfdb/$source https://svn.tools.ietf.org/svn/tools/ietfdb/personal/$login/$target/ -m "New IETF datatracker coding branch for $name" &&
