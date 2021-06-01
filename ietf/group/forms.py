@@ -76,8 +76,8 @@ class GroupForm(forms.Form):
             group_features = self.group.features
             self.used_roles = self.group.used_roles or group_features.default_used_roles
         else:
-            group_features = GroupFeatures.objects.get(type_id=self.group_type)
-            self.used_roles = group_features.default_used_roles
+            group_features = GroupFeatures.objects.filter(type_id=self.group_type).first()
+            self.used_roles = group_features.default_used_roles if group_features is not None else []
         if "field" in kwargs:
             field = kwargs["field"]
             del kwargs["field"]
@@ -116,7 +116,7 @@ class GroupForm(forms.Form):
         # Sort out parent options
         parent_types = group_features.parent_types.all()
         self.fields['parent'].queryset = self.fields['parent'].queryset.filter(type__in=parent_types)
-        if group_features.req_parent:
+        if group_features.need_parent:
             self.fields['parent'].required = True
             self.fields['parent'].empty_label = None
         # if this is a new group, fill in the default parent, if any

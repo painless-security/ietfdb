@@ -255,7 +255,7 @@ class GroupFeatures(models.Model):
     #history = HistoricalRecords()
 
     #
-    req_parent = models.BooleanField("Need Parent", default=False, help_text="Does this group type require a parent group?")
+    need_parent = models.BooleanField("Need Parent", default=False, help_text="Does this group type require a parent group?")
     parent_types = models.ManyToManyField(GroupTypeName, blank=True, related_name='child_features',
                                           help_text="Group types allowed as parent of this group type")
     default_parent = models.CharField("Default Parent", max_length=40, blank=True, default="",

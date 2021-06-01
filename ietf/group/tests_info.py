@@ -968,7 +968,7 @@ class GroupFormTests(TestCase):
                     RoleFactory(name_id=rslug, group=group, person=PersonFactory())
                 self.do_edit_roles_test(group)
 
-    def test_req_parent(self):
+    def test_need_parent(self):
         """GroupForm should enforce non-null parent when required"""
         group = GroupFactory()
         parent = group.parent
@@ -980,7 +980,7 @@ class GroupFormTests(TestCase):
         data = self._group_post_data(group)
 
         # First, test with parent required
-        group.type.features.req_parent = True
+        group.type.features.need_parent = True
         group.type.features.save()
         group = Group.objects.get(pk=group.pk)  # renew object to clear features cache
 
@@ -996,7 +996,7 @@ class GroupFormTests(TestCase):
         self._assert_cleaned_data_equal(form.cleaned_data, data)
 
         # Second, test with parent not required
-        group.type.features.req_parent = False
+        group.type.features.need_parent = False
         group.type.features.save()
         group = Group.objects.get(pk=group.pk)  # renew object to clear features cache
 

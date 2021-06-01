@@ -155,8 +155,8 @@ class GroupFeaturesAdminForm(forms.ModelForm):
 
     def clean(self):
         # cleaning/validation that requires multiple fields
-        parent_acro = self.cleaned_data.get('default_parent', False)
-        if parent_acro:
+        parent_acro = self.cleaned_data['default_parent']
+        if len(parent_acro) > 0:
             parent_type = GroupTypeName.objects.filter(group__acronym=parent_acro).first()
             if parent_type not in self.cleaned_data['parent_types']:
                 self.add_error(
@@ -170,8 +170,10 @@ class GroupFeaturesAdminForm(forms.ModelForm):
 class GroupFeaturesAdmin(admin.ModelAdmin):
     form = GroupFeaturesAdminForm
     list_display = [
-
         'type',
+        'need_parent',
+        'default_parent',
+        'gf_parent_types',
         'has_milestones',
         'has_chartering_process',
         'has_documents',
@@ -194,8 +196,12 @@ class GroupFeaturesAdmin(admin.ModelAdmin):
         'groupman_roles',
         'matman_roles',
         'role_order',
-
     ]
+
+    def gf_parent_types(self, groupfeatures):
+        """Generate list of parent types; needed because many-to-many is not handled automatically"""
+        return ', '.join([gtn.slug for gtn in groupfeatures.parent_types.all()])
+    gf_parent_types.short_description = 'Parent Types'
 
 admin.site.register(GroupFeatures, GroupFeaturesAdmin)
 
