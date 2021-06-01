@@ -25,9 +25,15 @@ DESCRIPTION
 EOF
     echo -e "OPTIONS"
     if [ "$(uname)" = "Linux" ]; then
-        egrep "^[	]+[-][A-Za-z| -]+\*?\)[	]+[A-Za-z].+#" $0 | tr -s "\t|" "\t," | sed -r -e 's/\)[ \t]+([A-Z]+)=\$2[^#]*#/=\1\t/' -e 's/\)[^#]*#/\t/'
+        # shellcheck disable=SC2196
+        # shellcheck disable=SC2086
+        # shellcheck disable=SC2016
+        egrep "^[	]+[-][A-Za-z| -]+\*?\)[	]+[A-Za-z].+#" $0 | tr -s "\t|" "\t," | $sed -e 's/\)[ \t]+([A-Z]+)=\$2[^#]*#/=\1\t/' -e 's/\)[^#]*#/\t/'
     else
-        egrep "^[	]+[-][A-Za-z| -]+\*?\)[	]+[A-Za-z].+#" $0 | sed 's/\|.*\$2[^#]*#/	/' | sed -E 's/\|.*\)[^#]*#/	/'
+        # shellcheck disable=SC2196
+        # shellcheck disable=SC2086
+        # shellcheck disable=SC2016
+        egrep "^[	]+[-][A-Za-z| -]+\*?\)[	]+[A-Za-z].+#" $0 | $sed 's/\|.*\$2[^#]*#/	/' | $sed 's/\|.*\)[^#]*#/	/'
     fi
     cat <<EOF
 
@@ -79,16 +85,18 @@ function check_svn_path_exists() {
     svn info "${__path}" >/dev/null 2>&1
     myresult=$?
 
+    # shellcheck disable=SC2086
     eval $__resultvar="'$myresult'"
 }
 
 function mksvndir() {
     who=$1
     if [ "$2" ]; then dir=$2; else dir=$who; fi
-    check_svn_path_exists exists https://svn.ietf.org/svn/tools/ietfdb/personal/$dir
+    check_svn_path_exists exists "https://svn.ietf.org/svn/tools/ietfdb/personal/$dir"
+    # shellcheck disable=SC2154
     if [ "$exists" != "0" ]; then
         $do echo "Creating personal directory area for IETF datatracker coding: /personal/$dir"
-        $do svn mkdir https://svn.ietf.org/svn/tools/ietfdb/personal/$dir -m "Personal SVN dir for $who, for IETF datatracker code"
+        $do svn mkdir "https://svn.ietf.org/svn/tools/ietfdb/personal/$dir" -m "Personal SVN dir for $who, for IETF datatracker code"
     else
         echo "Repository area personal/$dir is already in place."
     fi
@@ -101,11 +109,11 @@ function mksvntarget() {
     local email=$4
     local name=$5
 
-    check_svn_path_exists exists https://svn.ietf.org/svn/tools/ietfdb/personal/$who/$target
+    check_svn_path_exists exists "https://svn.ietf.org/svn/tools/ietfdb/personal/$who/$target"
     if [ "$exists" != "0" ]; then
         $do echo "  creating $target branch for $login ($name)."
-        $do svn cp https://svn.ietf.org/svn/tools/ietfdb/$source \
-            https://svn.ietf.org/svn/tools/ietfdb/personal/$who/$target/ \
+        $do svn cp "https://svn.ietf.org/svn/tools/ietfdb/$source" \
+            "https://svn.ietf.org/svn/tools/ietfdb/personal/$who/$target/" \
             -m "New branch for $target"
         $do echo "New branch: ^/personal/$who/$target"
         if [ -n "$email" ]; then
@@ -153,7 +161,7 @@ function get_sprinters_info() {
     local n=$1
 
     curl -s "https://trac.ietf.org/trac/ietfdb/wiki/IETF${n}SprintSignUp?format=txt" |
-        egrep "^\|\|" | tail -n +2 | python -c '
+        grep -E "^\|\|" | tail -n +2 | python -c '
 import sys, re
 with open("aliases") as afile:
     try:
@@ -185,8 +193,8 @@ trap 'echo "$program($LINENO): Command failed with error code $? ([$$] $0 $*)"; 
 # Option parsing
 
 # Options
-shortopts=hm:M:nsvV
-longopts=help,meeting=,message=,dry-run,sprint,verbose,version
+short_options=hm:M:nsvV
+long_options=help,meeting=,message=,dry-run,sprint,verbose,version
 
 # Default values
 num=""
@@ -194,20 +202,24 @@ msg=""
 do=""
 
 if [ "$(uname)" = "Linux" ]; then
-    args=$(getopt -o "$shortopts" --long "$longopts" -n '$program' -- $SV "$@")
+    args=$(getopt -o "$short_options" --long "$long_options" -n "$program" -- "$SV" "$@")
+    # shellcheck disable=SC2181
     if [ $? != 0 ]; then
         die "Terminating..." >&2
         exit 1
     fi
-    eval set -- "$args"
+    # shellcheck disable=SC2086
+    eval set -- $args
     sed="sed -r"
 else
     # Darwin, BSDs
-    args=$(getopt -o$shortopts $SV $*)
+    args=$(getopt -o$short_options "$SV" "$@")
+    # shellcheck disable=SC2181
     if [ $? != 0 ]; then
         die "Terminating..." >&2
         exit 1
     fi
+    # shellcheck disable=SC2086
     set -- $args
     sed="sed -E"
 fi
@@ -255,14 +267,9 @@ rev="dev tag $target"
 [ "$1" ] && who="$1"
 [ "$2" ] && target="${target%.dev*}-$2"
 
+if [ -z "${who}${SPRINT}" ]; then die "Specify either individual developer name or --sprint"; fi
 
-# dump="ietf_utf8.sql.gz"
-# echo "Copying a database dump to www.ietf.org/lib/dt/sprint/$dump"
-# scp /www/tools.ietf.org/tools/$dump ietfa:/a/www/www6s/lib/dt/sprint/
-
-if [ -z "$who" -a -z "$SPRINT" ]; then die "Specify either individual developer name or --sprint"; fi
-
-cd $progdir
+cd $progdir || exit
 
 if [ "$who" ]; then
     mksvndir "$who"
@@ -273,11 +280,14 @@ if [ "$SPRINT" ]; then
 $msg
 "
     [ "$num" ] || num=$(curl -s "https://tools.ietf.org/meta/current-ietf-number.txt")
-    for n in $(seq $((num - 3)) $num); do
+    for n in $(seq $((num - 3)) "$num"); do
         get_sprinters_info "$n"
     done
 
-    cat $(ls $progdir/sprint*.txt | tail -n 2) $progdir/extras.txt | sed -r -e 's/[ \t]*$//' -e 's/[ \t]+/ /g' | sort | uniq | while read login email name; do
+    # shellcheck disable=SC2046
+    # shellcheck disable=SC2012
+    # shellcheck disable=SC2162
+    cat $(ls $progdir/sprint*.txt | tail -n 2) $progdir/extras.txt | $sed -e 's/[ \t]*$//' -e 's/[ \t]+/ /g' | sort | uniq | while read login email name; do
         echo ""
         echo "$login ($name <$email>):"
         mksvndir "$login"
