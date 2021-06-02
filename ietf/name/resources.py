@@ -685,20 +685,3 @@ class AgendaFilterTypeNameResource(ModelResource):
             "order": ALL,
         }
 api.name.register(AgendaFilterTypeNameResource())
-
-
-class AgendaFilterTypeNameResource(ModelResource):
-    class Meta:
-        queryset = AgendaFilterTypeName.objects.all()
-        serializer = api.Serializer()
-        cache = SimpleCache()
-        #resource_name = 'agendafiltertypename'
-        ordering = ['slug', ]
-        filtering = { 
-            "slug": ALL,
-            "name": ALL,
-            "desc": ALL,
-            "used": ALL,
-            "order": ALL,
-        }
-api.name.register(AgendaFilterTypeNameResource())
