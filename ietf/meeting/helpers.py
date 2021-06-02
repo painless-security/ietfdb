@@ -30,7 +30,7 @@ from ietf.mailtrigger.utils import gather_address_lists
 from ietf.person.models  import Person
 from ietf.meeting.models import Meeting, Schedule, TimeSlot, SchedTimeSessAssignment, ImportantDate, SchedulingEvent, Session
 from ietf.meeting.utils import session_requested_by, add_event_info_to_session_qs
-from ietf.name.models import ImportantDateName
+from ietf.name.models import ImportantDateName, TimeSlotTypeName
 from ietf.utils import log
 from ietf.utils.history import find_history_active_at, find_history_replacements_active_at
 from ietf.utils.mail import send_mail
@@ -255,17 +255,17 @@ def preprocess_assignments_for_agenda(assignments_queryset, meeting, extra_prefe
     return assignments
 
 
-class AgendaFilterOrganizer:
-    """Helper class to organize agenda filters given a list of assignments or sessions
+class AgendaKeywordTool:
+    """Base class for agenda keyword-related organizers
 
-    Either assignments or sessions must be specified (but not both). Keywords should be applied
-    to these items before calling either of the 'get_' methods, otherwise some special filters
-    may not be included (e.g., 'BoF' or 'Plenary'). If historic_group and/or historic_parent
-    attributes are present, these will be used instead of group/parent.
-
-    The organizer will process its inputs once, when one of its get_ methods is first called.
+    The purpose of this class is to hold utility methods and data needed by keyword generation
+    helper classes. It ensures consistency of, e.g., definitions of when to use legacy keywords or what
+    timeslot types should be used to define filters.
     """
-    def __init__(self, assignments=None, sessions=None, single_category=False):
+    filterable_timeslot_slugs = ['officehours']
+
+    def __init__(self, *, assignments=None, sessions=None):
+        # n.b., single star argument means only keyword parameters are allowed when calling constructor
         if assignments is not None and sessions is None:
             self.assignments = assignments
             self.sessions = [a.session for a in self.assignments if a.session]
@@ -275,6 +275,44 @@ class AgendaFilterOrganizer:
         else:
             raise RuntimeError('Exactly one of assignments or sessions must be specified')
 
+        self.meeting = self.sessions[0].meeting if len(self.sessions) > 0 else None
+
+        self.filterable_timeslot_types = TimeSlotTypeName.objects.filter(
+            slug__in=self.filterable_timeslot_slugs
+        )
+
+    def _use_legacy_keywords(self):
+        """Should legacy keyword handling be used for this meeting?"""
+        # Only IETF meetings need legacy handling. These are identified
+        # by having a purely numeric meeting.number.
+        return (self.meeting is not None
+                and self.meeting.number.isdigit()
+                and int(self.meeting.number) <= 110)
+
+    # Helper methods
+    @staticmethod
+    def _get_group(s):
+        """Get group of a session, handling historic groups"""
+        return getattr(s, 'historic_group', s.group)
+
+    def _get_group_parent(self, s):
+        """Get parent of a group or parent of a session's group, handling historic groups"""
+        g = self._get_group(s) if isinstance(s, Session) else s  # accept a group or a session arg
+        return getattr(g, 'historic_parent', g.parent)
+
+
+class AgendaFilterOrganizer(AgendaKeywordTool):
+    """Helper class to organize agenda filters given a list of assignments or sessions
+
+    Either assignments or sessions must be specified (but not both). Keywords should be applied
+    to these items before calling either of the 'get_' methods, otherwise some special filters
+    may not be included (e.g., 'BoF' or 'Plenary'). If historic_group and/or historic_parent
+    attributes are present, these will be used instead of group/parent.
+
+    The organizer will process its inputs once, when one of its get_ methods is first called.
+    """
+    def __init__(self, *, single_category=False, **kwargs):
+        super(AgendaFilterOrganizer, self).__init__(**kwargs)
         self.single_category = single_category
 
         # group acronyms in this list will never be used as filter buttons
@@ -289,12 +327,14 @@ class AgendaFilterOrganizer:
         # group types whose acronyms should be all-caps
         self.uppercased_group_types = ['area', 'ietf', 'irtf']
 
+        # check that the group labeling sets are disjoint
+        assert(set(self.capitalized_group_types).isdisjoint(self.uppercased_group_types))
+
         # group acronyms that need special handling
         self.special_group_labels = dict(
             edu='EDU',
             iepg='IEPG',
         )
-
         # filled in when _organize_filters() is called
         self.filter_categories = None
         self.special_filters = None
@@ -356,7 +396,7 @@ class AgendaFilterOrganizer:
                      and self._get_group(s))
         log.assertion('len(groups) == len(set(g.acronym for g in groups))')  # no repeated acros
 
-        group_parents = set(self._get_parent(g) for g in groups if self._get_parent(g))
+        group_parents = set(self._get_group_parent(g) for g in groups if self._get_group_parent(g))
         log.assertion('len(group_parents) == len(set(gp.acronym for gp in group_parents))')  # no repeated acros
 
         all_groups = groups.union(group_parents)
@@ -370,7 +410,7 @@ class AgendaFilterOrganizer:
         for g in groups:
             if g.features.agenda_filter_type_id == 'normal':
                 # normal filter group with a heading parent goes in that column
-                p = self._get_parent(g)
+                p = self._get_group_parent(g)
                 if p in headings:
                     headings[p].add(g)
                 else:
@@ -404,6 +444,33 @@ class AgendaFilterOrganizer:
 
         Returns a list of filter columns
         """
+        if self.assignments is None or self.meeting is None:
+            return []  # can only use timeslot type when we have assignments
+
+        # Call legacy version for older meetings
+        if self._use_legacy_keywords():
+            return self._legacy_timeslot_type_filters()
+
+        # Not using legacy version
+        filter_cols = []
+        for ts_type in self.filterable_timeslot_types:
+            groups = set(
+                self._get_group(a.session) for a in self.assignments if a.timeslot.type == ts_type
+            )
+            if len(groups) > 0:
+                # keyword needs to match what's tagged in filter_keywords_for_session()
+                filter_cols.append(self._non_group_filter_column(
+                    label=ts_type.name,
+                    keyword=ts_type.slug.lower(),
+                    child_labels=[self._group_label(group) for group in groups],
+                ))
+        return filter_cols
+
+    def _legacy_timeslot_type_filters(self):
+        """Get list of timeslot type filters for pre-IETF-111 meetings
+
+        Returns a list of filter columns
+        """
         if self.assignments is None:
             return []  # can only use timeslot type when we have assignments
 
@@ -425,15 +492,15 @@ class AgendaFilterOrganizer:
 
     def _extra_filters(self):
         """Get list of filters corresponding to self.extra_labels"""
-        # Keep only those that will affect at least one session
         item_source = self.assignments or self.sessions or []
         return self._non_group_filter_column(
             label=None,
             keyword=None,
             child_labels=[
-                label for label in self.extra_labels
-                if any([label.lower() in item.filter_keywords
-                        for item in item_source])
+                label for label in self.extra_labels if any(
+                    # Keep only those that will affect at least one session
+                    [label.lower() in item.filter_keywords for item in item_source]
+                )
             ],
         )
 
@@ -488,13 +555,16 @@ class AgendaFilterOrganizer:
         """
         entry = self._filter_entry(label, keyword, False)
         if keyword is not None and len(keyword) > 0:
-            child_kw_suffix = keyword
+            child_kw_suffix = '-{}'.format(keyword)
         else:
             child_kw_suffix = ''
         entry['children'] = [
             self._filter_entry(
                 label=clabel,
-                keyword=clabel.lower().replace(' ', '') + child_kw_suffix,
+                keyword=''.join((
+                    clabel.lower().replace(' ', ''),
+                    child_kw_suffix
+                )),
                 is_bof=False,
             ) for clabel in child_labels
         ]
