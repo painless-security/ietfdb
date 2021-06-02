@@ -10,7 +10,7 @@ from ietf.meeting.test_data import make_meeting_test_data
 from ietf.utils.test_utils import TestCase
 
 
-class HelpersTests(TestCase):
+class AgendaKeywordTaggerTests(TestCase):
     def do_test_tag_assignments_with_filter_keywords(self, meeting_num, bof=False, historic=None):
         """Assignments should be tagged properly
         
