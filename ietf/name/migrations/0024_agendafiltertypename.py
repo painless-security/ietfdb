@@ -3,22 +3,6 @@
 from django.db import migrations, models
 
 
-def forward(apps, schema_editor):
-    AgendaFilterTypeName = apps.get_model('name', 'AgendaFilterTypeName')
-    names = (
-        ('none', 'None', 'Not used except for a timeslot-type column (e.g., officehours)'),
-        ('normal', 'Normal', 'Non-heading filter button'),
-        ('heading', 'Heading', 'Column heading button'),
-        ('special', 'Special', 'Button in the catch-all column'),
-    )
-    for order, (slug, name, desc) in enumerate(names):
-        AgendaFilterTypeName.objects.create(slug=slug, name=name, desc=desc, order=order, used=True)
-
-
-def reverse(apps, schema_editor):
-    pass  # nothing to do, model about to be destroyed anyway
-
-
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -40,5 +24,4 @@ class Migration(migrations.Migration):
                 'abstract': False,
             },
         ),
-        migrations.RunPython(forward, reverse),
     ]
