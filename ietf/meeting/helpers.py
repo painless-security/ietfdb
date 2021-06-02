@@ -398,8 +398,8 @@ class AgendaFilterOrganizer:
             return []  # can only use timeslot type when we have assignments
 
         office_hours_labels = set()
+        suffix = ' office hours'
         for a in self.assignments:
-            suffix = ' office hours'
             if a.session.name.lower().endswith(suffix):
                 office_hours_labels.add(a.session.name[:-len(suffix)].strip())
 
@@ -490,24 +490,25 @@ class AgendaFilterOrganizer:
         ]
         return entry
 
-    # Helper methods
-    @staticmethod
-    def _get_group(s):
-        return getattr(s, 'historic_group', s.group)
-
-    def _get_parent(self, s):
-        g = self._get_group(s) if isinstance(s, Session) else s  # accept a group or a session arg
-        return getattr(g, 'historic_parent', g.parent)
-
     @staticmethod
     def _group_sort_key(g):
         return 'zzzzzzzz' if g is None else g['label'].upper()  # sort blank to the end
+
+# Helper methods
+def _get_group_from_session(s):
+    """Get group from a session"""
+    return getattr(s, 'historic_group', s.group)
+
+def _get_parent_of_group_or_session(s):
+    """Get parent of session or group"""
+    g = _get_group_from_session(s) if isinstance(s, Session) else s  # accept a group or a session arg
+    return getattr(g, 'historic_parent', g.parent)
 
 
 def is_regular_agenda_filter_group(group):
     """Should this group appear in the 'regular' agenda filter button lists?"""
     # get the parent group, using the historic_parent if it is defined for this group
-    parent = getattr(group, 'historic_parent', group.parent)
+    parent = _get_parent_of_group_or_session(group)
     return (
         group.features.agenda_filter_type_id == 'normal'
         and parent
@@ -526,7 +527,7 @@ def tag_assignments_with_filter_keywords(assignments):
 
 def filter_keywords_for_session(session):
     keywords = {session.type.slug.lower()}
-    group = getattr(session, 'historic_group', session.group)
+    group = _get_group_from_session(session)
     if group is not None:
         if group.state_id == 'bof':
             keywords.add('bof')
@@ -537,7 +538,7 @@ def filter_keywords_for_session(session):
         # the test used by the agenda() view to decide whether a group
         # gets an area or non-area filter button.
         if is_regular_agenda_filter_group(group):
-            area = getattr(group, 'historic_parent', group.parent)
+            area = _get_parent_of_group_or_session(group)
             if area is not None:
                 keywords.add(area.acronym.lower())
     office_hours_match = re.match(r'^ *\w+(?: +\w+)* +office hours *$', session.name, re.IGNORECASE)
