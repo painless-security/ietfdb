@@ -64,7 +64,7 @@ from ietf.meeting.helpers import get_all_assignments_from_schedule
 from ietf.meeting.helpers import get_modified_from_assignments
 from ietf.meeting.helpers import get_wg_list, find_ads_for_meeting
 from ietf.meeting.helpers import get_meeting, get_ietf_meeting, get_current_ietf_meeting_num
-from ietf.meeting.helpers import get_schedule, schedule_permissions, is_regular_agenda_filter_group
+from ietf.meeting.helpers import get_schedule, schedule_permissions
 from ietf.meeting.helpers import preprocess_assignments_for_agenda, read_agenda_file
 from ietf.meeting.helpers import filter_keywords_for_session, tag_assignments_with_filter_keywords
 from ietf.meeting.helpers import filter_keyword_for_specific_session, AgendaFilterOrganizer
