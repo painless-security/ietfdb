@@ -1258,6 +1258,7 @@ class AgendaTests(IetfSeleniumTestCase):
         self.assert_agenda_item_visibility([group_acronym])
         
         # Click the group button again
+        group_button = self.get_agenda_filter_group_button(wait, group_acronym)
         group_button.click()
 
         # Check visibility
@@ -1429,7 +1430,7 @@ class AgendaTests(IetfSeleniumTestCase):
         ics_url = self.absreverse('ietf.meeting.views.agenda_ical')
         
         # parse out the events
-        agenda_rows = self.driver.find_elements_by_css_selector('[id^="row-"]')
+        agenda_rows = self.driver.find_elements_by_css_selector('[id^="row-"]:not(.info)')
         visible_rows = [r for r in agenda_rows if r.is_displayed()]
         sessions = [self.session_from_agenda_row_id(row.get_attribute("id")) 
                     for row in visible_rows]
