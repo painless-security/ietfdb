@@ -574,60 +574,95 @@ class AgendaFilterOrganizer(AgendaKeywordTool):
     def _group_sort_key(g):
         return 'zzzzzzzz' if g is None else g['label'].upper()  # sort blank to the end
 
-# Helper methods
-def _get_group_from_session(s):
-    """Get group from a session"""
-    return getattr(s, 'historic_group', s.group)
 
-def _get_parent_of_group_or_session(s):
-    """Get parent of session or group"""
-    g = _get_group_from_session(s) if isinstance(s, Session) else s  # accept a group or a session arg
-    return getattr(g, 'historic_parent', g.parent)
+class AgendaKeywordTagger(AgendaKeywordTool):
+    """Class for applying keywords to agenda timeslot assignments.
 
-
-def is_regular_agenda_filter_group(group):
-    """Should this group appear in the 'regular' agenda filter button lists?"""
-    # get the parent group, using the historic_parent if it is defined for this group
-    parent = _get_parent_of_group_or_session(group)
-    return (
-        group.features.agenda_filter_type_id == 'normal'
-        and parent
-        and parent.features.agenda_filter_type_id == 'heading'
-    )
-
-def tag_assignments_with_filter_keywords(assignments):
-    """Add keywords for agenda filtering
-    
-    Keywords are all lower case.
+    This is the other side of the agenda filtering: AgendaFilterOrganizer generates the
+    filter buttons, this applies keywords to the entries being filtered.
     """
-    for a in assignments:
-        a.filter_keywords = {a.timeslot.type.slug.lower()}
-        a.filter_keywords.update(filter_keywords_for_session(a.session))
-        a.filter_keywords = sorted(list(a.filter_keywords))
+    def apply(self):
+        """Apply tags to sessions / assignments"""
+        if self.assignments is not None:
+            self._tag_assignments_with_filter_keywords()
+        else:
+            self._tag_sessions_with_filter_keywords()
 
-def filter_keywords_for_session(session):
-    keywords = {session.type.slug.lower()}
-    group = _get_group_from_session(session)
-    if group is not None:
-        if group.state_id == 'bof':
-            keywords.add('bof')
-        keywords.add(group.acronym.lower())
+    def _is_regular_agenda_filter_group(self, group):
+        """Should this group appear in the 'regular' agenda filter button lists?"""
+        parent = self._get_group_parent(group)
+        return (
+                group.features.agenda_filter_type_id == 'normal'
+                and parent
+                and parent.features.agenda_filter_type_id == 'heading'
+        )
+
+
+    def _tag_assignments_with_filter_keywords(self):
+        """Add keywords for agenda filtering
+
+        Keywords are all lower case.
+        """
+        for a in self.assignments:
+            a.filter_keywords = {a.timeslot.type.slug.lower()}
+            a.filter_keywords.update(self._filter_keywords_for_assignment(a))
+            a.filter_keywords = sorted(list(a.filter_keywords))
+
+    def _tag_sessions_with_filter_keywords(self):
+        for s in self.sessions:
+            s.filter_keywords = self._filter_keywords_for_session(s)
+            s.filter_keywords = sorted(list(s.filter_keywords))
+
+    @staticmethod
+    def _legacy_extra_session_keywords(session):
+        """Get extra keywords for a session at IETF-110 and earlier"""
+        office_hours_match = re.match(r'^ *\w+(?: +\w+)* +office hours *$', session.name, re.IGNORECASE)
+        if office_hours_match is not None:
+            suffix = 'officehours'
+            return [
+                'officehours',
+                session.name.lower().replace(' ', '')[:-len(suffix)] + '-officehours',
+                ]
+        return []
+
+    def _filter_keywords_for_session(self, session):
+        keywords = {session.type.slug.lower()}
+        group = self._get_group(session)
+        if group is not None:
+            if group.state_id == 'bof':
+                keywords.add('bof')
+            keywords.add(group.acronym.lower())
         specific_kw = filter_keyword_for_specific_session(session)
         if specific_kw is not None:
             keywords.add(specific_kw)
 
-        # Only sessions belonging to "regular" groups should respond to the
-        # parent group filter keyword (often the 'area'). This must match
-        # the test used by the agenda() view to decide whether a group
-        # gets an area or non-area filter button.
-        if is_regular_agenda_filter_group(group):
-            area = _get_parent_of_group_or_session(group)
-            if area is not None:
-                keywords.add(area.acronym.lower())
-    office_hours_match = re.match(r'^ *\w+(?: +\w+)* +office hours *$', session.name, re.IGNORECASE)
-    if office_hours_match is not None:
-        keywords.update(['officehours', session.name.lower().replace(' ', '')])
-    return sorted(list(keywords))
+            # Only sessions belonging to "regular" groups should respond to the
+            # parent group filter keyword (often the 'area'). This must match
+            # the test used by the agenda() view to decide whether a group
+            # gets an area or non-area filter button.
+            if self._is_regular_agenda_filter_group(group):
+                area = self._get_group_parent(group)
+                if area is not None:
+                    keywords.add(area.acronym.lower())
+
+        if self._use_legacy_keywords():
+            keywords.update(self._legacy_extra_session_keywords(session))
+        return sorted(list(keywords))
+
+    def _filter_keywords_for_assignment(self, assignment):
+        keywords = self._filter_keywords_for_session(assignment.session)
+
+        if not self._use_legacy_keywords():
+            if assignment.timeslot.type in self.filterable_timeslot_types:
+                type_kw = assignment.timeslot.type.slug.lower()
+                grp = self._get_group(assignment.session)
+                if grp:
+                    keywords.extend([
+                        type_kw,
+                        grp.acronym.lower() + '-' + type_kw,
+                    ])
+        return sorted(keywords)
+
 
 def filter_keyword_for_specific_session(session):
     """Get keyword that identifies a specific session
