@@ -12681,6 +12681,17 @@
   },
   {
     "fields": {
+      "desc": "Office hours timeslot",
+      "name": "Office Hours",
+      "order": 0,
+      "private": false,
+      "used": true
+    },
+    "model": "name.timeslottypename",
+    "pk": "officehours"
+  },
+  {
+    "fields": {
       "desc": "",
       "name": "Other",
       "order": 0,
