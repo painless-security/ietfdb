@@ -111,7 +111,7 @@ function mksvntarget() {
 
     check_svn_path_exists exists "https://svn.ietf.org/svn/tools/ietfdb/personal/$who/$target"
     if [ "$exists" != "0" ]; then
-        $do echo "  creating $target branch for $login ($name)."
+        $do echo "  creating $target branch for $who ($name)."
         $do svn cp "https://svn.ietf.org/svn/tools/ietfdb/$source" \
             "https://svn.ietf.org/svn/tools/ietfdb/personal/$who/$target/" \
             -m "New branch for $target"
@@ -120,7 +120,7 @@ function mksvntarget() {
             notify_user "$who" "$target" "$email" "$name"
         fi
     else
-        $do echo "  branch personal/$login/$target already exists."
+        $do echo "  branch personal/$who/$target already exists."
     fi
 }
 
