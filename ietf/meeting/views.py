@@ -66,7 +66,7 @@ from ietf.meeting.helpers import get_wg_list, find_ads_for_meeting
 from ietf.meeting.helpers import get_meeting, get_ietf_meeting, get_current_ietf_meeting_num
 from ietf.meeting.helpers import get_schedule, schedule_permissions
 from ietf.meeting.helpers import preprocess_assignments_for_agenda, read_agenda_file
-from ietf.meeting.helpers import filter_keywords_for_session, tag_assignments_with_filter_keywords, AgendaFilterOrganizer
+from ietf.meeting.helpers import AgendaFilterOrganizer, AgendaKeywordTagger
 from ietf.meeting.helpers import convert_draft_to_pdf, get_earliest_session_date
 from ietf.meeting.helpers import can_view_interim_request, can_approve_interim_request
 from ietf.meeting.helpers import can_edit_interim_request
@@ -1364,7 +1364,7 @@ def agenda(request, num=None, name=None, base=None, ext=None, owner=None, utc=""
         timeslot__type__private=False,
     )
     filtered_assignments = preprocess_assignments_for_agenda(filtered_assignments, meeting)
-    tag_assignments_with_filter_keywords(filtered_assignments)
+    AgendaKeywordTagger(assignments=filtered_assignments).apply()
 
     if ext == ".csv":
         return agenda_csv(schedule, filtered_assignments)
@@ -1642,7 +1642,7 @@ def week_view(request, num=None, name=None, owner=None):
         timeslot__type__private=False,
     )
     filtered_assignments = preprocess_assignments_for_agenda(filtered_assignments, meeting)
-    tag_assignments_with_filter_keywords(filtered_assignments)
+    AgendaKeywordTagger(assignments=filtered_assignments).apply()
 
     items = []
     for a in filtered_assignments:
@@ -1825,7 +1825,7 @@ def agenda_ical(request, num=None, name=None, acronym=None, session_id=None):
         timeslot__type__private=False,
     )
     assignments = preprocess_assignments_for_agenda(assignments, meeting)
-    tag_assignments_with_filter_keywords(assignments)
+    AgendaKeywordTagger(assignments=assignments).apply()
 
     try:
         filt_params = parse_agenda_filter_params(request.GET)
@@ -3278,12 +3278,12 @@ def upcoming(request):
         )
     ).filter(current_status__in=('sched','canceled'))
 
-    # Set up for agenda filtering - only one filter_category here
-    filter_organizer = AgendaFilterOrganizer(sessions=interim_sessions, single_category=True)
-
     for session in interim_sessions:
         session.historic_group = session.group
-        session.filter_keywords = filter_keywords_for_session(session)
+
+    # Set up for agenda filtering - only one filter_category here
+    AgendaKeywordTagger(sessions=interim_sessions).apply()
+    filter_organizer = AgendaFilterOrganizer(sessions=interim_sessions, single_category=True)
 
     entries = list(ietf_meetings)
     entries.extend(list(interim_sessions))
@@ -3356,7 +3356,7 @@ def upcoming_ical(request):
         'session__group', 'session__group__parent', 'timeslot', 'schedule', 'schedule__meeting'
     ).distinct())
 
-    tag_assignments_with_filter_keywords(assignments)
+    AgendaKeywordTagger(assignments=assignments).apply()
 
     # apply filters
     if filter_params is not None:
@@ -3441,7 +3441,7 @@ def proceedings(request, num=None):
     plenaries = sessions.filter(name__icontains='plenary').exclude(current_status='notmeet')
     ietf      = sessions.filter(group__parent__type__slug = 'area').exclude(group__acronym='edu')
     irtf      = sessions.filter(group__parent__acronym = 'irtf')
-    training  = sessions.filter(group__acronym__in=['edu','iaoc'], type_id__in=['regular', 'other', ]).exclude(current_status='notmeet')
+    training  = sessions.filter(group__acronym__in=['edu','iaoc'], type_id__in=['regular', 'other', 'officehours',]).exclude(current_status='notmeet')
     iab       = sessions.filter(group__parent__acronym = 'iab').exclude(current_status='notmeet')
 
     cache_version = Document.objects.filter(session__meeting__number=meeting.number).aggregate(Max('time'))["time__max"]
