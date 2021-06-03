@@ -619,7 +619,7 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
         # Populate room_data. This collects the timeslots for each room binned by
         # day, plus data needed for sorting the rooms for display.
         room_data = dict()
-        all_days = []
+        all_days = set()
         # timeslots_qs is already sorted by location, name, and time
         for t in timeslots:
             if t.location not in rooms:
@@ -637,13 +637,12 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
             rd['timeslot_count'] += 1
             rd['start_and_duration'].append((t.time, t.duration))
             ttd = t.time.date()
-            all_days.append(ttd)
+            all_days.add(ttd)
             if ttd not in rd['timeslots_by_day']:
                 rd['timeslots_by_day'][ttd] = []
             rd['timeslots_by_day'][ttd].append(t)
 
-        all_days.sort()  # timeslots were sorted by location/name before time, so must sort
-
+        all_days = sorted(all_days)  # changes set to a list
         # Note the maximum timeslot count for any room
         max_timeslots = max(rd['timeslot_count'] for rd in room_data.values())
 
