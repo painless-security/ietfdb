@@ -179,12 +179,16 @@ class SessionForm(forms.Form):
         """
         # Only the older constraints (conflict, conflic2, conflic3) need to be mutually exclusive.
         all_conflicts = self._join_conflicts(cleaned_data, ['conflict', 'conflic2', 'conflic3'])
-        temp = []
+        seen = []
+        duplicated = []
+        errors = []
         for c in all_conflicts:
-            if c not in temp:
-                temp.append(c)
-            else:
-                raise forms.ValidationError('%s appears in conflicts more than once' % c)
+            if c not in seen:
+                seen.append(c)
+            elif c not in duplicated:  # only report once
+                duplicated.append(c)
+                errors.append(forms.ValidationError('%s appears in conflicts more than once' % c))
+        return errors
 
     def clean_joint_with_groups(self):
         groups = self.cleaned_data['joint_with_groups']
@@ -208,27 +212,38 @@ class SessionForm(forms.Form):
                 self.add_error(cfield_id, e)
 
         # error if conflicts contain disallowed dupes
-        self._validate_duplicate_conflicts(data)
+        for error in self._validate_duplicate_conflicts(data):
+            self.add_error(None, error)
 
         # verify session_length and num_session correspond
         # if default (empty) option is selected, cleaned_data won't include num_session key
         if data.get('num_session','') == '2':
             if not data['length_session2']:
-                raise forms.ValidationError('You must enter a length for all sessions')
+                self.add_error('length_session2', forms.ValidationError('You must enter a length for all sessions'))
         else:
             if data.get('session_time_relation'):
-                raise forms.ValidationError('Time between sessions can only be used when two '
-                                            'sessions are requested.')
-            if data['joint_for_session'] == '2':
-                raise forms.ValidationError('The second session can not be the joint session, '
-                                            'because you have not requested a second session.')
+                self.add_error(
+                    'session_time_relation',
+                    forms.ValidationError('Time between sessions can only be used when two sessions are requested.')
+                )
+            if data.get('joint_for_session') == '2':
+                self.add_error(
+                    'joint_for_session',
+                    forms.ValidationError(
+                        'The second session can not be the joint session, because you have not requested a second session.'
+                    )
+                )
 
-        if data.get('third_session',False):
-            if not data['length_session2'] or not data.get('length_session3',None):
-                raise forms.ValidationError('You must enter a length for all sessions')
-        elif data['joint_for_session'] == '3':
-                raise forms.ValidationError('The third session can not be the joint session, '
-                                            'because you have not requested a third session.')
+        if data.get('third_session', False):
+            if not data.get('length_session3',None):
+                self.add_error('length_session3', forms.ValidationError('You must enter a length for all sessions'))
+        elif data.get('joint_for_session') == '3':
+                self.add_error(
+                    'joint_for_session',
+                    forms.ValidationError(
+                        'The third session can not be the joint session, because you have not requested a third session.'
+                    )
+                )
         
         return data
 
