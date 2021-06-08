@@ -124,7 +124,6 @@ class SessionForm(forms.Form):
             log.assertion('cselector_id not in self.fields')
             self.fields[cfield_id] = constraint_field
             self.fields[cselector_id] = selector_field
-            self.define_clean_constraint_method(cfield_id)
             self._wg_field_data.append((constraintname, cfield_id, cselector_id))
 
         self.fields['joint_with_groups_selector'].widget.attrs['onChange'] = "document.form_post.joint_with_groups.value=document.form_post.joint_with_groups.value + ' ' + this.options[this.selectedIndex].value; return 1;"
@@ -161,14 +160,6 @@ class SessionForm(forms.Form):
         """Add a new class, taking care in case some already exist"""
         existing_classes = widget.attrs.get('class', '').split()
         widget.attrs['class'] = ' '.join(existing_classes + [new_class])
-
-    def define_clean_constraint_method(self, cfield_id):
-        """Create a clean_* method for a constraint field"""
-        def cleaner():
-            conflict = self.cleaned_data[cfield_id]
-            check_conflict(conflict, self.group)
-            return conflict
-        setattr(self, 'clean_{}'.format(cfield_id), cleaner)
 
     def _join_conflicts(self, cleaned_data, slugs):
         """Concatenate constraint fields from cleaned data into a single list"""
@@ -208,6 +199,13 @@ class SessionForm(forms.Form):
         if self.errors:
             return self.cleaned_data
         data = self.cleaned_data
+
+        # validate the individual conflict fields
+        for _, cfield_id, _ in self._wg_field_data:
+            try:
+                check_conflict(data[cfield_id], self.group)
+            except forms.ValidationError as e:
+                self.add_error(cfield_id, e)
 
         # error if conflicts contain disallowed dupes
         self._validate_duplicate_conflicts(data)
