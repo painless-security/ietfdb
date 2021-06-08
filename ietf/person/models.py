@@ -242,7 +242,7 @@ class Person(models.Model):
 
     def available_api_endpoints(self):
         from ietf.ietfauth.utils import has_role
-        return [ (v, n) for (v, n, r) in PERSON_API_KEY_VALUES if r==None or has_role(self.user, r) ]
+        return list(set([ (v, n) for (v, n, r) in PERSON_API_KEY_VALUES if r==None or has_role(self.user, r) ]))
 
 
 class PersonExtResource(models.Model):
@@ -349,11 +349,12 @@ def salt():
 PERSON_API_KEY_VALUES = [
     ("/api/iesg/position", "/api/iesg/position", "Area Director"),
     ("/api/v2/person/person", "/api/v2/person/person", "Secretariat"),
+    ("/api/v2/person/person", "/api/v2/person/person", "Robot"),
     ("/api/meeting/session/video/url", "/api/meeting/session/video/url", "Recording Manager"),
     ("/api/notify/meeting/registration", "/api/notify/meeting/registration", "Robot"), 
     ("/api/notify/meeting/bluesheet", "/api/notify/meeting/bluesheet", "Recording Manager"), 
 ]
-PERSON_API_KEY_ENDPOINTS = [ (v, n) for (v, n, r) in PERSON_API_KEY_VALUES ]
+PERSON_API_KEY_ENDPOINTS = sorted(list(set([ (v, n) for (v, n, r) in PERSON_API_KEY_VALUES ])))
 
 class PersonalApiKey(models.Model):
     person   = ForeignKey(Person, related_name='apikeys')
