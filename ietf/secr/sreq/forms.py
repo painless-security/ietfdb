@@ -165,7 +165,7 @@ class SessionForm(forms.Form):
         """Concatenate constraint fields from cleaned data into a single list"""
         conflicts = []
         for cname, cfield_id, _ in self._wg_field_data:
-            if cname.slug in slugs:
+            if cname.slug in slugs and cfield_id in cleaned_data:
                 groups = cleaned_data[cfield_id]
                 # convert to python list (allow space or comma separated lists)
                 items = groups.replace(',',' ').split()
@@ -200,16 +200,18 @@ class SessionForm(forms.Form):
 
     def clean(self):
         super(SessionForm, self).clean()
-        if self.errors:
-            return self.cleaned_data
         data = self.cleaned_data
 
-        # validate the individual conflict fields
+        # Validate the individual conflict fields
         for _, cfield_id, _ in self._wg_field_data:
             try:
                 check_conflict(data[cfield_id], self.group)
             except forms.ValidationError as e:
                 self.add_error(cfield_id, e)
+
+        # Skip remaining tests if individual field tests had errors,
+        if self.errors:
+            return data
 
         # error if conflicts contain disallowed dupes
         for error in self._validate_duplicate_conflicts(data):
