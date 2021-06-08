@@ -109,16 +109,13 @@ class SessionForm(forms.Form):
         for constraintname in meeting.session_constraintnames.all():
             # two fields for each constraint: a CharField for the group list and a selector to add entries
             constraint_field = forms.CharField(max_length=255, required=False)
-            # add a new class, taking care in case some already exist
-            existing_classes = constraint_field.widget.attrs.get('class', '').split()
-            constraint_field.widget.attrs['class'] = ' '.join(existing_classes + ['wg_constraint'])
             constraint_field.widget.attrs['data-slug'] = constraintname.slug
             constraint_field.widget.attrs['data-constraint-name'] = str(constraintname).title()
+            self._add_widget_class(constraint_field.widget, 'wg_constraint')
 
             selector_field = forms.ChoiceField(choices=group_acronym_choices, required=False)
-            existing_classes = selector_field.widget.attrs.get('class', '').split()
-            selector_field.widget.attrs['class'] = ' '.join(existing_classes + ['wg_constraint_selector'])
             selector_field.widget.attrs['data-slug'] = constraintname.slug  # used by onChange handler
+            self._add_widget_class(selector_field.widget, 'wg_constraint_selector')
 
             cfield_id = 'constraint_{}'.format(constraintname.slug)
             cselector_id = 'wg_selector_{}'.format(constraintname.slug)
@@ -158,6 +155,12 @@ class SessionForm(forms.Form):
         """Iterates over wg constraint field IDs"""
         for cname, cfield_id, _ in self._wg_field_data:
             yield cname, cfield_id
+
+    @staticmethod
+    def _add_widget_class(widget, new_class):
+        """Add a new class, taking care in case some already exist"""
+        existing_classes = widget.attrs.get('class', '').split()
+        widget.attrs['class'] = ' '.join(existing_classes + [new_class])
 
     def define_clean_constraint_method(self, cfield_id):
         """Create a clean_* method for a constraint field"""
