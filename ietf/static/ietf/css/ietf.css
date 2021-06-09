@@ -1177,6 +1177,9 @@ a.fc-event, .fc-event, .fc-content, .fc-title, .fc-event-container {
   background-color: #f3f3f3;
 }
 
+.edit-meeting-schedule .session.would-violate-hint {
+    outline: 0.3em solid #F55000;
+}
 .edit-meeting-schedule .session.highlight .session-label {
   font-weight: bold;
 }

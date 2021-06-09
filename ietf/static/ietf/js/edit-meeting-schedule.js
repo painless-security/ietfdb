@@ -68,21 +68,37 @@ jQuery(document).ready(function () {
         }
     }
 
+    /**
+     * Mark or unmark a session that conflicts with the selected session
+     *
+     * @param constraintElt The element corresponding to the specific constraint
+     * @param wouldViolate True to mark or false to unmark
+     */
+    function setSessionWouldViolate(constraintElt, wouldViolate) {
+        constraintElt = jQuery(constraintElt);
+        let constraintDiv = constraintElt.closest('div.session');  // find enclosing session div
+        constraintDiv.toggleClass('would-violate-hint', wouldViolate);  // mark the session container
+        constraintElt.toggleClass('would-violate-hint', wouldViolate);  // and the specific constraint
+    }
+
     function showConstraintHints(selectedSession) {
         let sessionId = selectedSession ? selectedSession.id.slice("session".length) : null;
         // hints on the sessions
         sessions.find(".constraints > span").each(function () {
-            if (!sessionId) {
-                jQuery(this).removeClass("would-violate-hint");
-                return;
+            let wouldViolate = false;
+            let applyChange = true;
+            if (sessionId) {
+                let sessionIds = this.dataset.sessions;
+                if (!sessionIds) {
+                    applyChange = False;
+                } else {
+                    wouldViolate = sessionIds.split(",").indexOf(sessionId) !== -1;
+                }
             }
 
-            let sessionIds = this.dataset.sessions;
-            if (!sessionIds)
-                return;
-
-            let wouldViolate = sessionIds.split(",").indexOf(sessionId) != -1;
-            jQuery(this).toggleClass("would-violate-hint", wouldViolate);
+            if (applyChange) {
+                setSessionWouldViolate(this, wouldViolate);
+            }
         });
 
         // hints on timeslots
