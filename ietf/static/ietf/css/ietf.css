@@ -1080,6 +1080,11 @@ a.fc-event, .fc-event, .fc-content, .fc-title, .fc-event-container {
     align-items: center;
 }
 
+.edit-meeting-schedule .edit-grid .time-header .time-label.would-violate-hint {
+    background-color: #ffe0e0;
+    outline: #ffe0e0 solid 0.4em;
+}
+
 .edit-meeting-schedule .edit-grid .time-header .time-label span {
     display: inline-block;
     width: 100%;
@@ -1129,6 +1134,7 @@ a.fc-event, .fc-event, .fc-content, .fc-title, .fc-event-container {
 
 .edit-meeting-schedule .edit-grid .timeslot.would-violate-hint {
   background-color: #ffe0e0;
+  outline: #ffe0e0 solid 0.4em;
 }
 
 .edit-meeting-schedule .constraints .encircled,
@@ -1179,7 +1185,9 @@ a.fc-event, .fc-event, .fc-content, .fc-title, .fc-event-container {
 
 .edit-meeting-schedule .session.would-violate-hint {
     outline: 0.3em solid #F55000;
+    z-index: 1; /* raise up so the outline is not overdrawn */
 }
+
 .edit-meeting-schedule .session.highlight .session-label {
   font-weight: bold;
 }
