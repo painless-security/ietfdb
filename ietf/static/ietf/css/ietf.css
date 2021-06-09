@@ -1069,15 +1069,12 @@ a.fc-event, .fc-event, .fc-content, .fc-title, .fc-event-container {
 
 .edit-meeting-schedule .edit-grid .time-header {
     position: relative;
-    display: flex;
-    flex-direction: row;
     height: 1.5em;
-    width: 100%;
     padding-bottom: 0.15em;
 }
 
 .edit-meeting-schedule .edit-grid .time-header .time-label {
-    display: flex;
+    display: inline-block;
     position: relative;
     width: 100%;
     align-items: center;
