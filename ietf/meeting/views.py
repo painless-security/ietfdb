@@ -581,10 +581,16 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
     def prepare_timeslots_for_display(timeslots, rooms):
         """Prepare timeslot data for template
 
-        Rooms are first partitioned into groups that
-        have identical sets of timeslots for the entire meeting.
+        Prepares timeslots for display by sorting into groups in a structure
+        that can be rendered by the template and by adding some data to the timeslot
+        instances. Currently adds a 'layout_width' property to each timeslot instance.
+        The layout_width is the width, in em, that should be used to style the timeslot's
+        width.
 
-        The result of this section is an OrderedDict, days, keyed by the Date
+        Rooms are partitioned into groups that have identical sets of timeslots
+        for the entire meeting.
+
+        The result of this method is an OrderedDict, days, keyed by the Date
         of each day that has at least one timeslot. The value of days[day] is a
         list with one entry for each group of rooms. Each entry is a list of
         dicts with keys 'room' and 'timeslots'. The 'room' value is the room
