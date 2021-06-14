@@ -2271,8 +2271,6 @@ def session_details(request, num, acronym):
             qs = [p for p in qs if p.document.get_state_slug(p.document.type_id)!='deleted']
             session.type_counter.update([p.document.type.slug for p in qs])
 
-        session.order_number = session.order_in_meeting()
-
     # we somewhat arbitrarily use the group of the last session we get from
     # get_sessions() above when checking can_manage_session_materials()
     can_manage = can_manage_session_materials(request.user, session.group, session)
@@ -3648,8 +3646,14 @@ def proceedings(request, num=None):
 
     meeting = get_meeting(num)
 
-    if (meeting.number.isdigit() and int(meeting.number) <= 64) or not meeting.schedule or not meeting.schedule.assignments.exists():
-            return HttpResponseRedirect( 'https://www.ietf.org/proceedings/%s' % num )
+    if (meeting.number.isdigit() and int(meeting.number) <= 64):
+        return HttpResponseRedirect( 'https://www.ietf.org/proceedings/%s' % num )
+
+    if not meeting.schedule or not meeting.schedule.assignments.exists():
+        kwargs = dict()
+        if num:
+            kwargs['num'] = num
+        return redirect('ietf.meeting.views.materials', **kwargs)
 
     begin_date = meeting.get_submission_start_date()
     cut_off_date = meeting.get_submission_cut_off_date()
