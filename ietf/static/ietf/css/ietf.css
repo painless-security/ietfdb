@@ -1081,9 +1081,9 @@ a.fc-event, .fc-event, .fc-content, .fc-title, .fc-event-container {
 }
 
 .edit-meeting-schedule .edit-grid .time-header .time-label span {
+    display: inline-block;
     width: 100%;
     text-align: center;
-    align-self: flex-end;
     color: #444444;
 }
 

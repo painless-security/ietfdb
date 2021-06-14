@@ -653,12 +653,14 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
         max_timeslots = max(rd['timeslot_count'] for rd in room_data.values())
 
         # Partition rooms into groups with identical timeslot arrangements.
-        # Start by sorting the rooms.
+        # Start by discarding any roos that have no timeslots.
+        rooms_with_timeslots = [r for r in rooms if r.pk in room_data]
+        # Then sort the remaining rooms.
         sorted_rooms = sorted(
-            rooms,
+            rooms_with_timeslots,
             key=lambda room: (
                 # First, sort regular session rooms ahead of others - these will usually
-                # have more timeslots than other room types
+                # have more timeslots than other room types.
                 0 if room_data[room.pk]['timeslot_count'] == max_timeslots else 1,
                 # Sort rooms with earlier timeslots ahead of later
                 room_data[room.pk]['first_timeslot'].time,

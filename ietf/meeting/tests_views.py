@@ -927,8 +927,6 @@ class EditMeetingScheduleTests(TestCase):
         for time_row, duration_row in zip(times, durations):
             room_groups.append(RoomFactory.create_batch(rooms_in_group, meeting=meeting))
             rooms_in_group += 1  # put a different number of rooms in each group to help identify errors in grouping
-            for room in room_groups[-1]:
-                room.session_types.add('regular')
             for time, duration in zip(time_row, duration_row):
                 for room in room_groups[-1]:
                     TimeSlotFactory(
