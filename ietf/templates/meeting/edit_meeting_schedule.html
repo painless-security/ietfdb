@@ -99,7 +99,17 @@
                 <div class="time-header">
                   {# All rooms in a group have same timeslots; grab the first for the labels #}
                   {% for t in rgroup.0.timeslots %}
-                    <div class="time-label" style="width: {{ t.layout_width }}rem"><span>{{ t.time|date:"G:i" }} - {{ t.end_time|date:"G:i" }}</span></div>
+                    <div class="time-label" style="width: {{ t.layout_width }}rem">
+                      <span>
+                        {{ t.time|date:"G:i" }} - {{ t.end_time|date:"G:i" }}
+                        <i class="fa fa-exchange swap-timeslot-col"
+                           data-room-group="{{ forloop.parentloop.counter0 }}"
+                           data-origin-label="{{ day|date:"l, N j" }}, {{ t.time|date:"G:i" }}-{{ t.end_time|date:"G:i" }}"
+                           data-timeslot-pk="{{ t.pk }}"
+                           data-room-pks="{% for r in rgroup %}{{ r.room.pk }},{% endfor %}"
+                           data-toggle="modal" data-target="#swap-timeslot-col-modal"></i>
+                      </span>
+                    </div>
                   {% endfor %}
                 </div>
                 {% for room_data in rgroup %}{% with room_data.room as room %}
@@ -211,6 +221,50 @@
                 <input type="radio" name="target_day" value="{{ day.isoformat }}"> {{ day|date:"l, N j, Y" }}
               </label>
             {% endfor %}
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            <button type="submit" name="action" value="swapdays" class="btn btn-primary">Swap days</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="swap-timeslot-col-modal" class="modal" role="dialog" aria-labelledby="swap-timeslot-col-modal-title">
+      <div class="modal-dialog modal-lg" role="document">
+        <form class="modal-content" method="post">{% csrf_token %}
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal">
+              <span aria-hidden="true">&times;</span>
+              <span class="sr-only">Close</span>
+            </button>
+            <h4 class="modal-title" id="swap-timeslot-col-modal-title">
+              Swap <span class="origin-label"></span> with</h4>
+          </div>
+
+          <input type="hidden" name="source_timeslot_pk" value="">
+          <input type="hidden" name="source_room_pks" value="">
+
+          <div class="modal-body">
+              <div class="day-options">
+            {% for day, day_data in days.items %}
+              {% for rgroup in day_data %}
+              <div class="room-group room-group-{{ forloop.counter0 }}">
+                {% if rgroup.0.timeslots|length > 0 %}
+                  {{ day|date:"l, N j" }}
+                  <div class="timeslot-options">
+                    {% for t in rgroup.0.timeslots %}
+                      <label>
+                        <input type="radio" name="target_timeslot" value="{{ t.pk }}">{{ t.time|date:"G:i" }}-{{ t.end_time|date:"G:i" }}
+                      </label>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </div>
+              {% endfor %}
+            {% endfor %}
+              </div>
           </div>
 
           <div class="modal-footer">
