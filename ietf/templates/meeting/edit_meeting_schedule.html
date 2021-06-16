@@ -106,7 +106,7 @@
                            data-room-group="{{ forloop.parentloop.counter0 }}"
                            data-origin-label="{{ day|date:"l, N j" }}, {{ t.time|date:"G:i" }}-{{ t.end_time|date:"G:i" }}"
                            data-timeslot-pk="{{ t.pk }}"
-                           data-room-pks="{% for r in rgroup %}{{ r.room.pk }},{% endfor %}"
+                           data-room-pks="{% for r in rgroup %}{{ r.room.pk }}{% if not forloop.last %},{% endif %}{% endfor %}"
                            data-toggle="modal" data-target="#swap-timeslot-col-modal"></i>
                       </span>
                     </div>
@@ -243,8 +243,8 @@
               Swap <span class="origin-label"></span> with</h4>
           </div>
 
-          <input type="hidden" name="source_timeslot_pk" value="">
-          <input type="hidden" name="source_room_pks" value="">
+          <input type="hidden" name="origin_timeslot" value="">
+          <input type="hidden" name="rooms" value="">
 
           <div class="modal-body">
               <div class="day-options">
@@ -269,7 +269,7 @@
 
           <div class="modal-footer">
             <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
-            <button type="submit" name="action" value="swapdays" class="btn btn-primary">Swap days</button>
+            <button type="submit" name="action" value="swaptimeslots" class="btn btn-primary">Swap timeslots</button>
           </div>
         </form>
       </div>

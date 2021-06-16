@@ -331,6 +331,8 @@ jQuery(document).ready(function () {
             originRadio.parent().addClass('text-muted');
             originRadio.prop('disabled', true);
             modal.find('.modal-title .origin-label').text(this.dataset.originLabel);
+            modal.find('input[name="origin_timeslot"]').val(this.dataset.timeslotPk);
+            modal.find('input[name="rooms"]').val(this.dataset.roomPks);
         })
     }
 
