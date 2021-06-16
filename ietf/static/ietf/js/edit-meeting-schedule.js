@@ -318,22 +318,22 @@ jQuery(document).ready(function () {
 
         // swap timeslot columns
         content.find('.swap-timeslot-col').on('click', function() {
-            let roomGroup = this.dataset.roomGroup;
+            let roomGroup = this.closest('.room-group').dataset;
             let modal = content.find('#swap-timeslot-col-modal');
             let radios = modal.find(".modal-body label");
             radios.removeClass('text-muted');
             radios.find("input[name=target_timeslot]").prop("disabled", false).prop("checked", false);
 
             modal.find('.room-group').hide();
-            modal.find('.room-group-' + roomGroup).show();
+            modal.find('.room-group-' + roomGroup.index).show();
 
             let originRadio = radios.find('input[value="' + this.dataset.timeslotPk +'"]');
             originRadio.parent().addClass('text-muted');
             originRadio.prop('disabled', true);
             modal.find('.modal-title .origin-label').text(this.dataset.originLabel);
             modal.find('input[name="origin_timeslot"]').val(this.dataset.timeslotPk);
-            modal.find('input[name="rooms"]').val(this.dataset.roomPks);
-        })
+            modal.find('input[name="rooms"]').val(roomGroup.rooms);
+        });
     }
 
     // hints for the current schedule

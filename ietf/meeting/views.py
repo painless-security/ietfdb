@@ -790,6 +790,10 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
             return HttpResponseRedirect(request.get_full_path())
 
         elif action == 'swaptimeslots':
+            # Swap sets of timeslots with equal start/end time for a given set of rooms.
+            # Gets start and end times from TimeSlot instances for the origin and target,
+            # then swaps all timeslots for the requested rooms whose start/end match those.
+            # The origin/target timeslots do not need to be the same duration.
             swap_timeslots_form = SwapTimeslotsForm(meeting, request.POST)
             if not swap_timeslots_form.is_valid():
                 return HttpResponse("Invalid swap: {}".format(swap_timeslots_form.errors), status=400)

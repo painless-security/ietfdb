@@ -95,7 +95,9 @@
             </div>
 
             {% for rgroup in day_data %}
-              <div class="room-group">
+              <div class="room-group"
+                   data-index="{{ forloop.counter0 }}"
+                   data-rooms="{% for r in rgroup %}{{ r.room.pk }}{% if not forloop.last %},{% endif %}{% endfor %}">
                 <div class="time-header">
                   {# All rooms in a group have same timeslots; grab the first for the labels #}
                   {% for t in rgroup.0.timeslots %}
@@ -103,10 +105,8 @@
                       <span>
                         {{ t.time|date:"G:i" }} - {{ t.end_time|date:"G:i" }}
                         <i class="fa fa-exchange swap-timeslot-col"
-                           data-room-group="{{ forloop.parentloop.counter0 }}"
                            data-origin-label="{{ day|date:"l, N j" }}, {{ t.time|date:"G:i" }}-{{ t.end_time|date:"G:i" }}"
                            data-timeslot-pk="{{ t.pk }}"
-                           data-room-pks="{% for r in rgroup %}{{ r.room.pk }}{% if not forloop.last %},{% endif %}{% endfor %}"
                            data-toggle="modal" data-target="#swap-timeslot-col-modal"></i>
                       </span>
                     </div>
