@@ -290,49 +290,68 @@ jQuery(document).ready(function () {
             }
         });
 
+
+        let updateSwapSubmitButton = function (modal, inputName) {
+            modal.find("button[type=submit]").prop(
+              "disabled",
+              modal.find("input[name='" + inputName + "']:checked").length === 0
+            );
+        };
+
         // swap days
+        let swapDaysModal = content.find("#swap-days-modal");
+        let swapDaysRadios = swapDaysModal.find(".modal-body label");
+        let updateSwapDaysSubmitButton = function () {
+            updateSwapSubmitButton(swapDaysModal, 'target_day')
+        };
         content.find(".swap-days").on("click", function () {
             let originDay = this.dataset.dayid;
-            let modal = content.find("#swap-days-modal");
-            let radios = modal.find(".modal-body label");
-            radios.removeClass("text-muted");
-            radios.find("input[name='target_day']").prop("disabled", false).prop("checked", false);
+            swapDaysRadios.removeClass("text-muted");
+            swapDaysRadios.find("input[name='target_day']").prop("disabled", false).prop("checked", false);
 
-            let originRadio = radios.find("input[name=target_day][value=" + originDay + "]");
+            let originRadio = swapDaysRadios.find("input[name=target_day][value=" + originDay + "]");
             originRadio.parent().addClass("text-muted");
             originRadio.prop("disabled", true);
 
-            modal.find(".modal-title .day").text(jQuery.trim(originRadio.parent().text()));
-            modal.find("input[name=source_day]").val(originDay);
+            swapDaysModal.find(".modal-title .day").text(jQuery.trim(originRadio.parent().text()));
+            swapDaysModal.find("input[name=source_day]").val(originDay);
 
             updateSwapDaysSubmitButton();
+            swapDaysModal.modal('show'); // show via JS so it won't open until it is initialized
         });
 
-        function updateSwapDaysSubmitButton() {
-            content.find("#swap-days-modal button[type=submit]").prop("disabled", content.find("#swap-days-modal input[name=target_day]:checked").length == 0);
-        }
-
-        content.find("#swap-days-modal input[name=target_day]").on("change", function () {
+        swapDaysModal.find("input[name=target_day]").on("change", function () {
             updateSwapDaysSubmitButton();
         });
 
         // swap timeslot columns
+        let swapTimeslotsModal = content.find('#swap-timeslot-col-modal');
+        let swapTimeslotsRadios = swapTimeslotsModal.find(".modal-body label");
+        let updateSwapTimeslotsSubmitButton = function () {
+            updateSwapSubmitButton(swapTimeslotsModal, 'target_timeslot');
+        };
         content.find('.swap-timeslot-col').on('click', function() {
             let roomGroup = this.closest('.room-group').dataset;
-            let modal = content.find('#swap-timeslot-col-modal');
-            let radios = modal.find(".modal-body label");
-            radios.removeClass('text-muted');
-            radios.find("input[name=target_timeslot]").prop("disabled", false).prop("checked", false);
+            swapTimeslotsRadios.removeClass('text-muted');
+            swapTimeslotsRadios.find("input[name=target_timeslot]").prop("disabled", false).prop("checked", false);
 
-            modal.find('.room-group').hide();
-            modal.find('.room-group-' + roomGroup.index).show();
+            swapTimeslotsModal.find('.room-group').hide();
+            swapTimeslotsModal.find('.room-group-' + roomGroup.index).show();
 
-            let originRadio = radios.find('input[value="' + this.dataset.timeslotPk +'"]');
+            let originRadio = swapTimeslotsRadios.find('input[value="' + this.dataset.timeslotPk +'"]');
             originRadio.parent().addClass('text-muted');
             originRadio.prop('disabled', true);
-            modal.find('.modal-title .origin-label').text(this.dataset.originLabel);
-            modal.find('input[name="origin_timeslot"]').val(this.dataset.timeslotPk);
-            modal.find('input[name="rooms"]').val(roomGroup.rooms);
+            swapTimeslotsModal.find('.modal-title .origin-label').text(this.dataset.originLabel);
+            swapTimeslotsModal.find('input[name="origin_timeslot"]').val(this.dataset.timeslotPk);
+            swapTimeslotsModal.find('input[name="rooms"]').val(roomGroup.rooms);
+
+            // Open the modal via JS so it won't open until it is initialized
+            updateSwapTimeslotsSubmitButton();
+            swapTimeslotsModal.modal('show');
+        });
+
+        swapTimeslotsModal.find("input[name=target_timeslot]").on("change", function () {
+            updateSwapTimeslotsSubmitButton();
         });
     }
 

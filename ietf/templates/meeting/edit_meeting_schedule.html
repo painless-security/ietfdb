@@ -90,7 +90,7 @@
         {% for day, day_data in days.items %}
           <div class="day">
             <div class="day-label">
-              <strong>{{ day|date:"l" }}</strong> <i class="fa fa-exchange swap-days" data-dayid="{{ day.isoformat }}" data-toggle="modal" data-target="#swap-days-modal"></i><br>
+              <strong>{{ day|date:"l" }}</strong> <i class="fa fa-exchange swap-days" data-dayid="{{ day.isoformat }}"></i><br>
               {{ day|date:"N j, Y" }}
             </div>
 
@@ -106,8 +106,7 @@
                         {{ t.time|date:"G:i" }} - {{ t.end_time|date:"G:i" }}
                         <i class="fa fa-exchange swap-timeslot-col"
                            data-origin-label="{{ day|date:"l, N j" }}, {{ t.time|date:"G:i" }}-{{ t.end_time|date:"G:i" }}"
-                           data-timeslot-pk="{{ t.pk }}"
-                           data-toggle="modal" data-target="#swap-timeslot-col-modal"></i>
+                           data-timeslot-pk="{{ t.pk }}"></i>
                       </span>
                     </div>
                   {% endfor %}
