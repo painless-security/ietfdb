@@ -994,6 +994,85 @@ class EditMeetingScheduleTests(TestCase):
         self.assertIn('BoF', bof_tags.eq(0).text(),
                       'BoF tag should contain text "BoF"')
 
+    def test_swap_timeslots(self):
+        """Schedule timeslot groups should swap properly"""
+
+        # Create a meeting and an empty schedule
+        # Meeting must be in the future so it can be edited
+        meeting = MeetingFactory(
+            type_id='ietf',
+            date=datetime.date.today() + datetime.timedelta(days=7),
+            populate_schedule=False,
+        )
+        meeting.schedule = ScheduleFactory(meeting=meeting)
+        meeting.save()
+
+        # Create room groups
+        room_groups = [
+            RoomFactory.create_batch(2, meeting=meeting),
+            RoomFactory.create_batch(2, meeting=meeting),
+        ]
+
+        # Set up different sets of timeslots
+        t0 = datetime.datetime.combine(meeting.date, datetime.time(11, 0))
+        dur = datetime.timedelta(hours=2)
+        for room in room_groups[0]:
+            TimeSlotFactory(meeting=meeting, location=room, duration=dur, time=t0)
+            TimeSlotFactory(meeting=meeting, location=room, duration=dur, time=t0 + datetime.timedelta(days=1, hours=2))
+            TimeSlotFactory(meeting=meeting, location=room, duration=dur, time=t0 + datetime.timedelta(days=2, hours=4))
+
+        for room in room_groups[1]:
+            TimeSlotFactory(meeting=meeting, location=room, duration=dur, time=t0 + datetime.timedelta(hours=1))
+            TimeSlotFactory(meeting=meeting, location=room, duration=dur, time=t0 + datetime.timedelta(days=1, hours=3))
+            TimeSlotFactory(meeting=meeting, location=room, duration=dur, time=t0 + datetime.timedelta(days=2, hours=5))
+
+        # And now put sessions in the timeslots
+        for ts in meeting.timeslot_set.all():
+            SessionFactory(
+                meeting=meeting,
+                name=str(ts.pk),  # label to identify where it started
+                add_to_schedule=False,
+            ).timeslotassignments.create(
+                timeslot=ts,
+                schedule=meeting.schedule,
+            )
+
+        url = urlreverse('ietf.meeting.views.edit_meeting_schedule', kwargs=dict(num=meeting.number))
+        username = meeting.schedule.owner.user.username
+        self.client.login(username=username, password=username + '+password')
+
+        # Swap group 0's first and last sessions
+        r = self.client.post(
+            url,
+            dict(
+                action='swaptimeslots',
+                origin_timeslot=str(room_groups[0][0].timeslot_set.first().pk),
+                target_timeslot=str(room_groups[0][0].timeslot_set.last().pk),
+                rooms=','.join([str(room.pk) for room in room_groups[0]]),
+            )
+        )
+        self.assertEqual(r.status_code, 302)
+
+        # Validate results
+        for index, room in enumerate(room_groups[0]):
+            timeslots = list(room.timeslot_set.all())
+            self.assertEqual(timeslots[0].session.name, str(timeslots[-1].pk),
+                             'Session from last timeslot in room (0, {}) should now be in first'.format(index))
+            self.assertEqual(timeslots[-1].session.name, str(timeslots[0].pk),
+                             'Session from first timeslot in room (0, {}) should now be in last'.format(index))
+            self.assertEqual(
+                [ts.session.name for ts in timeslots[1:-1]],
+                [str(ts.pk) for ts in timeslots[1:-1]],
+                'Sessions in middle timeslots should be unchanged'
+            )
+        for index, room in enumerate(room_groups[1]):
+            timeslots = list(room.timeslot_set.all())
+            self.assertEqual(
+                [ts.session.name for ts in timeslots],
+                [str(ts.pk) for ts in timeslots],
+                "Sessions in other room group's timeslots should be unchanged"
+            )
+
 
 class ReorderSlidesTests(TestCase):
 
