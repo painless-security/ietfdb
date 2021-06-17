@@ -25,7 +25,7 @@ from ietf.group.models import Group, GroupEvent
 from ietf.secr.meetings.blue_sheets import create_blue_sheets
 from ietf.secr.meetings.forms import ( BaseMeetingRoomFormSet, MeetingModelForm, MeetingSelectForm,
     MeetingRoomForm, MiscSessionForm, TimeSlotForm, RegularSessionEditForm,
-    UploadBlueSheetForm )
+    UploadBlueSheetForm, MeetingRoomOptionsForm )
 from ietf.secr.proceedings.utils import handle_upload_file
 from ietf.secr.sreq.views import get_initial_session
 from ietf.secr.utils.meeting import get_session, get_timeslot
@@ -627,29 +627,34 @@ def rooms(request, meeting_id, schedule_name):
             return redirect('ietf.secr.meetings.views.main', meeting_id=meeting_id,schedule_name=schedule_name)
 
         formset = RoomFormset(request.POST, instance=meeting, prefix='room')
-        if formset.is_valid():
+        options_form = MeetingRoomOptionsForm(request.POST)
+        if formset.is_valid() and options_form.is_valid():
             formset.save()
 
-            # if we are creating rooms for the first time create full set of timeslots
-            if first_time:
-                build_timeslots(meeting)
+            # only create timeslots on request
+            if options_form.cleaned_data['copy_timeslots']:
+                # if we are creating rooms for the first time create full set of timeslots
+                if first_time:
+                    build_timeslots(meeting)
 
-            # otherwise if we're modifying rooms
-            else:
-                # add timeslots for new rooms, deleting rooms automatically deletes timeslots
-                for form in formset.forms[formset.initial_form_count():]:
-                    if form.instance.pk:
-                        build_timeslots(meeting,room=form.instance)
+                # otherwise if we're modifying rooms
+                else:
+                    # add timeslots for new rooms, deleting rooms automatically deletes timeslots
+                    for form in formset.forms[formset.initial_form_count():]:
+                        if form.instance.pk:
+                            build_timeslots(meeting,room=form.instance)
 
             messages.success(request, 'Meeting Rooms changed successfully')
             return redirect('ietf.secr.meetings.views.rooms', meeting_id=meeting_id, schedule_name=schedule_name)
     else:
         formset = RoomFormset(instance=meeting, prefix='room')
+        options_form = MeetingRoomOptionsForm()
 
     return render(request, 'meetings/rooms.html', {
         'meeting': meeting,
         'schedule': schedule,
         'formset': formset,
+        'options_form': options_form,
         'selected': 'rooms'}
     )
 
