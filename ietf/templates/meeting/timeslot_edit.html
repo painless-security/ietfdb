@@ -6,19 +6,21 @@
 {% block title %}IETF {{ meeting.number }} Meeting Agenda: Timeslot/Room Availability{% endblock %}
 
 {% block morecss %}
-.tstable { width: 100%;}
-.tstable th { white-space: nowrap;}
-.tstable td { white-space: nowrap;}
-.capacity { font-size:80%; font-weight: normal;}
+  .tstable { width: 100%;}
+  .tstable th { white-space: nowrap;}
+  .tstable td { white-space: nowrap;}
+  .capacity { font-size:80%; font-weight: normal;}
 
-.tstable .tstype_unavail {background-color:#666;}
+  .tstable .tstype_unavail {background-color:#666;}
 {% endblock %}
 
 {% block content %}
   {% origin %}
 
-
-<table class="tstable table table-striped table-compact table-bordered">
+<p class="pull-right">
+  <a href="{% url "ietf.meeting.views.create_timeslot" num=meeting.number %}">New timeslot</a>
+</p>
+<table id="timeslot-table" class="tstable table table-striped table-compact table-bordered">
   <thead>
   <tr>
   <th></th>
@@ -45,13 +47,52 @@
     <th>{{room.name}}<span class='capacity'>{% if room.capacity %} ({{room.capacity}}){% endif %}</th>
     {% for day in time_slices %}
       {% for slice in date_slices|lookup:day %}
-        {% with ts=ts_list.popleft %}
-          <td{% if ts %} class="tstype_{{ts.type.slug}}"{% endif %}>{% if ts %}<a href="{% url 'ietf.meeting.views.edit_timeslot_type' num=meeting.number slot_id=ts.id %}">{{ts.type.slug}}</a>{% endif %}</td>
-        {% endwith %}
+        {% include 'meeting/timeslot_edit_timeslot.html' with ts=ts_list.popleft only %}
       {% endfor %}
     {% endfor %}
   </tr>
   {% endfor %}
 </table>
 
+{% endblock %}
+
+{% block js %}
+  <script type="text/javascript">
+  window.addEventListener('load', function (event) {
+    document.getElementById('timeslot-table').addEventListener('click', function(event) {
+      let clicked = event.target; // find out what was clicked
+      if (clicked.classList.contains('timeslot-delete-button')) {
+        // handle timeslot delete button click
+        let timeslotElt = clicked.closest('.timeslot');
+        let deleteId = timeslotElt.dataset.timeslotPk;
+        deleteTimeSlot(deleteId)
+        .error(function(jqXHR, textStatus) {
+          displayError('Error deleting timeslot: ' + jqXHR.responseText)
+        })
+        .done(function () {timeslotElt.parentNode.removeChild(timeslotElt)});
+      }
+    })
+  });
+
+  /**
+   * Make an AJAX request to delete a TimeSlot
+   *
+   * @param id ID of TimeSlot to delete
+   * @returns jqXHR object corresponding to jQuery ajax request
+   */
+  function deleteTimeSlot(id) {
+    return jQuery.ajax({
+      method: 'post',
+      timeout: 5 * 1000,
+      data: {
+        action: 'delete',
+        slot_id: String(id)
+      }
+    });
+  }
+
+  function displayError(msg) {
+    window.alert(msg);
+  }
+  </script>
 {% endblock %}
