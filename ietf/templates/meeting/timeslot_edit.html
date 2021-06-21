@@ -17,42 +17,42 @@
 {% block content %}
   {% origin %}
 
-<p class="pull-right">
-  <a href="{% url "ietf.meeting.views.create_timeslot" num=meeting.number %}">New timeslot</a>
-</p>
-<table id="timeslot-table" class="tstable table table-striped table-compact table-bordered">
-  <thead>
-  <tr>
-  <th></th>
-  {% for day in time_slices %}
-    <th colspan="{{date_slices|colWidth:day}}"> 
-      {{day|date:'D'}}&nbsp;({{day}})
-    </th>
-  {% endfor %}
-  </tr>
-  <tr>
-    <th></th>
-    {% for day in time_slices %}
-	  {% for slot in slot_slices|lookup:day %}
-	      <th>
-                {{slot.time|date:'Hi'}}-{{slot.end_time|date:'Hi'}}
-              </th>
-	  {% endfor %}
-    {% endfor %}
-  </tr>
-  </thead>
-
-  {% for room in rooms %}
-  <tr>
-    <th>{{room.name}}<span class='capacity'>{% if room.capacity %} ({{room.capacity}}){% endif %}</th>
-    {% for day in time_slices %}
-      {% for slice in date_slices|lookup:day %}
-        {% include 'meeting/timeslot_edit_timeslot.html' with ts=ts_list.popleft only %}
+  <p class="pull-right">
+    <a href="{% url "ietf.meeting.views.create_timeslot" num=meeting.number %}">New timeslot</a>
+  </p>
+  <table id="timeslot-table" class="tstable table table-striped table-compact table-bordered">
+    <thead>
+    <tr>
+      <th></th>
+      {% for day in time_slices %}
+        <th colspan="{{date_slices|colWidth:day}}">
+          {{day|date:'D'}}&nbsp;({{day}})
+        </th>
       {% endfor %}
+    </tr>
+    <tr>
+      <th></th>
+      {% for day in time_slices %}
+        {% for slot in slot_slices|lookup:day %}
+          <th>
+            {{slot.time|date:'Hi'}}-{{slot.end_time|date:'Hi'}}
+          </th>
+        {% endfor %}
+      {% endfor %}
+    </tr>
+    </thead>
+
+    {% for room in rooms %}
+      <tr>
+        <th>{{room.name}}<span class='capacity'>{% if room.capacity %} ({{room.capacity}}){% endif %}</th>
+        {% for day in time_slices %}
+          {% for slice in date_slices|lookup:day %}
+            {% include 'meeting/timeslot_edit_timeslot.html' with ts=ts_list.popleft only %}
+          {% endfor %}
+        {% endfor %}
+      </tr>
     {% endfor %}
-  </tr>
-  {% endfor %}
-</table>
+  </table>
 
 {% endblock %}
 
