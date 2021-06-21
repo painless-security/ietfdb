@@ -1,0 +1,14 @@
+<td{% if ts %} class="tstype_{{ ts.type.slug }}"{% endif %}>
+  {% if ts %}
+    <div class="thumbnail timeslot" data-timeslot-pk="{{ ts.pk }}">
+    {{ ts.name }}
+      <!-- todo display timeslot type, number of sessions using it -->
+    <div class="pull-right">
+      <a href="{% url 'ietf.meeting.views.edit_timeslot' num=ts.meeting.number slot_id=ts.id %}">
+        <span class="fa fa-pencil-square-o"></span>
+      </a>
+        <span class="fa fa-trash timeslot-delete-button"></span>
+    </div>
+    </div>
+  {% endif %}
+</td>

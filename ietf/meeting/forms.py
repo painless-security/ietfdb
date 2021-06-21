@@ -21,6 +21,7 @@ from ietf.meeting.models import Session, Meeting, Schedule, countries, timezones
 from ietf.meeting.helpers import get_next_interim_number, make_materials_directories
 from ietf.meeting.helpers import is_interim_meeting_approved, get_next_agenda_name
 from ietf.message.models import Message
+from ietf.name.models import TimeSlotTypeName
 from ietf.person.models import Person
 from ietf.utils.fields import DatepickerDateField, DurationField, MultiEmailField
 from ietf.utils.validators import ( validate_file_size, validate_mime_type,
@@ -417,3 +418,57 @@ class SwapTimeslotsForm(forms.Form):
         self.fields['origin_timeslot'].queryset = meeting.timeslot_set.all()
         self.fields['target_timeslot'].queryset = meeting.timeslot_set.all()
         self.fields['rooms'].queryset = meeting.room_set.all()
+
+
+class TimeSlotEditForm(forms.ModelForm):
+    class Meta:
+        model = TimeSlot
+        fields = ('name', 'type', 'time', 'duration', 'show_location', 'location')
+
+    def __init__(self, *args, **kwargs):
+        super(TimeSlotEditForm, self).__init__(*args, **kwargs)
+        self.fields['location'].queryset = self.instance.meeting.room_set.all()
+
+
+class TimeSlotCreateForm(forms.Form):
+    name = forms.CharField(max_length=255)
+    type = forms.ModelChoiceField(queryset=TimeSlotTypeName.objects.all(), initial='regular')
+    days = forms.TypedMultipleChoiceField(
+        widget=forms.CheckboxSelectMultiple,
+        coerce=lambda s: datetime.date.fromordinal(int(s)),
+        empty_value=None,
+    )
+    time = forms.TimeField()
+    duration = CustomDurationField()
+    show_location = forms.BooleanField(required=False, initial=True)
+    locations = forms.ModelMultipleChoiceField(
+        required=False,
+        queryset=Room.objects.none(),
+        widget=forms.CheckboxSelectMultiple,
+    )
+
+    def __init__(self, meeting, *args, **kwargs):
+        super(TimeSlotCreateForm, self).__init__(*args, **kwargs)
+        self.fields['days'].choices = self._day_choices(meeting)
+        self.fields['locations'].queryset = meeting.room_set.order_by('name')
+
+    @staticmethod
+    def _day_choices(meeting):
+        """Generates an iterable of value, label pairs for a choice field
+
+        Uses toordinal() to represent dates - would prefer to use isoformat(),
+        but that is not available in python 3.6..
+        """
+        meeting_days = set(
+            meeting.date + datetime.timedelta(days=n)
+            for n in range(meeting.days)
+        )
+        timeslot_days = set(
+            t.date()
+            for t in meeting.timeslot_set.values_list('time', flat=True).distinct()
+        )
+        choices = [
+            (str(day.toordinal()), day.strftime('%A ({})'.format(day.isoformat())))
+            for day in sorted(meeting_days.union(timeslot_days))
+        ]
+        return choices
