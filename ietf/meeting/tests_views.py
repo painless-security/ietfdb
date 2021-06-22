@@ -994,10 +994,12 @@ class EditMeetingScheduleTests(TestCase):
         self.assertIn('BoF', bof_tags.eq(0).text(),
                       'BoF tag should contain text "BoF"')
 
-    def test_swap_timeslots(self):
-        """Schedule timeslot groups should swap properly"""
+    def _setup_for_swap_timeslots(self):
+        """Create a meeting, rooms, and schedule for swap_timeslots testing
 
-        # Create a meeting and an empty schedule
+        Creates two groups of rooms with disjoint timeslot sets, modeling the room grouping in
+        the edit_meeting_schedule view.
+        """
         # Meeting must be in the future so it can be edited
         meeting = MeetingFactory(
             type_id='ietf',
@@ -1036,6 +1038,16 @@ class EditMeetingScheduleTests(TestCase):
                 timeslot=ts,
                 schedule=meeting.schedule,
             )
+        return meeting, room_groups
+
+    def test_swap_timeslots(self):
+        """Schedule timeslot groups should swap properly
+
+        This tests the case currently exercised by the UI - where the rooms are grouped according to
+        entirely equivalent sets of timeslots. Thus, there is always a matching timeslot for every (or no)
+        room as long as the rooms parameter to the ajax call includes only one group.
+        """
+        meeting, room_groups = self._setup_for_swap_timeslots()
 
         url = urlreverse('ietf.meeting.views.edit_meeting_schedule', kwargs=dict(num=meeting.number))
         username = meeting.schedule.owner.user.username
@@ -1067,6 +1079,96 @@ class EditMeetingScheduleTests(TestCase):
             )
         for index, room in enumerate(room_groups[1]):
             timeslots = list(room.timeslot_set.all())
+            self.assertFalse(
+                any(ts.session is None for ts in timeslots),
+                "Sessions in other room group's timeslots should still be assigned"
+            )
+            self.assertEqual(
+                [ts.session.name for ts in timeslots],
+                [str(ts.pk) for ts in timeslots],
+                "Sessions in other room group's timeslots should be unchanged"
+            )
+
+    def test_swap_timeslots_handles_unmatched(self):
+        """Sessions in unmatched timeslots should be unassigned when swapped
+
+        This more generally tests the back end by exercising the situation where a timeslot in the
+        affected rooms does not have an equivalent timeslot target. This is not used by the UI as of
+        now (2021-06-22), but should function correctly.
+        """
+        meeting, room_groups = self._setup_for_swap_timeslots()
+
+        # Remove a timeslot and session from only one room in group 0
+        ts_to_remove = room_groups[0][1].timeslot_set.last()
+        ts_to_remove.session.delete()
+        ts_to_remove.delete()  # our object still exists but has no db object
+
+        # Add a matching timeslot to group 1 so we can be sure it's being ignored.
+        # If not, this session will be unassigned when we swap timeslots on group 0.
+        new_ts = TimeSlotFactory(
+            meeting=meeting,
+            location=room_groups[1][0],
+            duration=ts_to_remove.duration,
+            time=ts_to_remove.time,
+        )
+        SessionFactory(
+            meeting=meeting,
+            name=str(new_ts.pk),
+            add_to_schedule=False,
+        ).timeslotassignments.create(
+            timeslot=new_ts,
+            schedule=meeting.schedule,
+        )
+
+        url = urlreverse('ietf.meeting.views.edit_meeting_schedule', kwargs=dict(num=meeting.number))
+        username = meeting.schedule.owner.user.username
+        self.client.login(username=username, password=username + '+password')
+
+        # Now swap between first and last timeslots in group 0
+        r = self.client.post(
+            url,
+            dict(
+                action='swaptimeslots',
+                origin_timeslot=str(room_groups[0][0].timeslot_set.first().pk),
+                target_timeslot=str(room_groups[0][0].timeslot_set.last().pk),
+                rooms=','.join([str(room.pk) for room in room_groups[0]]),
+            )
+        )
+        self.assertEqual(r.status_code, 302)
+
+        # Validate results
+        for index, room in enumerate(room_groups[0]):
+            timeslots = list(room.timeslot_set.all())
+            if index == 1:
+                # special case - this has no matching timeslot because we deleted it above
+                self.assertIsNone(timeslots[0].session, 'Unmatched timeslot should be empty after swap')
+                session_that_should_be_unassigned = Session.objects.get(name=str(timeslots[0].pk))
+                self.assertEqual(session_that_should_be_unassigned.timeslotassignments.count(), 0,
+                                 'Session that was in an unmatched timeslot should now be unassigned')
+                # check from 2nd timeslot to the last since we deleted the original last timeslot
+                self.assertEqual(
+                    [ts.session.name for ts in timeslots[1:]],
+                    [str(ts.pk) for ts in timeslots[1:]],
+                    'Sessions in middle timeslots should be unchanged'
+                )
+            else:
+                self.assertEqual(timeslots[0].session.name, str(timeslots[-1].pk),
+                                 'Session from last timeslot in room (0, {}) should now be in first'.format(index))
+                self.assertEqual(timeslots[-1].session.name, str(timeslots[0].pk),
+                                 'Session from first timeslot in room (0, {}) should now be in last'.format(index))
+                self.assertEqual(
+                    [ts.session.name for ts in timeslots[1:-1]],
+                    [str(ts.pk) for ts in timeslots[1:-1]],
+                    'Sessions in middle timeslots should be unchanged'
+                )
+
+        # Still should have no effect on other rooms, even if they matched a timeslot
+        for index, room in enumerate(room_groups[1]):
+            timeslots = list(room.timeslot_set.all())
+            self.assertFalse(
+                any(ts.session is None for ts in timeslots),
+                "Sessions in other room group's timeslots should still be assigned"
+            )
             self.assertEqual(
                 [ts.session.name for ts in timeslots],
                 [str(ts.pk) for ts in timeslots],
