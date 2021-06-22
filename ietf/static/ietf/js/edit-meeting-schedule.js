@@ -323,7 +323,7 @@ jQuery(document).ready(function () {
         // handler to prep and open the modal
         content.find(".swap-days").on("click", function () {
             let originDay = this.dataset.dayid;
-            originRadio = updateSwapRadios(swapDaysLabels, swapDaysRadios, originDay);
+            let originRadio = updateSwapRadios(swapDaysLabels, swapDaysRadios, originDay);
 
             // Fill in label in the modal title
             swapDaysModal.find(".modal-title .day").text(jQuery.trim(originRadio.parent().text()));
