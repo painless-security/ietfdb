@@ -10,8 +10,6 @@
   .tstable th { white-space: nowrap;}
   .tstable td { white-space: nowrap;}
   .capacity { font-size:80%; font-weight: normal;}
-
-  .tstable .tstype_unavail {background-color:#666;}
 {% endblock %}
 
 {% block content %}
@@ -20,6 +18,7 @@
   <p class="pull-right">
     <a href="{% url "ietf.meeting.views.create_timeslot" num=meeting.number %}">New timeslot</a>
   </p>
+  <div class="timeslot-edit">
   <table id="timeslot-table" class="tstable table table-striped table-compact table-bordered">
     <thead>
     <tr>
@@ -42,16 +41,22 @@
     </tr>
     </thead>
 
+    <tbody>
     {% for room in rooms %}
       <tr>
-        <th>{{room.name}}<span class='capacity'>{% if room.capacity %} ({{room.capacity}}){% endif %}</th>
+        <th>{{room.name}}{% if room.capacity %} <span class='capacity'>({{room.capacity}})</span>{% endif %}</th>
         {% for day in time_slices %}
-          {% for slice in date_slices|lookup:day %}
-            {% include 'meeting/timeslot_edit_timeslot.html' with ts=ts_list.popleft only %}
-          {% endfor %}
+          {% for slice in date_slices|lookup:day %}{% with cell_ts=ts_list.popleft %}
+            <td class="tscell {% if cell_ts|length > 1 %}timeslot-collision {% endif %}{% for ts in cell_ts %}tstype_{{ ts.type.slug }} {% endfor %}">
+            {% for ts in cell_ts %}
+              {% include 'meeting/timeslot_edit_timeslot.html' with ts=ts in_use=ts_with_any_assignments in_official_use=ts_with_official_assignments only %}
+            {% endfor %}
+          {% endwith %}{% endfor %}
+          </td>
         {% endfor %}
       </tr>
     {% endfor %}
+    </tbody>
   </table>
 
 {% endblock %}
@@ -74,25 +79,31 @@
     })
   });
 
-  /**
-   * Make an AJAX request to delete a TimeSlot
-   *
-   * @param id ID of TimeSlot to delete
-   * @returns jqXHR object corresponding to jQuery ajax request
-   */
-  function deleteTimeSlot(id) {
-    return jQuery.ajax({
-      method: 'post',
-      timeout: 5 * 1000,
-      data: {
-        action: 'delete',
-        slot_id: String(id)
-      }
-    });
-  }
+    /**
+     * Make an AJAX request to delete a TimeSlot
+     *
+     * @param id ID of TimeSlot to delete
+     * @returns jqXHR object corresponding to jQuery ajax request
+     */
+    function deleteTimeSlot(id) {
+      return jQuery.ajax({
+        method: 'post',
+        timeout: 5 * 1000,
+        data: {
+          action: 'delete',
+          slot_id: String(id)
+        }
+      });
+    }
 
-  function displayError(msg) {
-    window.alert(msg);
-  }
+    function displayError(msg) {
+      window.alert(msg);
+    }
+
+    // export callable methods
+    return {
+      handleDeleteButtonClick: handleDeleteButtonClick,
+    }
+  })();
   </script>
 {% endblock %}

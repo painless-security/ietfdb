@@ -3,11 +3,15 @@
 {% load origin %}
 {% load bootstrap3 %}
 
-{% block title %}Edit timeslot {{timeslot}}{% endblock %}
+{% block pagehead %}
+  {{ form.media.css }}
+{% endblock %}
+
+{% block title %}Edit timeslot "{{ timeslot.name }}" for {{ timeslot.meeting }}{% endblock %}
 
 {% block content %}
   {% origin %}
-  <h1>Edit timeslot {{timeslot}}</h1>
+  <h1>Edit timeslot "{{ timeslot.name }}" for {{ timeslot.meeting }}</h1>
   {% if sessions %}
     <div class="alert alert-warning">
       This timeslot currently has the following sessions assigned to it:
@@ -24,4 +28,8 @@
       <a class="btn btn-default" href="{% url 'ietf.meeting.views.edit_timeslots' num=timeslot.meeting.number %}">Cancel</a>
     {% endbuttons %}
   </form>
+{% endblock %}
+
+{% block js %}
+  {{ form.media.js }}
 {% endblock %}

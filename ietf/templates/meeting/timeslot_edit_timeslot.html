@@ -1,14 +1,24 @@
-<td{% if ts %} class="tstype_{{ ts.type.slug }}"{% endif %}>
-  {% if ts %}
-    <div class="thumbnail timeslot" data-timeslot-pk="{{ ts.pk }}">
-    {{ ts.name }}
-      <!-- todo display timeslot type, number of sessions using it -->
-    <div class="pull-right">
-      <a href="{% url 'ietf.meeting.views.edit_timeslot' num=ts.meeting.number slot_id=ts.id %}">
-        <span class="fa fa-pencil-square-o"></span>
-      </a>
-        <span class="fa fa-trash timeslot-delete-button"></span>
-    </div>
-    </div>
-  {% endif %}
-</td>
+<div id="timeslot{{ ts.pk }}"
+     class="thumbnail timeslot {% if ts in in_official_use %}in-official-use{% elif ts in in_use %}in-unofficial-use{% endif %}"
+     data-timeslot-pk="{{ ts.pk }}"
+     data-timeslot-name="{{ ts.name }}"
+     data-timeslot-type="{{ ts.type.slug }}"
+     data-timeslot-location="{{ ts.location.name }}"
+     data-timeslot-date="{{ ts.time|date:"l (Y-m-d)" }}"
+     data-timeslot-time="{{ ts.time|date:"H:i" }}-{{ ts.end_time|date:"H:i" }}"
+     data-unofficial-use="{% if ts in in_use and ts not in in_official_use %}true{% else %}false{% endif %}"
+     data-official-use="{% if ts in in_official_use %}true{% else %}false{% endif %}">
+  <div class="ts-name">
+    <span
+      title="{% if ts in in_official_use %}Used in official schedule{% elif ts in in_use %}Used in unofficial schedule{% else %}Unused{% endif %}">
+      {{ ts.name }}
+    </span>
+  </div>
+  <div class="ts-type">{{ ts.type }}</div>
+  <div class="pull-right">
+    <a href="{% url 'ietf.meeting.views.edit_timeslot' num=ts.meeting.number slot_id=ts.id %}">
+      <span class="fa fa-pencil-square-o"></span>
+    </a>
+    <span class="fa fa-trash timeslot-delete-button" title="Delete this timeslot"></span>
+  </div>
+</div>
