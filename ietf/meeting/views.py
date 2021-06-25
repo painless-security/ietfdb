@@ -374,16 +374,23 @@ def edit_timeslots(request, num=None):
         else:
             return HttpResponseBadRequest('unknown action')
 
-    time_slices,date_slices,slots = meeting.build_timeslices()
+    # Labels here differ from those in the build_timeslices() method. The labels here are
+    # relative to the table: time_slices are the row headings (ie, days), date_slices are
+    # the column headings (i.e., time intervals), and slots are the per-day list of time slots
+    # (with only one time slot per unique time/duration)
+    time_slices, date_slices, slots = meeting.build_timeslices()
 
     ts_list = deque()
     rooms = meeting.room_set.order_by("capacity","name","id")
     for room in rooms:
         for day in time_slices:
             for slice in date_slices[day]:
-                ts_list.append(room.timeslot_set.filter(time=slice[0],duration=datetime.timedelta(seconds=slice[2])).first())
+                ts_list.append(room.timeslot_set.filter(time=slice[0],duration=datetime.timedelta(seconds=slice[2])))
 
-
+    # Grab these in one query each to identify sessions that are in use and should be handled with care
+    ts_with_official_assignments = meeting.timeslot_set.filter(sessionassignments__schedule=meeting.schedule)
+    ts_with_any_assignments = meeting.timeslot_set.filter(sessionassignments__isnull=False)
+    
     return render(request, "meeting/timeslot_edit.html",
                                          {"rooms":rooms,
                                           "time_slices":time_slices,
@@ -391,6 +398,8 @@ def edit_timeslots(request, num=None):
                                           "date_slices":date_slices,
                                           "meeting":meeting,
                                           "ts_list":ts_list,
+                                          "ts_with_official_assignments": ts_with_official_assignments,
+                                          "ts_with_any_assignments": ts_with_any_assignments,
                                       })
 
 class NewScheduleForm(forms.ModelForm):
@@ -4044,7 +4053,7 @@ def create_timeslot(request, num):
             bulk_create_timeslots(
                 meeting,
                 [datetime.datetime.combine(day, form.cleaned_data['time'])
-                 for day in form.cleaned_data['days']],
+                 for day in form.cleaned_data.get('days', [])],
                 form.cleaned_data['locations'],
                 dict(
                     name=form.cleaned_data['name'],
