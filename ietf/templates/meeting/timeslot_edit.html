@@ -93,7 +93,7 @@
 
         <div class="modal-footer">
           <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
-          <button type="button" id="confirm-delete-button" class="btn btn-primary" onclick="timeslotEdit.handleDeleteButtonClick()">Delete</button>
+          <button type="button" id="confirm-delete-button" class="btn btn-primary">Delete</button>
         </div>
       </div>
     </div>
@@ -119,6 +119,11 @@
         timeslotTimeSpans: deleteModal.find('span.ts-time'),
         timeslotLocSpans: deleteModal.find('span.ts-location')
       };
+
+      document.getElementById('confirm-delete-button').addEventListener(
+        'click',
+        () => timeslotEdit.handleDeleteButtonClick()
+      );
 
       document.getElementById('timeslot-table').addEventListener('click', function(event) {
         let clicked = event.target; // find out what was clicked
@@ -166,7 +171,7 @@
           });
 
           // now add timeslot type classes for any remaining timeslots
-          tscell.getElementsByClassName('timeslot').forEach(elt => {
+          Array.from(tscell.getElementsByClassName('timeslot')).forEach(elt => {
             if (elt.dataset.timeslotType) {
               tscell.classList.add('tstype_' + elt.dataset.timeslotType);
             }
