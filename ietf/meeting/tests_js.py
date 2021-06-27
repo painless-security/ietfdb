@@ -1507,6 +1507,7 @@ class InterimTests(IetfSeleniumTestCase):
         sg_sess.save()
         sg_slot.save()
 
+        self.wait = WebDriverWait(self.driver, 2)
 
     def tearDown(self):
         settings.AGENDA_PATH = self.saved_agenda_path
@@ -1582,7 +1583,7 @@ class InterimTests(IetfSeleniumTestCase):
     def assert_upcoming_meeting_calendar(self, visible_meetings=None):
         """Assert that correct items are sent to the calendar"""
         def advance_month():
-            button = WebDriverWait(self.driver, 2).until(
+            button = self.wait.until(
                 expected_conditions.element_to_be_clickable(
                     (By.CSS_SELECTOR, 'div#calendar button.fc-next-button')))
             button.click()
@@ -1784,8 +1785,6 @@ class InterimTests(IetfSeleniumTestCase):
         self.do_upcoming_view_filter_test('?show=mars , ames &hide=   ames', meetings)
 
     def test_upcoming_view_time_zone_selection(self):
-        wait = WebDriverWait(self.driver, 2)
-
         def _assert_interim_tz_correct(sessions, tz):
             zone = pytz.timezone(tz)
             for session in sessions:
@@ -1831,7 +1830,7 @@ class InterimTests(IetfSeleniumTestCase):
         # wait for the select box to be updated - look for an arbitrary time zone to be in
         # its options list to detect this
         arbitrary_tz = 'America/Halifax'
-        arbitrary_tz_opt = wait.until(
+        arbitrary_tz_opt = self.wait.until(
             expected_conditions.presence_of_element_located(
                 (By.CSS_SELECTOR, '#timezone-select > option[value="%s"]' % arbitrary_tz)
             )
@@ -1857,7 +1856,7 @@ class InterimTests(IetfSeleniumTestCase):
 
         # click 'utc' button
         utc_tz_link.click()
-        wait.until(expected_conditions.element_to_be_selected(utc_tz_opt))
+        self.wait.until(expected_conditions.element_to_be_selected(utc_tz_opt))
         self.assertFalse(local_tz_opt.is_selected())
         self.assertFalse(local_tz_bottom_opt.is_selected())
         self.assertFalse(arbitrary_tz_opt.is_selected())
@@ -1869,7 +1868,7 @@ class InterimTests(IetfSeleniumTestCase):
 
         # click back to 'local'
         local_tz_link.click()
-        wait.until(expected_conditions.element_to_be_selected(local_tz_opt))
+        self.wait.until(expected_conditions.element_to_be_selected(local_tz_opt))
         self.assertTrue(local_tz_opt.is_selected())
         self.assertTrue(local_tz_bottom_opt.is_selected())
         self.assertFalse(arbitrary_tz_opt.is_selected())
@@ -1881,7 +1880,7 @@ class InterimTests(IetfSeleniumTestCase):
 
         # Now select a different item from the select input
         arbitrary_tz_opt.click()
-        wait.until(expected_conditions.element_to_be_selected(arbitrary_tz_opt))
+        self.wait.until(expected_conditions.element_to_be_selected(arbitrary_tz_opt))
         self.assertFalse(local_tz_opt.is_selected())
         self.assertFalse(local_tz_bottom_opt.is_selected())
         self.assertTrue(arbitrary_tz_opt.is_selected())
@@ -1894,7 +1893,7 @@ class InterimTests(IetfSeleniumTestCase):
         # Now repeat those tests using the widgets at the bottom of the page
         # click 'utc' button
         utc_tz_bottom_link.click()
-        wait.until(expected_conditions.element_to_be_selected(utc_tz_opt))
+        self.wait.until(expected_conditions.element_to_be_selected(utc_tz_opt))
         self.assertFalse(local_tz_opt.is_selected())
         self.assertFalse(local_tz_bottom_opt.is_selected())
         self.assertFalse(arbitrary_tz_opt.is_selected())
@@ -1906,7 +1905,7 @@ class InterimTests(IetfSeleniumTestCase):
 
         # click back to 'local'
         local_tz_bottom_link.click()
-        wait.until(expected_conditions.element_to_be_selected(local_tz_opt))
+        self.wait.until(expected_conditions.element_to_be_selected(local_tz_opt))
         self.assertTrue(local_tz_opt.is_selected())
         self.assertTrue(local_tz_bottom_opt.is_selected())
         self.assertFalse(arbitrary_tz_opt.is_selected())
@@ -1918,7 +1917,7 @@ class InterimTests(IetfSeleniumTestCase):
 
         # Now select a different item from the select input
         arbitrary_tz_bottom_opt.click()
-        wait.until(expected_conditions.element_to_be_selected(arbitrary_tz_opt))
+        self.wait.until(expected_conditions.element_to_be_selected(arbitrary_tz_opt))
         self.assertFalse(local_tz_opt.is_selected())
         self.assertFalse(local_tz_bottom_opt.is_selected())
         self.assertTrue(arbitrary_tz_opt.is_selected())
