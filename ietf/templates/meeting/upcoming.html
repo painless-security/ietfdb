@@ -180,6 +180,7 @@
     <script src="{% static 'moment/min/moment.min.js' %}"></script>
     <script src="{% static 'moment-timezone/builds/moment-timezone-with-data-10-year-range.min.js' %}"></script>
     <script src="{% static 'ietf/js/agenda/agenda_filter.js' %}"></script>
+    <script src="{% static 'ietf/js/agenda/agenda_materials.js' %}"></script>
     <script src="{% static 'ietf/js/agenda/timezone.js' %}"></script>
     <script>
       // List of all events with meta-info needed for filtering
@@ -338,36 +339,38 @@
       agenda_filter.set_update_callback(update_view);
       agenda_filter.enable();
 
-      $(".modal").on("show.bs.modal", function () {
-	  var i = $(this).find(".frame");
-	  if ($(i).data("src")) {
-	      $.get($(i).data("src"), function (data, status, xhr) {
-		  var t = xhr.getResponseHeader("content-type");
-		  if (t.indexOf("text/plain") > -1) {
-		      data = "<pre class='agenda'>" + data + "</pre>";
-		  } else if(t.indexOf("text/html") > -1) {
-		      // nothing to do here
-		  } else {
-		      data = "<p>Unknown type: " + xhr.getResponseHeader("content-type") + "</p>";
-		  }
-		  $(i).html(data);
-	      });
-	  }
-	  var j = $(this).find(".frame2");
-	  if ($(j).data("src")) {
-	      $.get($(j).data("src"), function (data, status, xhr) {
-		  var t = xhr.getResponseHeader("content-type");
-		  if (t.indexOf("text/plain") > -1) {
-		      data = "<pre class='agenda'>" + data + "</pre>";
-		  } else if(t.indexOf("text/html") > -1) {
-		      // nothing to do here
-		  } else {
-		      data = "<p>Unknown type: " + xhr.getResponseHeader("content-type") + "</p>";
-		  }
-		  $(j).html(data);
-	      });
-	  }
-      });
+      function format_session_time(session_elt, tz) {
+          var start = moment.utc($(session_elt).attr('data-start-utc'));
+          var end = moment.utc($(session_elt).attr('data-end-utc'));
+          return format_moment(start, tz, 'datetime') + ' - ' + format_moment(end, tz, 'time');
+      }
+
+      function format_meeting_time(meeting_elt, tz) {
+          var meeting_tz = $(meeting_elt).attr('data-time-zone');
+          var start = moment.tz($(meeting_elt).attr('data-start-date'), meeting_tz).startOf('day');
+          var end = moment.tz($(meeting_elt).attr('data-end-date'), meeting_tz).endOf('day');
+          return format_moment(start, tz, 'date') + ' - ' + format_moment(end, tz, 'date');
+      }
+
+      function timezone_changed(newtz) {
+          // update times for events in the table
+          if (current_tz !== newtz) {
+              current_tz = newtz;
+              $('.session-time').each(function () {
+                  $(this).html(format_session_time(this, newtz));
+              });
+              $('.meeting-time').each(function () {
+                  $(this).html(format_meeting_time(this, newtz));
+              });
+          }
+
+          update_calendar(newtz);
+      }
+
+
+    // Init with best guess at local timezone.
+    ietf_timezone.set_tz_change_callback(timezone_changed);
+    ietf_timezone.initialize('local');
 
       function format_session_time(session_elt, tz) {
           var start = moment.utc($(session_elt).attr('data-start-utc'));
