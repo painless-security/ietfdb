@@ -1960,7 +1960,6 @@ class InterimTests(IetfSeleniumTestCase):
             'Modal did not become visible after clicking open button',
         )
 
-        self.debug_snapshot()
         # Now close the modal
         close_modal_button = self.wait.until(
             presence_of_element_child_by_css_selector(
