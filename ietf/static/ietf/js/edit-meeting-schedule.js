@@ -10,6 +10,7 @@ jQuery(document).ready(function () {
 
     let sessions = content.find(".session").not(".readonly");
     let timeslots = content.find(".timeslot");
+    let timeslotLabels = content.find(".time-label");
     let days = content.find(".day-flow .day");
 
     // hack to work around lack of position sticky support in old browsers, see https://caniuse.com/#feat=css-sticky
@@ -39,6 +40,7 @@ jQuery(document).ready(function () {
 
     // selecting
     function selectSessionElement(element) {
+        sessions.removeClass("other-session-selected");
         if (element) {
             sessions.not(element).removeClass("selected");
             jQuery(element).addClass("selected");
@@ -53,8 +55,11 @@ jQuery(document).ready(function () {
             sessionInfoContainer.find(".time").text(jQuery(element).closest(".timeslot").data('scheduledatlabel'));
 
             sessionInfoContainer.find(".other-session").each(function () {
-                let scheduledAt = sessions.filter("#session" + this.dataset.othersessionid).closest(".timeslot").data('scheduledatlabel');
+                let otherSessionElement = sessions.filter("#session" + this.dataset.othersessionid).first();
+                let scheduledAt = otherSessionElement.closest(".timeslot").data('scheduledatlabel');
                 let timeElement = jQuery(this).find(".time");
+
+                otherSessionElement.addClass("other-session-selected");
                 if (scheduledAt)
                     timeElement.text(timeElement.data("scheduled").replace("{time}", scheduledAt));
                 else
@@ -68,25 +73,74 @@ jQuery(document).ready(function () {
         }
     }
 
+    /**
+     * Mark or unmark a session that conflicts with the selected session
+     *
+     * @param constraintElt The element corresponding to the specific constraint
+     * @param wouldViolate True to mark or false to unmark
+     */
+    function setSessionWouldViolate(constraintElt, wouldViolate) {
+        constraintElt = jQuery(constraintElt);
+        let constraintDiv = constraintElt.closest('div.session');  // find enclosing session div
+        constraintDiv.toggleClass('would-violate-hint', wouldViolate);  // mark the session container
+        constraintElt.toggleClass('would-violate-hint', wouldViolate);  // and the specific constraint
+    }
+
+    /**
+     * Mark or unmark a timeslot that conflicts with the selected session
+     *
+     * If wholeInterval is true, marks the entire column in addition to the timeslot.
+     * This currently works by setting the class for the timeslot and the time-label
+     * in its column. Because this is called for every timeslot in the interval, the
+     * overall effect is to highlight the entire column.
+     *
+     * @param timeslotElt Timeslot element to be marked/unmarked
+     * @param wouldViolate True to mark or false to unmark
+     * @param wholeInterval Should the entire time interval be flagged or just the timeslot?
+     */
+    function setTimeslotWouldViolate(timeslotElt, wouldViolate, wholeInterval) {
+        timeslotElt = jQuery(timeslotElt);
+        timeslotElt.toggleClass('would-violate-hint', wouldViolate);
+        if (wholeInterval) {
+            let index = timeslotElt.index(); // position of this timeslot relative to its container
+            let label = timeslotElt
+                          .closest('div.room-group')
+                          .find('div.time-header .time-label')
+                          .get(index); // get time-label corresponding to this timeslot
+            jQuery(label).toggleClass('would-violate-hint', wouldViolate);
+        }
+    }
+
+    /**
+     * Remove all would-violate-hint classes on timeslots
+     */
+    function resetTimeslotsWouldViolate() {
+        timeslots.removeClass("would-violate-hint");
+        timeslotLabels.removeClass("would-violate-hint");
+    }
+
     function showConstraintHints(selectedSession) {
         let sessionId = selectedSession ? selectedSession.id.slice("session".length) : null;
         // hints on the sessions
         sessions.find(".constraints > span").each(function () {
-            if (!sessionId) {
-                jQuery(this).removeClass("would-violate-hint");
-                return;
+            let wouldViolate = false;
+            let applyChange = true;
+            if (sessionId) {
+                let sessionIds = this.dataset.sessions;
+                if (!sessionIds) {
+                    applyChange = False;
+                } else {
+                    wouldViolate = sessionIds.split(",").indexOf(sessionId) !== -1;
+                }
             }
 
-            let sessionIds = this.dataset.sessions;
-            if (!sessionIds)
-                return;
-
-            let wouldViolate = sessionIds.split(",").indexOf(sessionId) != -1;
-            jQuery(this).toggleClass("would-violate-hint", wouldViolate);
+            if (applyChange) {
+                setSessionWouldViolate(this, wouldViolate);
+            }
         });
 
         // hints on timeslots
-        timeslots.removeClass("would-violate-hint");
+        resetTimeslotsWouldViolate();
         if (selectedSession) {
             let intervals = [];
             timeslots.filter(":has(.session .constraints > span.would-violate-hint)").each(function () {
@@ -94,15 +148,17 @@ jQuery(document).ready(function () {
             });
 
             let overlappingTimeslots = findTimeslotsOverlapping(intervals);
-            for (let i = 0; i < overlappingTimeslots.length; ++i)
-                overlappingTimeslots[i].addClass("would-violate-hint");
+            for (let i = 0; i < overlappingTimeslots.length; ++i) {
+                setTimeslotWouldViolate(overlappingTimeslots[i], true, true);
+            }
 
             // check room sizes
             let attendees = +selectedSession.dataset.attendees;
             if (attendees) {
                 timeslots.not(".would-violate-hint").each(function () {
-                    if (attendees > +jQuery(this).closest(".timeslots").data("roomcapacity"))
-                        jQuery(this).addClass("would-violate-hint");
+                    if (attendees > +jQuery(this).closest(".timeslots").data("roomcapacity")) {
+                        setTimeslotWouldViolate(this, true, false);
+                    }
                 });
             }
         }
@@ -116,7 +172,10 @@ jQuery(document).ready(function () {
 
     sessions.on("click", function (event) {
         event.stopPropagation();
-        selectSessionElement(this);
+        // do not allow hidden sessions to be selected
+        if (!jQuery(this).hasClass('hidden-parent')) {
+            selectSessionElement(this);
+        }
     });
 
 
@@ -231,31 +290,80 @@ jQuery(document).ready(function () {
             }
         });
 
+
+        // Helpers for swap days / timeslots
+        // Enable or disable a swap modal's submit button
+        let updateSwapSubmitButton = function (modal, inputName) {
+            modal.find("button[type=submit]").prop(
+              "disabled",
+              modal.find("input[name='" + inputName + "']:checked").length === 0
+            );
+        };
+
+        // Disable a particular swap modal radio input
+        let updateSwapRadios = function (labels, radios, disableValue) {
+          labels.removeClass('text-muted');
+          radios.prop('disabled', false);
+          radios.prop('checked', false);
+          let disableInput = radios.filter('[value="' + disableValue + '"]');
+          if (disableInput) {
+              disableInput.parent().addClass('text-muted');
+              disableInput.prop('disabled', true);
+          }
+          return disableInput; // return the input that was disabled, if any
+        };
+
         // swap days
+        let swapDaysModal = content.find("#swap-days-modal");
+        let swapDaysLabels = swapDaysModal.find(".modal-body label");
+        let swapDaysRadios = swapDaysLabels.find('input[name=target_day]');
+        let updateSwapDaysSubmitButton = function () {
+            updateSwapSubmitButton(swapDaysModal, 'target_day')
+        };
+        // handler to prep and open the modal
         content.find(".swap-days").on("click", function () {
             let originDay = this.dataset.dayid;
-            let modal = content.find("#swap-days-modal");
-            let radios = modal.find(".modal-body label");
-            radios.removeClass("text-muted");
-            radios.find("input[name=target_day]").prop("disabled", false).prop("checked", false);
+            let originRadio = updateSwapRadios(swapDaysLabels, swapDaysRadios, originDay);
 
-            let originRadio = radios.find("input[name=target_day][value=" + originDay + "]");
-            originRadio.parent().addClass("text-muted");
-            originRadio.prop("disabled", true);
+            // Fill in label in the modal title
+            swapDaysModal.find(".modal-title .day").text(jQuery.trim(originRadio.parent().text()));
 
-            modal.find(".modal-title .day").text(jQuery.trim(originRadio.parent().text()));
-            modal.find("input[name=source_day]").val(originDay);
+            // Fill in the hidden form fields
+            swapDaysModal.find("input[name=source_day]").val(originDay);
 
             updateSwapDaysSubmitButton();
+            swapDaysModal.modal('show'); // show via JS so it won't open until it is initialized
         });
+        swapDaysRadios.on("change", function () {updateSwapDaysSubmitButton()});
 
-        function updateSwapDaysSubmitButton() {
-            content.find("#swap-days-modal button[type=submit]").prop("disabled", content.find("#swap-days-modal input[name=target_day]:checked").length == 0);
-        }
+        // swap timeslot columns
+        let swapTimeslotsModal = content.find('#swap-timeslot-col-modal');
+        let swapTimeslotsLabels = swapTimeslotsModal.find(".modal-body label");
+        let swapTimeslotsRadios = swapTimeslotsLabels.find('input[name=target_timeslot]');
+        let updateSwapTimeslotsSubmitButton = function () {
+            updateSwapSubmitButton(swapTimeslotsModal, 'target_timeslot');
+        };
+        // handler to prep and open the modal
+        content.find('.swap-timeslot-col').on('click', function() {
+            let roomGroup = this.closest('.room-group').dataset;
+            updateSwapRadios(swapTimeslotsLabels, swapTimeslotsRadios, this.dataset.timeslotPk)
 
-        content.find("#swap-days-modal input[name=target_day]").on("change", function () {
-            updateSwapDaysSubmitButton();
+            // show only options for this room group
+            swapTimeslotsModal.find('.room-group').hide();
+            swapTimeslotsModal.find('.room-group-' + roomGroup.index).show();
+
+            // Fill in label in the modal title
+            swapTimeslotsModal.find('.modal-title .origin-label').text(this.dataset.originLabel);
+
+            // Fill in the hidden form fields
+            swapTimeslotsModal.find('input[name="origin_timeslot"]').val(this.dataset.timeslotPk);
+            swapTimeslotsModal.find('input[name="rooms"]').val(roomGroup.rooms);
+
+            // Open the modal via JS so it won't open until it is initialized
+            updateSwapTimeslotsSubmitButton();
+            swapTimeslotsModal.modal('show');
         });
+        swapTimeslotsRadios.on("change", function () {updateSwapTimeslotsSubmitButton()});
     }
 
     // hints for the current schedule
@@ -426,14 +534,19 @@ jQuery(document).ready(function () {
     // toggling visible sessions by session parents
     let sessionParentInputs = content.find(".session-parent-toggles input");
 
+    function setSessionHidden(sess, hide) {
+        sess.toggleClass('hidden-parent', hide);
+        sess.prop('draggable', !hide);
+    }
+
     function updateSessionParentToggling() {
         let checked = [];
         sessionParentInputs.filter(":checked").each(function () {
             checked.push(".parent-" + this.value);
         });
 
-        sessions.not(".untoggleable").filter(checked.join(",")).show();
-        sessions.not(".untoggleable").not(checked.join(",")).hide();
+        setSessionHidden(sessions.not(".untoggleable").filter(checked.join(",")), false);
+        setSessionHidden(sessions.not(".untoggleable").not(checked.join(",")), true);
     }
 
     sessionParentInputs.on("click", updateSessionParentToggling);
