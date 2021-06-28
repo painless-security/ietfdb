@@ -26,7 +26,7 @@ from ietf.doc.models import NewRevisionDocEvent
 from ietf.doc.models import RelatedDocument, DocRelationshipName, DocExtResource
 from ietf.doc.utils import add_state_change_event, rebuild_reference_relations
 from ietf.doc.utils import ( set_replaces_for_document, prettify_std_name,
-    update_doc_extresources, can_edit_docextresources, update_documentauthors )
+    update_doc_extresources, can_edit_docextresources, update_documentauthors, update_action_holders )
 from ietf.doc.mails import send_review_possibly_replaces_request, send_external_resource_change_request
 from ietf.group.models import Group
 from ietf.ietfauth.utils import has_role
@@ -41,6 +41,7 @@ from ietf.utils import log
 from ietf.utils.accesstoken import generate_random_key
 from ietf.utils.draft import Draft
 from ietf.utils.mail import is_valid_email
+from ietf.utils.text import parse_unicode
 from ietf.person.name import unidecode_name
 
 
@@ -372,6 +373,8 @@ def post_submission(request, submission, approved_doc_desc, approved_subm_desc):
     state_change_msg = ""
 
     if not was_rfc and draft.tags.filter(slug="need-rev"):
+        tags_before = list(draft.tags.all())
+
         draft.tags.remove("need-rev")
         if draft.stream_id == 'ietf':
             draft.tags.add("ad-f-up")
@@ -384,8 +387,12 @@ def post_submission(request, submission, approved_doc_desc, approved_subm_desc):
         e.by = system
         e.save()
         events.append(e)
-
         state_change_msg = e.desc
+
+        # Changed tags - update action holders if necessary
+        e = update_action_holders(draft, prev_tags=tags_before, new_tags=draft.tags.all())
+        if e is not None:
+            events.append(e)
 
     if draft.stream_id == "ietf" and draft.group.type_id == "wg" and draft.rev == "00":
         # automatically set state "WG Document"
@@ -886,7 +893,7 @@ def accept_submission(request, submission, autopost=False):
         requires_prev_ad_approval = False
 
     # Partial message for submission event
-    sub_event_desc = 'Set submitter to \"%s\", replaces to %s' % (submission.submitter, pretty_replaces)
+    sub_event_desc = 'Set submitter to \"%s\", replaces to %s' % (parse_unicode(submission.submitter), pretty_replaces)
     docevent_desc = None
     address_list = []
     if requires_ad_approval or requires_prev_ad_approval:
