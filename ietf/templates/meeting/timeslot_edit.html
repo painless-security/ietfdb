@@ -83,7 +83,7 @@
         </div>
 
         <div class="modal-body">
-          <p>The following timeslot will be deleted:</p>
+          <p>The following <span class="ts-singular">timeslot</span><span class="ts-plural"><span class="ts-count"></span> timeslots</span> will be deleted:</p>
           <dl class="dl-horizontal">
             <dt>Name</dt><dd><span class="ts-name"></span></dd>
             <dt>Date</dt><dd><span class="ts-date"></span></dd>
@@ -92,14 +92,22 @@
           </dl>
           <p class="unofficial-use-warning">
             The official schedule will not be affected, but sessions in
-            unofficial schedules currently assigned to this timeslot
+            unofficial schedules currently assigned to
+            <span class="ts-singular">this timeslot</span>
+            <span class="ts-plural">any of these timeslots</span>
             will become unassigned.
           </p>
           <p class="official-use-warning">
             The official schedule will be affected.
-            Sessions currently assigned to this timeslot will become unassigned.
+            Sessions currently assigned to
+            <span class="ts-singular">this timeslot</span>
+            <span class="ts-plural">any of these timeslots</span>
+            will become unassigned.
           </p>
-          <p>Are you sure you want to delete this timeslot?</p>
+          <p>
+            <span class="ts-singular">Are you sure you want to delete this timeslot?</span>
+            <span class="ts-plural">Are you sure you want to delete these <span class="ts-count"></span> timeslots?</span>
+          </p>
         </div>
 
         <div class="modal-footer">
@@ -123,13 +131,17 @@
     function initializeDeleteModal() {
       deleteModal = jQuery('#delete-modal');
       deleteModal.eltsToDelete = null; // PK of TimeSlot that modal 'Delete' button should delete
+      let spans = deleteModal.find('span');
       deleteModal.elts = {
         unofficialUseWarning: deleteModal.find('.unofficial-use-warning'),
         officialUseWarning: deleteModal.find('.official-use-warning'),
-        timeslotNameSpans: deleteModal.find('span.ts-name'),
-        timeslotDateSpans: deleteModal.find('span.ts-date'),
-        timeslotTimeSpans: deleteModal.find('span.ts-time'),
-        timeslotLocSpans: deleteModal.find('span.ts-location')
+        timeslotNameSpans: spans.filter('.ts-name'),
+        timeslotDateSpans: spans.filter('.ts-date'),
+        timeslotTimeSpans: spans.filter('.ts-time'),
+        timeslotLocSpans: spans.filter('.ts-location'),
+        timeslotCountSpans: spans.filter('.ts-count'),
+        pluralSpans: spans.filter('.ts-plural'),
+        singularSpans: spans.filter('.ts-singular')
       };
 
       document.getElementById('confirm-delete-button').addEventListener(
@@ -137,22 +149,66 @@
         () => timeslotEdit.handleDeleteButtonClick()
       );
 
+      function uniqueArray(a) {
+        let s = new Set();
+        a.forEach(item => s.add(item));
+        return Array.from(s);
+      }
       deleteModal.openModal = function (eltsToDelete) {
-        eltsToDelete.forEach(timeslotElt => {
-          let unofficialUse = Boolean(timeslotElt.dataset.unofficialUse === 'true'); // is a session assigned in any schedule?
-          let officialUse = Boolean(timeslotElt.dataset.officialUse === 'true'); // is a session assigned in the official schedule?
-          deleteModal.elts.unofficialUseWarning.hide();
-          deleteModal.elts.officialUseWarning.hide();
-          deleteModal.elts.timeslotNameSpans.text(timeslotElt.dataset.timeslotName);
-          deleteModal.elts.timeslotDateSpans.text(timeslotElt.dataset.timeslotDate);
-          deleteModal.elts.timeslotTimeSpans.text(timeslotElt.dataset.timeslotTime);
-          deleteModal.elts.timeslotLocSpans.text(timeslotElt.dataset.timeslotLocation);
-          if (officialUse) {
-            deleteModal.elts.officialUseWarning.show();
-          } else if (unofficialUse) {
-            deleteModal.elts.unofficialUseWarning.show();
-          }
-        });
+        let eltArray = Array.from(eltsToDelete); // make sure this is an array
+
+        if (eltArray.length > 1) {
+          deleteModal.elts.pluralSpans.show();
+          deleteModal.elts.singularSpans.hide();
+        } else {
+          deleteModal.elts.pluralSpans.hide();
+          deleteModal.elts.singularSpans.show();
+        }
+        deleteModal.elts.timeslotCountSpans.text(String(eltArray.length));
+
+        let names = uniqueArray(eltArray.map(elt => elt.dataset.timeslotName));
+        if (names.length === 1) {
+          names = names[0];
+        } else {
+          names.sort();
+          names = names.join(', ');
+        }
+        deleteModal.elts.timeslotNameSpans.text(names);
+
+        let dates = uniqueArray(eltArray.map(elt => elt.dataset.timeslotDate));
+        if (dates.length === 1) {
+          dates = dates[0];
+        } else {
+          dates = 'Multiple';
+        }
+        deleteModal.elts.timeslotDateSpans.text(dates);
+
+        let times = uniqueArray(eltArray.map(elt => elt.dataset.timeslotTime));
+        if (times.length === 1) {
+          times = times[0];
+        } else {
+          times = 'Multiple';
+        }
+        deleteModal.elts.timeslotTimeSpans.text(times);
+
+        let locs = uniqueArray(eltArray.map(elt => elt.dataset.timeslotLocation));
+        if (locs.length === 1) {
+          locs = locs[0];
+        } else {
+          locs = 'Multiple';
+        }
+        deleteModal.elts.timeslotLocSpans.text(locs);
+
+        // Check whether any of the elts are used in official / unofficial schedules
+        let unofficialUse = eltArray.some(elt => elt.dataset.unofficialUse === 'true');
+        let officialUse = eltArray.some(elt => elt.dataset.officialUse === 'true');
+        deleteModal.elts.unofficialUseWarning.hide();
+        deleteModal.elts.officialUseWarning.hide();
+        if (officialUse) {
+          deleteModal.elts.officialUseWarning.show();
+        } else if (unofficialUse) {
+          deleteModal.elts.unofficialUseWarning.show();
+        }
 
         deleteModal.eltsToDelete  = eltsToDelete;
         deleteModal.modal('show');
