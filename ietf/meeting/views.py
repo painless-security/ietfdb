@@ -367,17 +367,25 @@ def edit_timeslots(request, num=None):
     meeting = get_meeting(num)
 
     if request.method == 'POST':
+        # handle AJAX requests
         action = request.POST.get('action')
         if action == 'delete':
+            # delete a timeslot
+            # Parameters:
+            #   slot_id: comma-separated list of TimeSlot PKs to delete
             slot_id = request.POST.get('slot_id')
             if slot_id is None:
                 return HttpResponseBadRequest('missing slot_id')
-            try:
-                timeslot = meeting.timeslot_set.get(pk=slot_id)
-            except (ValueError, TimeSlot.DoesNotExist):
-                return HttpResponseNotFound('TimeSlot id={} not found in meeting {}'.format(slot_id, num))
-            timeslot.delete()
-            return HttpResponse(content='Deleted TimeSlot {}'.format(slot_id))
+            slot_ids = [id.strip() for id in slot_id.split(',')]
+            timeslots = meeting.timeslot_set.filter(pk__in=slot_ids)
+            missing_ids = set(slot_ids).difference(str(ts.pk) for ts in timeslots)
+            if len(missing_ids) != 0:
+                return HttpResponseNotFound('TimeSlot ids not found in meeting {}: '.format(
+                    num,
+                    ', '.join(sorted(missing_ids))
+                ))
+            timeslots.delete()
+            return HttpResponse(content='; '.join('Deleted TimeSlot {}'.format(id) for id in slot_ids))
         else:
             return HttpResponseBadRequest('unknown action')
 
