@@ -26,6 +26,11 @@
       {% for day in time_slices %}
         <th colspan="{{date_slices|colWidth:day}}">
           {{day|date:'D'}}&nbsp;({{day}})
+          <span class="fa fa-trash delete-button"
+                title="Delete all on this day"
+                data-delete-scope="day"
+                data-date-id="{{ day.isoformat }}">
+          </span>
         </th>
       {% endfor %}
     </tr>
@@ -34,7 +39,13 @@
       {% for day in time_slices %}
         {% for slot in slot_slices|lookup:day %}
           <th>
-            {{slot.time|date:'Hi'}}-{{slot.end_time|date:'Hi'}}
+            {{slot.time|date:'H:i'}}-{{slot.end_time|date:'H:i'}}
+            <span class="fa fa-trash delete-button"
+                  data-delete-scope="column"
+                  data-date-id="{{ day.isoformat }}"
+                  data-col-id="{{ day.isoformat }}T{{slot.time|date:'H:i'}}-{{slot.end_time|date:'H:i'}}"
+                  title="Delete all in this column">
+            </span>
           </th>
         {% endfor %}
       {% endfor %}
@@ -107,10 +118,11 @@
   // create a namespace for local JS
   timeslotEdit = (function() {
     let deleteModal;
+    let timeslotTableBody = document.querySelector('#timeslot-table tbody');
 
     function initializeDeleteModal() {
       deleteModal = jQuery('#delete-modal');
-      deleteModal.deletePk = null; // PK of TimeSlot that modal 'Delete' button should delete
+      deleteModal.eltsToDelete = null; // PK of TimeSlot that modal 'Delete' button should delete
       deleteModal.elts = {
         unofficialUseWarning: deleteModal.find('.unofficial-use-warning'),
         officialUseWarning: deleteModal.find('.official-use-warning'),
@@ -125,14 +137,10 @@
         () => timeslotEdit.handleDeleteButtonClick()
       );
 
-      document.getElementById('timeslot-table').addEventListener('click', function(event) {
-        let clicked = event.target; // find out what was clicked
-        if (clicked.classList.contains('timeslot-delete-button')) {
-          // handle timeslot delete button click
-          let timeslotElt = clicked.closest('.timeslot');
+      deleteModal.openModal = function (eltsToDelete) {
+        eltsToDelete.forEach(timeslotElt => {
           let unofficialUse = Boolean(timeslotElt.dataset.unofficialUse === 'true'); // is a session assigned in any schedule?
           let officialUse = Boolean(timeslotElt.dataset.officialUse === 'true'); // is a session assigned in the official schedule?
-
           deleteModal.elts.unofficialUseWarning.hide();
           deleteModal.elts.officialUseWarning.hide();
           deleteModal.elts.timeslotNameSpans.text(timeslotElt.dataset.timeslotName);
@@ -144,9 +152,76 @@
           } else if (unofficialUse) {
             deleteModal.elts.unofficialUseWarning.show();
           }
+        });
 
-          deleteModal.deletePk  = timeslotElt.dataset.timeslotPk;
-          deleteModal.modal('show');
+        deleteModal.eltsToDelete  = eltsToDelete;
+        deleteModal.modal('show');
+      }
+
+      /**
+       * Handle deleting a single timeslot
+       *
+       * clicked arg is the clicked element, which must be a child of the timeslot element
+       */
+      function deleteSingleTimeSlot(clicked) {
+        deleteModal.openModal([clicked.closest('.timeslot')]);
+      }
+
+      /**
+       * Handle deleting an entire day worth of timeslots
+       *
+       * clicked arg is the clicked element, which must be a child of the day header element
+       */
+      function deleteDay(clicked) {
+        // Find all timeslots for this day
+        let dateId = clicked.dataset.dateId;
+        let timeslots = timeslotTableBody.querySelectorAll(
+          ':scope .timeslot[data-date-id="' + dateId + '"]' // :scope prevents picking up results outside table body
+        );
+        if (timeslots.length > 0) {
+          deleteModal.openModal(timeslots);
+        }
+      }
+
+      /**
+       * Handle deleting an entire column worth of timeslots
+       *
+       * clicked arg is the clicked element, which must be a child of the column header element
+       */
+      function deleteColumn(clicked) {
+        let colId = clicked.dataset.colId;
+        let timeslots = timeslotTableBody.querySelectorAll(
+          ':scope .timeslot[data-col-id="' + colId + '"]' // :scope prevents picking up results outside table body
+        );
+        if (timeslots.length > 0) {
+          deleteModal.openModal(timeslots);
+        }
+      }
+
+      /**
+       * Event handler for clicks on the timeslot table
+       *
+       * Handles clicks on all the delete buttons to avoid large numbers of event handlers.
+       */
+      document.getElementById('timeslot-table').addEventListener('click', function(event) {
+        let clicked = event.target; // find out what was clicked
+        if (clicked.dataset.deleteScope) {
+          switch (clicked.dataset.deleteScope) {
+            case 'timeslot':
+              deleteSingleTimeSlot(clicked)
+              break
+
+            case 'column':
+              deleteColumn(clicked)
+              break
+
+            case 'day':
+              deleteDay(clicked)
+              break
+
+            default:
+              throw new Error('Unexpected deleteScope "' + clicked.dataset.deleteScope + '"')
+          }
         }
       });
     }
@@ -182,7 +257,7 @@
 
     function initializeTsTableObserver() {
       const observer = new MutationObserver(tstableObserveCallback);
-      observer.observe(document.querySelector('#timeslot-table tbody'), { childList: true, subtree: true });
+      observer.observe(timeslotTableBody, { childList: true, subtree: true });
     }
 
     window.addEventListener('load', function (event) {
@@ -197,32 +272,32 @@
     }
 
     function handleDeleteButtonClick() {
-      if (!deleteModal || !deleteModal.deletePk) {
-        return; // do nothing it not yet initialized
+      if (!deleteModal || !deleteModal.eltsToDelete) {
+        return; // do nothing if not yet initialized
       }
 
-      let timeslotElt = document.getElementById('timeslot' + String(deleteModal.deletePk));
-      deleteTimeSlot(deleteModal.deletePk)
+      let timeslotElts = Array.from(deleteModal.eltsToDelete); // make own copy as Array so we have .map()
+      ajaxDeleteTimeSlot(timeslotElts.map(elt => elt.dataset.timeslotPk))
       .error(function(jqXHR, textStatus) {
         displayError('Error deleting timeslot: ' + jqXHR.responseText)
       })
-      .done(function () {timeslotElt.parentNode.removeChild(timeslotElt)})
+      .done(function () {timeslotElts.forEach(tse => tse.parentNode.removeChild(tse))})
       .always(function () {deleteModal.modal('hide')});
     }
 
     /**
      * Make an AJAX request to delete a TimeSlot
      *
-     * @param id ID of TimeSlot to delete
+     * @param pkArray array of PKs of timeslots to delete
      * @returns jqXHR object corresponding to jQuery ajax request
      */
-    function deleteTimeSlot(id) {
+    function ajaxDeleteTimeSlot(pkArray) {
       return jQuery.ajax({
         method: 'post',
         timeout: 5 * 1000,
         data: {
           action: 'delete',
-          slot_id: String(id)
+          slot_id: pkArray.join(',')
         }
       });
     }
