@@ -1183,7 +1183,12 @@ class EditTimeslotsTests(TestCase):
         return urlreverse('ietf.meeting.views.edit_timeslots', kwargs={'num': meeting.number})
 
     @staticmethod
-    def create_ietf_meeting(number=120):
+    def create_timeslots_url(meeting):
+        return urlreverse('ietf.meeting.views.create_timeslot', kwargs={'num': meeting.number})
+
+    @staticmethod
+    def create_bare_meeting(number=120):
+        """Create a basic IETF meeting"""
         return MeetingFactory(
             type_id='ietf',
             number=number,
@@ -1214,6 +1219,13 @@ class EditTimeslotsTests(TestCase):
         meeting.schedule = schedule
         meeting.save()
 
+    def create_meeting(self, number=120):
+        """Create a meeting ready for adding timeslots in the usual workflow"""
+        meeting = self.create_bare_meeting(number=number)
+        RoomFactory.create_batch(8, meeting=meeting)
+        self.create_initial_schedule(meeting)
+        return meeting
+
     def test_view_permissions(self):
         """Only the secretary should be able to edit timeslots"""
         # test prep and helper method
@@ -1222,7 +1234,7 @@ class EditTimeslotsTests(TestCase):
             RoleFactory(name_id='chair').person.user.username,
             RoleFactory(name_id='ad', group__type_id='area').person.user.username,
         ]
-        meeting = self.create_ietf_meeting()
+        meeting = self.create_bare_meeting()
         url = self.edit_timeslots_url(meeting)
 
         def _assert_permissions(comment):
@@ -1256,7 +1268,7 @@ class EditTimeslotsTests(TestCase):
         """The edit timeslots view be linked from the agenda list view"""
         ad = RoleFactory(name_id='ad', group__type_id='area').person
 
-        meeting = self.create_ietf_meeting()
+        meeting = self.create_bare_meeting()
         self.create_initial_schedule(meeting)
 
         url = urlreverse('ietf.meeting.views.list_schedules', kwargs={'num': meeting.number})
@@ -1279,11 +1291,93 @@ class EditTimeslotsTests(TestCase):
         q = PyQuery(r.content)
         self.assertGreaterEqual(
             len(q('a[href="{}"]'.format(self.edit_timeslots_url(meeting)))),
-            0,
+            1,
             'Must be at least one link from the agenda list page to the edit timeslots page'
         )
 
+    def assert_helpful_url(self, response, helpful_url, message):
+        q = PyQuery(response.content)
+        self.assertGreaterEqual(
+            len(q('.timeslot-edit a[href="{}"]'.format(helpful_url))),
+            1,
+            message,
+        )
 
+    def test_with_no_rooms(self):
+        """Editor should be helpful when there are no rooms yet"""
+        meeting = self.create_bare_meeting()
+        self.client.login(username='secretary', password='secretary+password')
+
+        # with no schedule, should get a link to the meeting page in the secr app until we can
+        # handle this situation in the meeting app
+        r = self.client.get(self.edit_timeslots_url(meeting))
+        self.assertEqual(r.status_code, 200)
+        self.assert_helpful_url(
+            r,
+            urlreverse('ietf.secr.meetings.views.view', kwargs={'meeting_id': meeting.number}),
+            'Must be a link to a helpful URL when there are no rooms and no schedule'
+        )
+
+        # with a schedule, should get a link to the create rooms page in the secr app
+        self.create_initial_schedule(meeting)
+        r = self.client.get(self.edit_timeslots_url(meeting))
+        self.assertEqual(r.status_code, 200)
+        self.assert_helpful_url(
+            r,
+            urlreverse('ietf.secr.meetings.views.rooms',
+                       kwargs={'meeting_id': meeting.number, 'schedule_name': meeting.schedule.name}),
+            'Must be a link to a helpful URL when there are no rooms'
+        )
+
+    def test_with_no_timeslots(self):
+        """Editor should be helpful when there are rooms but no timeslots yet"""
+        meeting = self.create_bare_meeting()
+        RoomFactory(meeting=meeting)
+        self.client.login(username='secretary', password='secretary+password')
+        helpful_url = self.create_timeslots_url(meeting)
+
+        # with no schedule, should get a link to the meeting page in the secr app until we can
+        # handle this situation in the meeting app
+        r = self.client.get(self.edit_timeslots_url(meeting))
+        self.assertEqual(r.status_code, 200)
+        self.assert_helpful_url(r, helpful_url,
+                                 'Must be a link to a helpful URL when there are no timeslots and no schedule')
+
+        # with a schedule, should get a link to the create rooms page in the secr app
+        self.create_initial_schedule(meeting)
+        r = self.client.get(self.edit_timeslots_url(meeting))
+        self.assertEqual(r.status_code, 200)
+        q = PyQuery(r.content)
+        self.assert_helpful_url(r, helpful_url,
+                                 'Must be a link to a helpful URL when there are no timeslots')
+
+    def assert_required_links_present(self, response, meeting):
+        """Assert that required links on the editor page are present"""
+        q = PyQuery(response.content)
+        self.assertGreaterEqual(
+            len(q('a[href="{}"]'.format(self.create_timeslots_url(meeting)))),
+            1,
+            'Timeslot edit page should have a link to create timeslots'
+        )
+        self.assertGreaterEqual(
+            len(q('a[href="{}"]'.format(urlreverse('ietf.secr.meetings.views.rooms',
+                                                   kwargs={'meeting_id': meeting.number,
+                                                           'schedule_name': meeting.schedule.name}))
+                  )),
+            1,
+            'Timeslot edit page should have a link to edit rooms'
+        )
+
+    def test_required_links_present(self):
+        """Editor should have links to create timeslots and edit rooms"""
+        meeting = self.create_meeting()
+        self.create_initial_schedule(meeting)
+        RoomFactory.create_batch(8, meeting=meeting)
+
+        self.client.login(username='secretary', password='secretary+password')
+        r = self.client.get(self.edit_timeslots_url(meeting))
+        self.assertEqual(r.status_code, 200)
+        self.assert_required_links_present(r, meeting)
 
 
 class ReorderSlidesTests(TestCase):
