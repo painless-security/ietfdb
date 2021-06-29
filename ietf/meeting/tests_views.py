@@ -27,6 +27,7 @@ from django.test import Client, override_settings
 from django.db.models import F
 from django.http import QueryDict, FileResponse
 from django.template import Context, Template
+from django.utils.text import slugify
 from django.utils.timezone import now
 
 import debug           # pyflakes:ignore
@@ -54,8 +55,8 @@ from ietf.utils.text import xslugify
 from ietf.person.factories import PersonFactory
 from ietf.group.factories import GroupFactory, GroupEventFactory, RoleFactory
 from ietf.meeting.factories import ( SessionFactory, ScheduleFactory,
-    SessionPresentationFactory, MeetingFactory, FloorPlanFactory, 
-    TimeSlotFactory, SlideSubmissionFactory, RoomFactory, 
+    SessionPresentationFactory, MeetingFactory, FloorPlanFactory,
+    TimeSlotFactory, SlideSubmissionFactory, RoomFactory,
     ConstraintFactory, MeetingHostFactory, ProceedingsMaterialFactory )
 from ietf.doc.factories import DocumentFactory, WgDraftFactory
 from ietf.submit.tests import submission_file
@@ -1676,6 +1677,115 @@ class EditMeetingScheduleTests(TestCase):
         r = self.client.post(url_for(schedules['unofficial']), post_data(timeslots['future'], schedules['unofficial']))
         self.assertEqual(r.status_code, 200)
         self.assertTrue(self._decode_json_response(r)['success'])
+
+
+
+class EditTimeslotsTests(TestCase):
+    @staticmethod
+    def edit_timeslots_url(meeting):
+        return urlreverse('ietf.meeting.views.edit_timeslots', kwargs={'num': meeting.number})
+
+    @staticmethod
+    def create_ietf_meeting(number=120):
+        return MeetingFactory(
+            type_id='ietf',
+            number=number,
+            date=datetime.datetime.today() + datetime.timedelta(days=10),
+            populate_schedule=False,
+        )
+
+    @staticmethod
+    def create_initial_schedule(meeting):
+        """Create initial / base schedule in the same manner as through the UI"""
+        owner = User.objects.get(username='secretary').person
+        base_schedule = Schedule.objects.create(
+            meeting=meeting,
+            name='base',
+            owner=owner,
+            visible=True,
+            public=True,
+        )
+
+        schedule = Schedule.objects.create(meeting = meeting,
+                                           name    = "%s-1" % slugify(owner.plain_name()),
+                                           owner   = owner,
+                                           visible = True,
+                                           public  = True,
+                                           base    = base_schedule,
+        )
+
+        meeting.schedule = schedule
+        meeting.save()
+
+    def test_view_permissions(self):
+        """Only the secretary should be able to edit timeslots"""
+        # test prep and helper method
+        usernames_to_reject = [
+            'plain',
+            RoleFactory(name_id='chair').person.user.username,
+            RoleFactory(name_id='ad', group__type_id='area').person.user.username,
+        ]
+        meeting = self.create_ietf_meeting()
+        url = self.edit_timeslots_url(meeting)
+
+        def _assert_permissions(comment):
+            self.client.logout()
+            logged_in_username = '<nobody>'
+            try:
+                # loop through all the usernames that should be rejected
+                for username in usernames_to_reject:
+                    login_testing_unauthorized(self, username, url)
+                    logged_in_username = username
+                # test the last username to reject and log in as secretary
+                login_testing_unauthorized(self, 'secretary', url)
+            except AssertionError:
+                # give a better failure message
+                self.fail(
+                    '{} should not be able to access the edit timeslots page {}'.format(
+                        logged_in_username,
+                        comment,
+                    )
+                )
+            r = self.client.get(url)  # confirm secretary can retrieve the page
+            self.assertEqual(r.status_code, 200,
+                             'secretary should be able to access the edit timeslots page {}'.format(comment))
+
+        # Actual tests here
+        _assert_permissions('without schedule')  # first test without a meeting schedule
+        self.create_initial_schedule(meeting)
+        _assert_permissions('with schedule')  # then test with a meeting schedule
+
+    def test_linked_from_agenda_list(self):
+        """The edit timeslots view be linked from the agenda list view"""
+        ad = RoleFactory(name_id='ad', group__type_id='area').person
+
+        meeting = self.create_ietf_meeting()
+        self.create_initial_schedule(meeting)
+
+        url = urlreverse('ietf.meeting.views.list_schedules', kwargs={'num': meeting.number})
+
+        # Should have no link when logged in as area director
+        self.client.login(username=ad.user.username, password=ad.user.username + '+password')
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        q = PyQuery(r.content)
+        self.assertEqual(
+            len(q('a[href="{}"]'.format(self.edit_timeslots_url(meeting)))),
+            0,
+            'User who cannot edit timeslots should not see a link to the edit timeslots page'
+        )
+
+        # Should have a link when logged in as secretary
+        self.client.login(username='secretary', password='secretary+password')
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        q = PyQuery(r.content)
+        self.assertGreaterEqual(
+            len(q('a[href="{}"]'.format(self.edit_timeslots_url(meeting)))),
+            0,
+            'Must be at least one link from the agenda list page to the edit timeslots page'
+        )
+
 
 
 
