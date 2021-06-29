@@ -17,60 +17,94 @@
 
   <p class="pull-right">
     <a href="{% url "ietf.meeting.views.create_timeslot" num=meeting.number %}">New timeslot</a>
+    &middot;
+    {% if meeting.schedule %}
+      <a href="{% url "ietf.secr.meetings.views.rooms" meeting_id=meeting.number schedule_name=meeting.schedule.name %}">Edit rooms</a>
+    {% else %} {# secr app room view requires a schedule - show something for now (should try to avoid this possibility) #}
+      <span title="Must create meeting schedule to edit rooms">Edit rooms</span>
+    {% endif %}
   </p>
 
   <p> IETF {{ meeting.number }} Meeting Agenda: Timeslots and Room Availability</p>
   <div class="timeslot-edit">
-  <table id="timeslot-table" class="tstable table table-striped table-compact table-bordered">
-    <thead>
-    <tr>
-      <th></th>
-      {% for day in time_slices %}
-        <th colspan="{{date_slices|colWidth:day}}">
-          {{day|date:'D'}}&nbsp;({{day}})
-          <span class="fa fa-trash delete-button"
-                title="Delete all on this day"
-                data-delete-scope="day"
-                data-date-id="{{ day.isoformat }}">
-          </span>
-        </th>
-      {% endfor %}
-    </tr>
-    <tr>
-      <th></th>
-      {% for day in time_slices %}
-        {% for slot in slot_slices|lookup:day %}
-          <th>
-            {{slot.time|date:'H:i'}}-{{slot.end_time|date:'H:i'}}
-            <span class="fa fa-trash delete-button"
-                  data-delete-scope="column"
-                  data-date-id="{{ day.isoformat }}"
-                  data-col-id="{{ day.isoformat }}T{{slot.time|date:'H:i'}}-{{slot.end_time|date:'H:i'}}"
-                  title="Delete all in this column">
-            </span>
-          </th>
-        {% endfor %}
-      {% endfor %}
-    </tr>
-    </thead>
-
-    <tbody>
-    {% for room in rooms %}
+  {% if rooms|length == 0 %}
+    <p>No rooms exist for this meeting yet.</p>
+    {% if meeting.schedule %}
+      <a href="{% url "ietf.secr.meetings.views.rooms" meeting_id=meeting.number schedule_name=meeting.schedule.name %}">Create rooms</a>
+    {% else %}{# provide as helpful a link we can if we don't have an official schedule #}
+      <a href="{% url "ietf.secr.meetings.views.main" meeting_id=meeting.number %}">Create rooms through the secr app</a>
+    {% endif %}
+  {% else %}
+    <table id="timeslot-table" class="tstable table table-striped table-compact table-bordered">
+      {% with have_no_timeslots=time_slices|length_is:0 %}
+      <thead>
       <tr>
-        <th>{{room.name}}{% if room.capacity %} <span class='capacity'>({{room.capacity}})</span>{% endif %}</th>
-        {% for day in time_slices %}
-          {% for slice in date_slices|lookup:day %}{% with cell_ts=ts_list.popleft %}
-            <td class="tscell {% if cell_ts|length > 1 %}timeslot-collision {% endif %}{% for ts in cell_ts %}tstype_{{ ts.type.slug }} {% endfor %}">
-            {% for ts in cell_ts %}
-              {% include 'meeting/timeslot_edit_timeslot.html' with ts=ts in_use=ts_with_any_assignments in_official_use=ts_with_official_assignments only %}
-            {% endfor %}
-          {% endwith %}{% endfor %}
-          </td>
-        {% endfor %}
+        {% if have_no_timeslots %}
+          <th></th>
+          <th></th>
+        {% else %}
+          <th></th>
+          {% for day in time_slices %}
+            <th colspan="{{date_slices|colWidth:day}}">
+              {{day|date:'D'}}&nbsp;({{day}})
+              <span class="fa fa-trash delete-button"
+                    title="Delete all on this day"
+                    data-delete-scope="day"
+                    data-date-id="{{ day.isoformat }}">
+              </span>
+            </th>
+          {% endfor %}
+        {% endif %}
       </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+      <tr>
+        {% if have_no_timeslots %}
+          <th></th>
+          <th></th>
+        {% else %}
+          <th></th>
+          {% for day in time_slices %}
+            {% for slot in slot_slices|lookup:day %}
+              <th>
+                {{slot.time|date:'H:i'}}-{{slot.end_time|date:'H:i'}}
+                <span class="fa fa-trash delete-button"
+                      data-delete-scope="column"
+                      data-date-id="{{ day.isoformat }}"
+                      data-col-id="{{ day.isoformat }}T{{slot.time|date:'H:i'}}-{{slot.end_time|date:'H:i'}}"
+                      title="Delete all in this column">
+                </span>
+              </th>
+            {% endfor %}
+          {% endfor %}
+        {% endif %}
+      </tr>
+      </thead>
+
+      <tbody>
+      {% for room in rooms %}
+        <tr>
+          <th><span class="room-heading">{{room.name}}{% if room.capacity %} <span class='capacity'>({{room.capacity}})</span>{% endif %}</span></th>
+          {% if have_no_timeslots and forloop.first %}
+            <td rowspan="{{ rooms|length }}">
+              <p>No timeslots exist for this meeting yet.</p>
+              <a href="{% url "ietf.meeting.views.create_timeslot" num=meeting.number %}">Create a timeslot.</a>
+            </td>
+          {% else %}
+            {% for day in time_slices %}
+              {% for slice in date_slices|lookup:day %}{% with cell_ts=ts_list.popleft %}
+                <td class="tscell {% if cell_ts|length > 1 %}timeslot-collision {% endif %}{% for ts in cell_ts %}tstype_{{ ts.type.slug }} {% endfor %}">
+                {% for ts in cell_ts %}
+                  {% include 'meeting/timeslot_edit_timeslot.html' with ts=ts in_use=ts_with_any_assignments in_official_use=ts_with_official_assignments only %}
+                {% endfor %}
+              {% endwith %}{% endfor %}
+              </td>
+            {% endfor %}
+          {% endif %}
+        </tr>
+      {% endfor %}
+      </tbody>
+      {% endwith %}
+    </table>
+  {% endif %}
 
   {# Modal to confirm timeslot deletion #}
   <div id="delete-modal" class="modal" tabindex="-1" role="dialog">
