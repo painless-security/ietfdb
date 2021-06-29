@@ -1483,6 +1483,7 @@ def list_schedules(request, num):
     return render(request, "meeting/schedule_list.html", {
         'meeting': meeting,
         'schedule_groups': schedule_groups,
+        'can_edit_timeslots': is_secretariat,
     })
 
 class DiffSchedulesForm(forms.Form):

@@ -32,7 +32,7 @@
     {% if meeting.schedule %}
       <a href="{% url "ietf.secr.meetings.views.rooms" meeting_id=meeting.number schedule_name=meeting.schedule.name %}">Create rooms</a>
     {% else %}{# provide as helpful a link we can if we don't have an official schedule #}
-      <a href="{% url "ietf.secr.meetings.views.main" meeting_id=meeting.number %}">Create rooms through the secr app</a>
+      <a href="{% url "ietf.secr.meetings.views.view" meeting_id=meeting.number %}">Create rooms through the secr app</a>
     {% endif %}
   {% else %}
     <table id="timeslot-table" class="tstable table table-striped table-compact table-bordered">
