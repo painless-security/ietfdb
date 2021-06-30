@@ -65,7 +65,7 @@ from ietf.meeting.helpers import get_wg_list, find_ads_for_meeting
 from ietf.meeting.helpers import get_meeting, get_ietf_meeting, get_current_ietf_meeting_num
 from ietf.meeting.helpers import get_schedule, schedule_permissions, is_regular_agenda_filter_group
 from ietf.meeting.helpers import preprocess_assignments_for_agenda, read_agenda_file
-from ietf.meeting.helpers import filter_keywords_for_session, tag_assignments_with_filter_keywords
+from ietf.meeting.helpers import filter_keywords_for_session, tag_assignments_with_filter_keywords, filter_keyword_for_specific_session
 from ietf.meeting.helpers import convert_draft_to_pdf, get_earliest_session_date
 from ietf.meeting.helpers import can_view_interim_request, can_approve_interim_request
 from ietf.meeting.helpers import can_edit_interim_request
@@ -1787,6 +1787,10 @@ def agenda_personalize(request, num):
         meeting
     )
     tag_assignments_with_filter_keywords(filtered_assignments)
+    for assignment in filtered_assignments:
+        # may be None for some sessions
+        assignment.session_keyword = filter_keyword_for_specific_session(assignment.session)
+
     is_current_meeting = (num is None) or (num == get_current_ietf_meeting_num())
 
     return render(
