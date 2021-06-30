@@ -1464,6 +1464,44 @@ def session_materials(request, session_id):
     assignment = assignments[0]
     return render(request, 'meeting/session_materials.html', dict(item=assignment))
 
+
+def get_assignments_for_agenda(schedule):
+    """Get queryset containing assignments to show on the agenda"""
+    return SchedTimeSessAssignment.objects.filter(
+        schedule__in=[schedule, schedule.base],
+        timeslot__type__private=False,
+    )
+
+
+def extract_groups_hierarchy(prepped_assignments):
+    """Extract groups hierarchy for agenda display
+
+    It's a little bit complicated because we can be dealing with historic groups.
+    """
+    seen = set()
+    groups = [a.session.historic_group for a in prepped_assignments
+              if a.session
+              and a.session.historic_group
+              and is_regular_agenda_filter_group(a.session.historic_group)
+              and a.session.historic_group.historic_parent]
+    group_parents = []
+    for g in groups:
+        if g.historic_parent.acronym not in seen:
+            group_parents.append(g.historic_parent)
+            seen.add(g.historic_parent.acronym)
+
+    seen = set()
+    for p in group_parents:
+        p.group_list = []
+        for g in groups:
+            if g.acronym not in seen and g.historic_parent.acronym == p.acronym:
+                p.group_list.append(g)
+                seen.add(g.acronym)
+
+        p.group_list.sort(key=lambda g: g.acronym)
+    return group_parents
+
+
 @ensure_csrf_cookie
 def agenda(request, num=None, name=None, base=None, ext=None, owner=None, utc=""):
     base = base if base else 'agenda'
@@ -1486,6 +1524,7 @@ def agenda(request, num=None, name=None, base=None, ext=None, owner=None, utc=""
         else:
             raise Http404("No such meeting")
 
+    # Select the schedule to show
     if name is None:
         schedule = get_schedule(meeting, name)
     else:
@@ -1497,39 +1536,19 @@ def agenda(request, num=None, name=None, base=None, ext=None, owner=None, utc=""
         return render(request, "meeting/no-"+base+ext, {'meeting':meeting }, content_type=mimetype[ext])
 
     updated = meeting.updated()
-    filtered_assignments = SchedTimeSessAssignment.objects.filter(
-        schedule__in=[schedule, schedule.base],
-        timeslot__type__private=False,
+
+    # Select and prepare sessions that should be included
+    filtered_assignments = preprocess_assignments_for_agenda(
+        get_assignments_for_agenda(schedule),
+        meeting
     )
-    filtered_assignments = preprocess_assignments_for_agenda(filtered_assignments, meeting)
     tag_assignments_with_filter_keywords(filtered_assignments)
 
+    # Done processing for CSV output
     if ext == ".csv":
         return agenda_csv(schedule, filtered_assignments)
 
-    # extract groups hierarchy, it's a little bit complicated because
-    # we can be dealing with historic groups
-    seen = set()
-    groups = [a.session.historic_group for a in filtered_assignments
-              if a.session
-              and a.session.historic_group
-              and is_regular_agenda_filter_group(a.session.historic_group)
-              and a.session.historic_group.historic_parent]
-    group_parents = []
-    for g in groups:
-        if g.historic_parent.acronym not in seen:
-            group_parents.append(g.historic_parent)
-            seen.add(g.historic_parent.acronym)
-
-    seen = set()
-    for p in group_parents:
-        p.group_list = []
-        for g in groups:
-            if g.acronym not in seen and g.historic_parent.acronym == p.acronym:
-                p.group_list.append(g)
-                seen.add(g.acronym)
-
-        p.group_list.sort(key=lambda g: g.acronym)
+    group_parents = extract_groups_hierarchy(filtered_assignments)
 
     # Groups gathered and processed. Now arrange for the filter UI.
     #
@@ -1755,6 +1774,32 @@ def agenda_by_type_ics(request,num=None,type=None):
         assignments = assignments.filter(session__type__slug=type)
     updated = meeting.updated()
     return render(request,"meeting/agenda.ics",{"schedule":schedule,"updated":updated,"assignments":assignments},content_type="text/calendar")
+
+
+def agenda_personalize(request, num):
+    meeting = get_ietf_meeting(num)  # num may be None, which requests the current meeting
+    if meeting is None or meeting.schedule is None:
+        raise Http404('No such meeting')
+
+    # Select and prepare sessions that should be included
+    filtered_assignments = preprocess_assignments_for_agenda(
+        get_assignments_for_agenda(meeting.schedule),
+        meeting
+    )
+    tag_assignments_with_filter_keywords(filtered_assignments)
+    is_current_meeting = (num is None) or (num == get_current_ietf_meeting_num())
+
+    return render(
+        request,
+        "meeting/agenda_personalize.html",
+        {
+            "schedule": meeting.schedule,
+            'filtered_assignments': filtered_assignments,
+            'timezone': meeting.time_zone,
+            'is_current_meeting': is_current_meeting,
+            'cache_time': 150 if is_current_meeting else 3600,
+        }
+    )
 
 def session_draft_list(num, acronym):
     try:

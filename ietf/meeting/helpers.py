@@ -166,6 +166,16 @@ def get_schedule_by_name(meeting, owner, name):
         return meeting.schedule_set.filter(name = name).first()
 
 def preprocess_assignments_for_agenda(assignments_queryset, meeting, extra_prefetches=()):
+    """Add computed properties to assignments
+
+    For each assignment a, adds
+      a.start_timestamp
+      a.end_timestamp
+      a.session.historic_group
+      a.session.historic_parent
+      a.session.rescheduled_to (if rescheduled)
+      a.session.prefetched_active_materials
+    """
     assignments_queryset = assignments_queryset.prefetch_related(
             'timeslot', 'timeslot__type', 'timeslot__meeting',
             'timeslot__location', 'timeslot__location__floorplan', 'timeslot__location__urlresource_set',
