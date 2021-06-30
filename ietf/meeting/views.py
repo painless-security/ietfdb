@@ -1502,6 +1502,81 @@ def extract_groups_hierarchy(prepped_assignments):
     return group_parents
 
 
+def prepare_filter_keywords(tagged_assignments, group_parents):
+    #
+    # The agenda_filter template expects a list of categorized header buttons, each
+    # with a list of children. Make two categories: the IETF areas and the other parent groups.
+    # We also pass a list of 'extra' buttons - currently Office Hours and miscellaneous filters.
+    # All but the last of these are additionally used by the agenda.html template to make
+    # a list of filtered ical buttons. The last group is ignored for this.
+    area_group_filters = []
+    other_group_filters = []
+    extra_filters = []
+
+    for p in group_parents:
+        new_filter = dict(
+            label=p.acronym.upper(),
+            keyword=p.acronym.lower(),
+            children=[
+                dict(
+                    label=g.acronym,
+                    keyword=g.acronym.lower(),
+                    is_bof=g.is_bof(),
+                ) for g in p.group_list
+            ]
+        )
+        if p.type.slug == 'area':
+            area_group_filters.append(new_filter)
+        else:
+            other_group_filters.append(new_filter)
+
+    office_hours_labels = set()
+    for a in tagged_assignments:
+        suffix = ' office hours'
+        if a.session.name.lower().endswith(suffix):
+            office_hours_labels.add(a.session.name[:-len(suffix)].strip())
+
+    if len(office_hours_labels) > 0:
+        # keyword needs to match what's tagged in filter_keywords_for_session()
+        extra_filters.append(dict(
+            label='Office Hours',
+            keyword='officehours',
+            children=[
+                dict(
+                    label=label,
+                    keyword=label.lower().replace(' ', '')+'officehours',
+                    is_bof=False,
+                ) for label in office_hours_labels
+            ]
+        ))
+
+    # Keywords that should appear in 'non-area' column
+    non_area_labels = [
+        'BoF', 'EDU', 'Hackathon', 'IEPG', 'IESG', 'IETF', 'Plenary', 'Secretariat', 'Tools',
+    ]
+    # Remove any unused non-area keywords
+    non_area_filters = [
+        dict(label=label, keyword=label.lower(), is_bof=False)
+        for label in non_area_labels if any([
+            label.lower() in assignment.filter_keywords
+            for assignment in tagged_assignments
+        ])
+    ]
+    if len(non_area_filters) > 0:
+        extra_filters.append(dict(
+            label=None,
+            keyword=None,
+            children=non_area_filters,
+        ))
+
+    area_group_filters.sort(key=lambda p:p['label'])
+    other_group_filters.sort(key=lambda p:p['label'])
+    filter_categories = [category
+                         for category in [area_group_filters, other_group_filters, extra_filters]
+                         if len(category) > 0]
+    return filter_categories, non_area_labels
+
+
 @ensure_csrf_cookie
 def agenda(request, num=None, name=None, base=None, ext=None, owner=None, utc=""):
     base = base if base else 'agenda'
@@ -1548,80 +1623,11 @@ def agenda(request, num=None, name=None, base=None, ext=None, owner=None, utc=""
     if ext == ".csv":
         return agenda_csv(schedule, filtered_assignments)
 
-    group_parents = extract_groups_hierarchy(filtered_assignments)
-
-    # Groups gathered and processed. Now arrange for the filter UI.
-    #
-    # The agenda_filter template expects a list of categorized header buttons, each
-    # with a list of children. Make two categories: the IETF areas and the other parent groups.
-    # We also pass a list of 'extra' buttons - currently Office Hours and miscellaneous filters.
-    # All but the last of these are additionally used by the agenda.html template to make
-    # a list of filtered ical buttons. The last group is ignored for this. 
-    area_group_filters = []
-    other_group_filters = []
-    extra_filters = []
-    
-    for p in group_parents:
-        new_filter = dict(
-            label=p.acronym.upper(),
-            keyword=p.acronym.lower(),
-            children=[
-                dict(
-                    label=g.acronym,
-                    keyword=g.acronym.lower(),
-                    is_bof=g.is_bof(),
-                ) for g in p.group_list
-            ]
-        )
-        if p.type.slug == 'area':
-            area_group_filters.append(new_filter)
-        else:
-            other_group_filters.append(new_filter)
-
-    office_hours_labels = set()
-    for a in filtered_assignments:
-        suffix = ' office hours'
-        if a.session.name.lower().endswith(suffix):
-            office_hours_labels.add(a.session.name[:-len(suffix)].strip())
-
-    if len(office_hours_labels) > 0:
-        # keyword needs to match what's tagged in filter_keywords_for_session() 
-        extra_filters.append(dict(
-            label='Office Hours',
-            keyword='officehours',
-            children=[
-                dict(
-                    label=label,
-                    keyword=label.lower().replace(' ', '')+'officehours',
-                    is_bof=False,
-                ) for label in office_hours_labels
-            ]
-        ))
-
-    # Keywords that should appear in 'non-area' column
-    non_area_labels = [
-        'BoF', 'EDU', 'Hackathon', 'IEPG', 'IESG', 'IETF', 'Plenary', 'Secretariat', 'Tools',
-    ]
-    # Remove any unused non-area keywords
-    non_area_filters = [
-        dict(label=label, keyword=label.lower(), is_bof=False) 
-        for label in non_area_labels if any([
-            label.lower() in assignment.filter_keywords 
-            for assignment in filtered_assignments
-        ])
-    ]
-    if len(non_area_filters) > 0:
-        extra_filters.append(dict(
-            label=None,
-            keyword=None,
-            children=non_area_filters,
-        ))
-
-    area_group_filters.sort(key=lambda p:p['label'])
-    other_group_filters.sort(key=lambda p:p['label'])
-    filter_categories = [category 
-                         for category in [area_group_filters, other_group_filters, extra_filters]
-                         if len(category) > 0]
+    # Now prep the filter UI
+    filter_categories, non_area_labels = prepare_filter_keywords(
+        filtered_assignments,
+        extract_groups_hierarchy(filtered_assignments),
+    )
 
     is_current_meeting = (num is None) or (num == get_current_ietf_meeting_num())
 
@@ -1791,6 +1797,12 @@ def agenda_personalize(request, num):
         # may be None for some sessions
         assignment.session_keyword = filter_keyword_for_specific_session(assignment.session)
 
+    # Now prep the filter UI
+    filter_categories, non_area_labels = prepare_filter_keywords(
+        filtered_assignments,
+        extract_groups_hierarchy(filtered_assignments),
+    )
+
     is_current_meeting = (num is None) or (num == get_current_ietf_meeting_num())
 
     return render(
@@ -1799,6 +1811,8 @@ def agenda_personalize(request, num):
         {
             "schedule": meeting.schedule,
             'filtered_assignments': filtered_assignments,
+            'filter_categories': filter_categories,
+            'non_area_labels': non_area_labels,
             'timezone': meeting.time_zone,
             'is_current_meeting': is_current_meeting,
             'cache_time': 150 if is_current_meeting else 3600,

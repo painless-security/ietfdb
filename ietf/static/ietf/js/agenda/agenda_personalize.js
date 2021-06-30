@@ -25,22 +25,47 @@ const agenda_personalize = (
       return 'show=' + result.join(',');
     }
 
+    function updateDisplayedUrl(query_string) {
+      var base_url = window.location.href.replace(/\?.*$/, '');
+      if (window.history && window.history.replaceState) {
+        history.replaceState({}, document.title, base_url + '?' + query_string);
+      }
+    }
+
     function updateGeneratedUrl() {
       const query_string = generateQueryString();
-      create_agenda_buttons.forEach( (btn) => {
+      create_agenda_buttons.forEach((btn) => {
         const orig_url = btn.dataset.url;
         btn.href = orig_url + '?' + query_string;
+      });
+      updateDisplayedUrl(query_string);
+    }
+
+    /**
+     * Update the checkbox state to match the filter parameters
+     */
+    function updateAgendaCheckboxes(filter_params) {
+      selection_inputs.forEach((inp) => {
+        const item_keywords = inp.closest('tr').dataset.filterKeywords.toLowerCase().split(',');
+        if (
+          agenda_filter.keyword_match(item_keywords, filter_params.show)
+          && !agenda_filter.keyword_match(item_keywords, filter_params.hide)
+        ) {
+          inp.checked = true;
+        } else {
+          inp.checked = false;
+        }
       });
     }
 
     function handleTableClick(event) {
       if (event.target.name === 'selected-sessions') {
-          updateGeneratedUrl();
-          const jqElt = jQuery(event.target);
-          if (jqElt.tooltip) {
-            jqElt.tooltip('hide');
-          }
+        updateGeneratedUrl();
+        const jqElt = jQuery(event.target);
+        if (jqElt.tooltip) {
+          jqElt.tooltip('hide');
         }
+      }
     }
 
     window.addEventListener('load', function () {
@@ -70,6 +95,9 @@ const agenda_personalize = (
           document.getElementsByClassName('create-agenda-button')
         );
         selection_inputs = document.getElementsByName('selected-sessions');
+
+        agenda_filter.set_update_callback(updateAgendaCheckboxes);
+        agenda_filter.enable();
 
         document.getElementById('agenda-table')
         .addEventListener('click', handleTableClick);
