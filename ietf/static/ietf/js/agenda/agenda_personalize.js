@@ -13,40 +13,12 @@ const agenda_personalize = (
     let selection_inputs;
     let create_agenda_buttons;
 
-    function generateQueryString() {
-      let keywords = new Set();
-      selection_inputs.forEach((inp) => {
-        if (inp.checked) {
-          inp.value.split(',').forEach(kw => keywords.add(kw));
-        }
-      });
-      let result = [];
-      keywords.forEach(kw => result.push(kw));
-      return 'show=' + result.join(',');
-    }
-
-    function updateDisplayedUrl(query_string) {
-      var base_url = window.location.href.replace(/\?.*$/, '');
-      if (window.history && window.history.replaceState) {
-        history.replaceState({}, document.title, base_url + '?' + query_string);
-      }
-    }
-
-    function updateGeneratedUrl() {
-      const query_string = generateQueryString();
-      create_agenda_buttons.forEach((btn) => {
-        const orig_url = btn.dataset.url;
-        btn.href = orig_url + '?' + query_string;
-      });
-      updateDisplayedUrl(query_string);
-    }
-
     /**
      * Update the checkbox state to match the filter parameters
      */
     function updateAgendaCheckboxes(filter_params) {
       selection_inputs.forEach((inp) => {
-        const item_keywords = inp.closest('tr').dataset.filterKeywords.toLowerCase().split(',');
+        const item_keywords = inp.dataset.filterKeywords.toLowerCase().split(',');
         if (
           agenda_filter.keyword_match(item_keywords, filter_params.show)
           && !agenda_filter.keyword_match(item_keywords, filter_params.hide)
@@ -58,9 +30,20 @@ const agenda_personalize = (
       });
     }
 
+    function updateAgendaLink() {
+      create_agenda_buttons.forEach(
+        (elt) => elt.href = elt.dataset.url + window.location.search
+      );
+    }
+
+    function handleFilterParamUpdate(filter_params) {
+      updateAgendaCheckboxes(filter_params);
+      updateAgendaLink();
+    }
+
     function handleTableClick(event) {
       if (event.target.name === 'selected-sessions') {
-        updateGeneratedUrl();
+        // hide the tooltip after clicking on a checkbox
         const jqElt = jQuery(event.target);
         if (jqElt.tooltip) {
           jqElt.tooltip('hide');
@@ -96,7 +79,7 @@ const agenda_personalize = (
         );
         selection_inputs = document.getElementsByName('selected-sessions');
 
-        agenda_filter.set_update_callback(updateAgendaCheckboxes);
+        agenda_filter.set_update_callback(handleFilterParamUpdate);
         agenda_filter.enable();
 
         document.getElementById('agenda-table')

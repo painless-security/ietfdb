@@ -139,17 +139,18 @@
 
             {% if item.timeslot.type.slug == 'break' or item.timeslot.type.slug == 'reg' or item.timeslot.type.slug == 'other' %}
               <tr id="row-{{ item.slug }}"
-                  data-session-keyword="{{ item.session_keyword }}"
-                  data-filter-keywords="{{ item.filter_keywords|join:',' }}"
                   data-slot-start-ts="{{ item.start_timestamp }}"
                   data-slot-end-ts="{{ item.end_timestamp }}">
                 <td class="leftmarker">
                   {% if item.session_keyword %}
                     <input
                       type="checkbox"
+                      class="pickview"
                       title="Select session"
                       name="selected-sessions"
-                      value="{{ item.session_keyword }}">
+                      value="{{ item.session_keyword }}"
+                      data-filter-keywords="{{ item.filter_keywords|join:',' }}"
+                      data-filter-item="{{ item.session_keyword }}">
                   {% endif %}
                 </td>
                 <td class="text-nowrap text-right">
@@ -204,17 +205,18 @@
               {% if item.session.historic_group %}
                 <tr id="row-{{ item.slug }}"
                     {% if item.timeslot.type.slug == 'plenary' %}class="{{ item.timeslot.type.slug }}danger"{% endif %}
-                    data-session-keyword="{{ item.session_keyword }}"
-                    data-filter-keywords="{{ item.filter_keywords|join:',' }}"
                     data-slot-start-ts="{{ item.start_timestamp }}"
                     data-slot-end-ts="{{ item.end_timestamp }}">
                   <td class="leftmarker">
                     {% if item.session_keyword %}
                       <input
                         type="checkbox"
+                        class="pickview"
                         title="Select session"
                         name="selected-sessions"
-                        value="{{ item.session_keyword }}">
+                        value="{{ item.session_keyword }}"
+                        data-filter-keywords="{{ item.filter_keywords|join:',' }}"
+                        data-filter-item="{{ item.session_keyword }}">
                     {% endif %}
                   </td>
                   {% if item.timeslot.type.slug == 'plenary' %}
