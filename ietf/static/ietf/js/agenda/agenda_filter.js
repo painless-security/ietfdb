@@ -167,6 +167,7 @@ var agenda_filter_for_testing; // methods to be accessed for automated testing
           window.location.href,
           filter_params_as_querystring(filter_params)
         )
+        update_href_querystrings(filter_params_as_querystring(filter_params))
         if (window.history && window.history.replaceState) {
             // Keep current origin, replace search string, no page reload
             history.replaceState({}, document.title, new_url)
