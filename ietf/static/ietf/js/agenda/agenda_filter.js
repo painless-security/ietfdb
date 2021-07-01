@@ -5,7 +5,14 @@ var agenda_filter_for_testing; // methods to be accessed for automated testing
 (function () {
     'use strict'
 
-    var update_callback; // function(filter_params)
+    /* n.b., const refers to the opts object itself, not its contents.
+     * Use camelCase for easy translation into element.dataset keys,
+     * which are automatically camel-cased from the data attribute name.
+     * (e.g., data-always-show -> elt.dataset.alwaysShow) */
+    const opts = {
+        alwaysShow: false,
+        updateCallback: null // function(filter_params)
+    };
 
     /* Remove from list, if present */
     function remove_list_item (list, item) {
@@ -58,7 +65,7 @@ var agenda_filter_for_testing; // methods to be accessed for automated testing
     }
 
     function get_filter_params (qparams) {
-        var enabled = !!(qparams.show || qparams.hide);
+        var enabled = opts.alwaysShow || qparams.show || qparams.hide;
         return {
             enabled: enabled,
             show: get_filter_from_qparams(qparams, 'show'),
@@ -115,7 +122,10 @@ var agenda_filter_for_testing; // methods to be accessed for automated testing
         }
 
         // show the customizer - it will stay visible even if filtering is disabled
-        $('#customize').collapse('show')
+        const customizer = $('#customize');
+        if (customizer.hasClass('collapse')) {
+            customizer.collapse('show')
+        }
 
         // Update button state to match visibility
         buttons.each(function (index, elt) {
@@ -140,8 +150,8 @@ var agenda_filter_for_testing; // methods to be accessed for automated testing
     function update_view () {
         var filter_params = get_filter_params(parse_query_params(window.location.search))
         update_filter_ui(filter_params)
-        if (update_callback) {
-            update_callback(filter_params)
+        if (opts.updateCallback) {
+            opts.updateCallback(filter_params)
         }
     }
 
@@ -225,7 +235,19 @@ var agenda_filter_for_testing; // methods to be accessed for automated testing
             update_filters(fp);
         });
     }
-    
+
+    /**
+     * Read options from the template
+     */
+    function read_template_options() {
+        const opts_elt = document.getElementById('agenda-filter-options');
+        opts.keys().forEach((opt) => {
+            if (opt in opts_elt.dataset) {
+                opts[opt] = opts_elt.dataset[opt];
+            }
+        });
+    }
+
     /* Entry point to filtering code when page loads
      * 
      * This must be called if you are using the HTML template to provide a customization
@@ -261,6 +283,6 @@ var agenda_filter_for_testing; // methods to be accessed for automated testing
         keyword_match: keyword_match,
         parse_query_params: parse_query_params,
         rows_matching_filter_keyword: rows_matching_filter_keyword,
-        set_update_callback: function (cb) {update_callback = cb}
+        set_update_callback: function (cb) {opts.updateCallback = cb}
     };
 })();
