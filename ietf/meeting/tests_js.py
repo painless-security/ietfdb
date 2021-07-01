@@ -1749,7 +1749,10 @@ class InterimTests(IetfSeleniumTestCase):
         self.assert_upcoming_view_filter_matches_ics_filter(querystring)
 
         # Check the ical links
-        simplified_querystring = querystring.replace(' ', '%20')  # encode spaces'
+        simplified_querystring = querystring.replace(' ', '')  # remove spaces
+        if simplified_querystring in ['?show=', '?hide=', '?show=&hide=']:
+            simplified_querystring = ''  # these empty querystrings will be dropped (not an exhaustive list)
+
         ics_link = self.driver.find_element_by_link_text('Download as .ics')
         self.assertIn(simplified_querystring, ics_link.get_attribute('href'))
         webcal_link = self.driver.find_element_by_link_text('Subscribe with webcal')
