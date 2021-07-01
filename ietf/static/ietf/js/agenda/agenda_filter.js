@@ -121,6 +121,8 @@ var agenda_filter_for_testing; // methods to be accessed for automated testing
             return;
         }
 
+        update_href_querystrings(filter_params_as_querystring(filter_params))
+
         // show the customizer - it will stay visible even if filtering is disabled
         const customizer = $('#customize');
         if (customizer.hasClass('collapse')) {
@@ -161,20 +163,10 @@ var agenda_filter_for_testing; // methods to be accessed for automated testing
      * (if supported) or loads the new URL.
      */
     function update_filters (filter_params) {
-        var qparams = []
-        var search = ''
-        if (filter_params.show.length > 0) {
-            qparams.push('show=' + filter_params.show.join())
-        }
-        if (filter_params.hide.length > 0) {
-            qparams.push('hide=' + filter_params.hide.join())
-        }
-        if (qparams.length > 0) {
-            search = '?' + qparams.join('&')
-        }
-
-        // strip out the search / hash, then add back
-        var new_url = window.location.href.replace(/(\?.*)?(#.*)?$/, search + window.location.hash)
+        var new_url = replace_querystring(
+          window.location.href,
+          filter_params_as_querystring(filter_params)
+        )
         if (window.history && window.history.replaceState) {
             // Keep current origin, replace search string, no page reload
             history.replaceState({}, document.title, new_url)
@@ -183,6 +175,35 @@ var agenda_filter_for_testing; // methods to be accessed for automated testing
             // No window.history.replaceState support, page reload required
             window.location = new_url
         }
+    }
+
+    /**
+     * Update the querystring in the href filterable agenda links
+     */
+    function update_href_querystrings(querystring) {
+        Array.from(
+          document.getElementsByClassName('agenda-link filterable')
+        ).forEach(
+          (elt) => elt.href = replace_querystring(elt.href, querystring)
+        )
+    }
+
+    function filter_params_as_querystring(filter_params) {
+        var qparams = []
+        if (filter_params.show.length > 0) {
+            qparams.push('show=' + filter_params.show.join())
+        }
+        if (filter_params.hide.length > 0) {
+            qparams.push('hide=' + filter_params.hide.join())
+        }
+        if (qparams.length > 0) {
+            return '?' + qparams.join('&')
+        }
+        return ''
+    }
+
+    function replace_querystring(url, new_querystring) {
+        return url.replace(/(\?.*)?(#.*)?$/, new_querystring + window.location.hash)
     }
 
     /* Helper for pick group/type button handlers - toggles the appropriate parameter entry

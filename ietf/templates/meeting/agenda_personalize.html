@@ -51,7 +51,7 @@
 
   <div class="row">
     <div class="col-md-12">
-      {% include "meeting/meeting_heading.html" with meeting=schedule.meeting updated=updated selected="agenda"     title_extra="" %}
+      {% include "meeting/meeting_heading.html" with meeting=schedule.meeting updated=updated selected="select-sessions" title_extra="" %}
     </div>
   </div>
   <div class="row">
@@ -90,6 +90,13 @@
             <span class="label label-danger">{{ schedule.meeting.agenda_warning_note|removetags:"h1"|safe }}</span>
           {% endif %}
         </h2>
+
+        <a
+          href="{% url 'ietf.meeting.views.agenda' num=schedule.meeting.number %}"
+          class="btn btn-primary agenda-link filterable"
+          data-url="{% url 'ietf.meeting.views.agenda' num=schedule.meeting.number %}">
+          View customized agenda
+        </a>
 
         <table id="agenda-table" class="table table-condensed table-striped">
           {% for item in filtered_assignments %}
@@ -334,9 +341,9 @@
 
         <a
           href="{% url 'ietf.meeting.views.agenda' num=schedule.meeting.number %}"
-          class="btn btn-primary create-agenda-button"
+          class="btn btn-primary agenda-link filterable"
           data-url="{% url 'ietf.meeting.views.agenda' num=schedule.meeting.number %}">
-          Create agenda
+          View customized agenda
         </a>
 
         </div>

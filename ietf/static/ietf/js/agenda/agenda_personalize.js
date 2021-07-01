@@ -11,7 +11,6 @@ const agenda_personalize = (
 
     let meeting_timezone = document.getElementById('initial-data').dataset.timezone;
     let selection_inputs;
-    let create_agenda_buttons;
 
     /**
      * Update the checkbox state to match the filter parameters
@@ -30,15 +29,8 @@ const agenda_personalize = (
       });
     }
 
-    function updateAgendaLink() {
-      create_agenda_buttons.forEach(
-        (elt) => elt.href = elt.dataset.url + window.location.search
-      );
-    }
-
     function handleFilterParamUpdate(filter_params) {
       updateAgendaCheckboxes(filter_params);
-      updateAgendaLink();
     }
 
     function handleTableClick(event) {
@@ -74,9 +66,6 @@ const agenda_personalize = (
         add_tooltips();
         init_timers();
 
-        create_agenda_buttons = Array.from(
-          document.getElementsByClassName('create-agenda-button')
-        );
         selection_inputs = document.getElementsByName('selected-sessions');
 
         agenda_filter.set_update_callback(handleFilterParamUpdate);
