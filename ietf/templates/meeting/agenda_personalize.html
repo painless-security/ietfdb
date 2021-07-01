@@ -51,7 +51,7 @@
 
   <div class="row">
     <div class="col-md-12">
-      {% include "meeting/meeting_heading.html" with meeting=schedule.meeting updated=updated selected="select-sessions" title_extra="Session Selection" %}
+      {% include "meeting/meeting_heading.html" with meeting=schedule.meeting updated=updated selected="select-sessions" title_extra="" %}
     </div>
   </div>
   <div class="row">
@@ -60,7 +60,7 @@
       {% load cache %}
       {% cache cache_time ietf_meeting_agenda_personalize schedule.meeting.number request.path %}
         <div class="row">
-          <div class="col-xs-6"><h1>Agenda</h1></div>
+          <div class="col-xs-6"><h1>Session Selection</h1></div>
           <div class="col-xs-6">
             <div class="tz-display">
               <div><small>
@@ -89,6 +89,9 @@
         <h2>
           Individual Sessions
         </h2>
+        <p>
+          Check boxes below to select individual sessions.
+        </p>
 
         <table id="agenda-table" class="table table-condensed table-striped">
           {% for item in filtered_assignments %}
