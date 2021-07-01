@@ -1809,7 +1809,8 @@ def agenda_personalize(request, num):
         request,
         "meeting/agenda_personalize.html",
         {
-            "schedule": meeting.schedule,
+            'schedule': meeting.schedule,
+            'updated': meeting.updated(),
             'filtered_assignments': filtered_assignments,
             'filter_categories': filter_categories,
             'non_area_labels': non_area_labels,
