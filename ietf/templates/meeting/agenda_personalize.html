@@ -84,19 +84,11 @@
 
         {% include "meeting/agenda_filter.html" with filter_categories=filter_categories always_show=True %}
 
-        <h2>
-          Schedule
-          {% if schedule.meeting.agenda_warning_note %}
-            <span class="label label-danger">{{ schedule.meeting.agenda_warning_note|removetags:"h1"|safe }}</span>
-          {% endif %}
-        </h2>
+        {% include "meeting/agenda_personalize_buttonlist.html" with meeting=schedule.meeting only %}
 
-        <a
-          href="{% url 'ietf.meeting.views.agenda' num=schedule.meeting.number %}"
-          class="btn btn-primary agenda-link filterable"
-          data-url="{% url 'ietf.meeting.views.agenda' num=schedule.meeting.number %}">
-          View customized agenda
-        </a>
+        <h2>
+          Individual Sessions
+        </h2>
 
         <table id="agenda-table" class="table table-condensed table-striped">
           {% for item in filtered_assignments %}
@@ -339,12 +331,7 @@
           {% endfor %}
         </table>
 
-        <a
-          href="{% url 'ietf.meeting.views.agenda' num=schedule.meeting.number %}"
-          class="btn btn-primary agenda-link filterable"
-          data-url="{% url 'ietf.meeting.views.agenda' num=schedule.meeting.number %}">
-          View customized agenda
-        </a>
+        {% include "meeting/agenda_personalize_buttonlist.html" with meeting=schedule.meeting only %}
 
         </div>
         <div class="col-md-2 hidden-print bs-docs-sidebar" id="affix">
