@@ -1245,7 +1245,7 @@ class EditTimeslotsTests(TestCase):
         return urlreverse('ietf.meeting.views.create_timeslot', kwargs={'num': meeting.number})
 
     @staticmethod
-    def create_bare_meeting(number=120):
+    def create_bare_meeting(number=120) -> Meeting:
         """Create a basic IETF meeting"""
         return MeetingFactory(
             type_id='ietf',

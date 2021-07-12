@@ -31,10 +31,6 @@ class MeetingFactory(factory.DjangoModelFactory):
     break_area = factory.Faker('sentence')
     reg_area = factory.Faker('sentence')
 
-    # Inform typing system that MeetingFactory() produces a model instance
-    def __new__(cls, *args, **kwargs) -> Meta.model:
-        return super().__new__(*args, **kwargs)
-
     @factory.lazy_attribute_sequence
     def number(self,n):
         if self.type_id == 'ietf':
