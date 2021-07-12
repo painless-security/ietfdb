@@ -1768,7 +1768,7 @@ class EditTimeslotsTests(TestCase):
         _assert_permissions('with schedule')  # then test with a meeting schedule
 
     def test_linked_from_agenda_list(self):
-        """The edit timeslots view be linked from the agenda list view"""
+        """The edit timeslots view should be linked from the agenda list view"""
         ad = RoleFactory(name_id='ad', group__type_id='area').person
 
         meeting = self.create_bare_meeting()
