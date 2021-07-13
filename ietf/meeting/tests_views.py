@@ -1859,7 +1859,6 @@ class EditTimeslotsTests(TestCase):
         self.create_initial_schedule(meeting)
         r = self.client.get(self.edit_timeslots_url(meeting))
         self.assertEqual(r.status_code, 200)
-        q = PyQuery(r.content)
         self.assert_helpful_url(r, helpful_url,
                                  'Must be a link to a helpful URL when there are no timeslots')
 
@@ -1997,12 +1996,18 @@ class EditTimeslotsTests(TestCase):
             TimeSlotFactory(
                 meeting=meeting,
                 location=meeting.room_set.first(),
-                time=meeting.get_meeting_date(day) + datetime.timedelta(hours=11),
+                time=datetime.datetime.combine(
+                    meeting.get_meeting_date(day).date(),
+                    datetime.time(hour=11)
+                ),
             )
             TimeSlotFactory(
                 meeting=meeting,
                 location=meeting.room_set.first(),
-                time=meeting.get_meeting_date(day) + datetime.timedelta(hours=14),
+                time=datetime.datetime.combine(
+                    meeting.get_meeting_date(day).date(),
+                    datetime.time(hour=14)
+                ),
             )
 
         self.login()
