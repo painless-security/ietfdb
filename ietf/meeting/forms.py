@@ -475,7 +475,6 @@ class TimeSlotCreateForm(forms.Form):
     duration = TimeSlotDurationField()
     show_location = forms.BooleanField(required=False, initial=True)
     locations = forms.ModelMultipleChoiceField(
-        required=False,
         queryset=Room.objects.none(),
         widget=forms.CheckboxSelectMultiple,
     )
@@ -496,8 +495,12 @@ class TimeSlotCreateForm(forms.Form):
         )
         self.fields['locations'].queryset = meeting.room_set.order_by('name')
 
-    def clean_days(self):
-        return self.cleaned_data.get('days') or []
+    def clean_other_date(self):
+        # Because other_date is not required, failed field validation does not automatically
+        # invalidate the form. It should, otherwise a typo may be silently ignored.
+        if self.data.get('other_date') and not self.cleaned_data.get('other_date'):
+            raise ValidationError('Enter a valid date or leave field blank.')
+        return self.cleaned_data.get('other_date', None)
 
     def clean(self):
         # Merge other_date and days fields
@@ -505,8 +508,10 @@ class TimeSlotCreateForm(forms.Form):
             other_date = self.cleaned_data.pop('other_date')
         except KeyError:
             other_date = None
+
+        self.cleaned_data['days'] = self.cleaned_data.get('days') or []
         if other_date is not None:
-            self.cleaned_data.setdefault('days', []).append(other_date)
+            self.cleaned_data['days'].append(other_date)
         if len(self.cleaned_data['days']) == 0:
             self.add_error('days', ValidationError('Please select a day or specify a date'))
 

@@ -377,7 +377,10 @@ def edit_timeslots(request, num=None):
             if slot_id is None:
                 return HttpResponseBadRequest('missing slot_id')
             slot_ids = [id.strip() for id in slot_id.split(',')]
-            timeslots = meeting.timeslot_set.filter(pk__in=slot_ids)
+            try:
+                timeslots = meeting.timeslot_set.filter(pk__in=slot_ids)
+            except ValueError:
+                return HttpResponseBadRequest('invalid slot_id specification')
             missing_ids = set(slot_ids).difference(str(ts.pk) for ts in timeslots)
             if len(missing_ids) != 0:
                 return HttpResponseNotFound('TimeSlot ids not found in meeting {}: '.format(
@@ -4165,14 +4168,18 @@ def edit_timeslot(request, num, slot_id):
         if form.is_valid():
             form.save()
             return HttpResponseRedirect(reverse('ietf.meeting.views.edit_timeslots', kwargs={'num': num}))
-
     else:
         form = TimeSlotEditForm(instance=timeslot)
 
     sessions = timeslot.sessions.filter(
         timeslotassignments__schedule__in=[meeting.schedule, meeting.schedule.base if meeting.schedule else None])
 
-    return render(request, 'meeting/edit_timeslot.html', {'timeslot': timeslot, 'form': form, 'sessions': sessions})
+    return render(
+        request,
+        'meeting/edit_timeslot.html',
+        {'timeslot': timeslot, 'form': form, 'sessions': sessions},
+        status=400 if form.errors else 200,
+    )
 
 
 @role_required('Secretariat')
@@ -4197,7 +4204,12 @@ def create_timeslot(request, num):
     else:
         form = TimeSlotCreateForm(meeting)
 
-    return render(request, 'meeting/create_timeslot.html', dict(meeting=meeting, form=form))
+    return render(
+        request,
+        'meeting/create_timeslot.html',
+        dict(meeting=meeting, form=form),
+        status=400 if form.errors else 200,
+    )
 
 
 @role_required('Secretariat')
