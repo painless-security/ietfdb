@@ -24,7 +24,7 @@ from django.urls import reverse as urlreverse
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.test import Client, override_settings
-from django.db.models import F
+from django.db.models import F, Max
 from django.http import QueryDict, FileResponse
 from django.template import Context, Template
 from django.utils.text import slugify
@@ -1690,6 +1690,11 @@ class EditTimeslotsTests(TestCase):
         return urlreverse('ietf.meeting.views.edit_timeslots', kwargs={'num': meeting.number})
 
     @staticmethod
+    def edit_timeslot_url(ts: TimeSlot):
+        return urlreverse('ietf.meeting.views.edit_timeslot',
+                          kwargs={'num': ts.meeting.number, 'slot_id': ts.pk})
+
+    @staticmethod
     def create_timeslots_url(meeting):
         return urlreverse('ietf.meeting.views.create_timeslot', kwargs={'num': meeting.number})
 
@@ -2117,18 +2122,17 @@ class EditTimeslotsTests(TestCase):
         type_after = 'plenary'
         time_after = time_before.replace(day=time_before.day + 1, hour=time_before.hour + 2)
         duration_after = duration_before * 2
-        show_location_after = not show_location_before
+        show_location_after = False
         location_after = meeting.room_set.last()
         r = self.client.post(
-            urlreverse('ietf.meeting.views.edit_timeslot',
-                       kwargs=dict(num=meeting.number, slot_id=ts.pk)),
+            self.edit_timeslot_url(ts),
             data=dict(
                 name=name_after,
                 type=type_after,
                 time_0=time_after.strftime('%Y-%m-%d'),  # date for SplitDateTimeField
                 time_1=time_after.strftime('%H:%M'),  # time for SplitDateTimeField
                 duration=str(duration_after),
-                show_location=show_location_after,
+                # show_location=show_location_after,  # False values are omitted from form
                 location=location_after.pk,
             )
         )
@@ -2151,6 +2155,123 @@ class EditTimeslotsTests(TestCase):
         self.assertEqual(ts.duration, duration_after)
         self.assertEqual(ts.show_location, show_location_after)
         self.assertEqual(ts.location, location_after)
+
+    def test_invalid_edit_timeslot(self):
+        meeting = self.create_bare_meeting()
+        ts: TimeSlot = TimeSlotFactory(meeting=meeting, name='slot')  # n.b., colon indicates type hinting
+        self.login()
+        r = self.client.post(
+            self.edit_timeslot_url(ts),
+            data=dict(
+                name='',
+                type=ts.type.pk,
+                time_0=ts.time.strftime('%Y-%m-%d'),
+                time_1=ts.time.strftime('%H:%M'),
+                duration=str(ts.duration),
+                show_location=ts.show_location,
+                location=str(ts.location.pk),
+            )
+        )
+        self.assertContains(r, 'This field is required', status_code=400,
+                            msg_prefix='Missing name not properly rejected')
+
+        r = self.client.post(
+            self.edit_timeslot_url(ts),
+            data=dict(
+                name='different name',
+                type='this is not a type id',
+                time_0=ts.time.strftime('%Y-%m-%d'),
+                time_1=ts.time.strftime('%H:%M'),
+                duration=str(ts.duration),
+                show_location=ts.show_location,
+                location=str(ts.location.pk),
+            )
+        )
+        self.assertContains(r, 'Select a valid choice', status_code=400,
+                            msg_prefix='Invalid type not properly rejected')
+
+        r = self.client.post(
+            self.edit_timeslot_url(ts),
+            data=dict(
+                name='different name',
+                type=ts.type.pk,
+                time_0='this is not a date',
+                time_1=ts.time.strftime('%H:%M'),
+                duration=str(ts.duration),
+                show_location=ts.show_location,
+                location=str(ts.location.pk),
+            )
+        )
+        self.assertContains(r, 'Enter a valid date', status_code=400,
+                            msg_prefix='Invalid date not properly rejected')
+
+        r = self.client.post(
+            self.edit_timeslot_url(ts),
+            data=dict(
+                name='different name',
+                type=ts.type.pk,
+                time_0=ts.time.strftime('%Y-%m-%d'),
+                time_1='this is not a time',
+                duration=str(ts.duration),
+                show_location=ts.show_location,
+                location=str(ts.location.pk),
+            )
+        )
+        self.assertContains(r, 'Enter a valid time', status_code=400,
+                            msg_prefix='Invalid time not properly rejected')
+
+        r = self.client.post(
+            self.edit_timeslot_url(ts),
+            data=dict(
+                name='different name',
+                type=ts.type.pk,
+                time_0=ts.time.strftime('%Y-%m-%d'),
+                time_1=ts.time.strftime('%H:%M'),
+                duration='this is not a duration',
+                show_location=ts.show_location,
+                location=str(ts.location.pk),
+            )
+        )
+        self.assertContains(r, 'Enter a valid duration', status_code=400,
+                            msg_prefix='Invalid duration not properly rejected')
+
+        r = self.client.post(
+            self.edit_timeslot_url(ts),
+            data=dict(
+                name='different name',
+                type=ts.type.pk,
+                time_0=ts.time.strftime('%Y-%m-%d'),
+                time_1=ts.time.strftime('%H:%M'),
+                duration='26:00',  # longer than 12 hours,
+                show_location=ts.show_location,
+                location=str(ts.location.pk),
+            )
+        )
+        self.assertContains(r, 'Ensure this value is less than or equal to', status_code=400,
+                            msg_prefix='Overlong duration not properly rejected')
+
+        r = self.client.post(
+            self.edit_timeslot_url(ts),
+            data=dict(
+                name='different name',
+                type=str(ts.type.pk),
+                time_0=ts.time.strftime('%Y-%m-%d'),
+                time_1=ts.time.strftime('%H:%M'),
+                duration=str(ts.duration),
+                show_location=ts.show_location,
+                location='this is not a location',
+            )
+        )
+        self.assertContains(r, 'Select a valid choice', status_code=400,
+                            msg_prefix='Invalid location not properly rejected')
+
+        ts_after = meeting.timeslot_set.get(pk=ts.pk)
+        self.assertEqual(ts.name, ts_after.name)
+        self.assertEqual(ts.type, ts_after.type)
+        self.assertEqual(ts.time, ts_after.time)
+        self.assertEqual(ts.duration, ts_after.duration)
+        self.assertEqual(ts.show_location, ts_after.show_location)
+        self.assertEqual(ts.location, ts_after.location)
 
     def test_create_single_timeslot(self):
         """Creating a single timeslot should work"""
@@ -2185,16 +2306,257 @@ class EditTimeslotsTests(TestCase):
         self.assertEqual(ts.show_location, post_data['show_location'])
         self.assertEqual(str(ts.location.pk), post_data['locations'])
 
+    def test_create_single_timeslot_outside_meeting_days(self):
+        """Creating a single timeslot outside the official meeting days should work"""
+        meeting = self.create_meeting()
+        timeslots_before = set(ts.pk for ts in meeting.timeslot_set.all())
+        other_date = meeting.get_meeting_date(-7).date()
+        post_data = dict(
+            name='some name',
+            type='regular',
+            other_date=other_date.strftime('%Y-%m-%d'),
+            time='14:37',
+            duration='1:13',  # does not include seconds
+            show_location=True,
+            locations=str(meeting.room_set.first().pk),
+        )
+        self.login()
+        r = self.client.post(
+            self.create_timeslots_url(meeting),
+            data=post_data,
+        )
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(r['Location'], self.edit_timeslots_url(meeting),
+                         'Expected to be redirected to meeting timeslots edit page')
+
+        self.assertEqual(meeting.timeslot_set.count(), len(timeslots_before) + 1)
+        ts = meeting.timeslot_set.exclude(pk__in=timeslots_before).first()  # only 1
+        self.assertEqual(ts.name, post_data['name'])
+        self.assertEqual(ts.type_id, post_data['type'])
+        self.assertEqual(ts.time.date(), other_date)
+        self.assertEqual(ts.time.strftime('%H:%M'), post_data['time'])
+        self.assertEqual(str(ts.duration), '{}:00'.format(post_data['duration']))  # add seconds
+        self.assertEqual(ts.show_location, post_data['show_location'])
+        self.assertEqual(str(ts.location.pk), post_data['locations'])
+
+
+    def test_invalid_create_timeslot(self):
+        meeting = self.create_bare_meeting()
+        room_pk = str(RoomFactory(meeting=meeting).pk)
+        timeslot_count = TimeSlot.objects.count()
+
+        self.login()
+        r = self.client.post(
+            self.create_timeslots_url(meeting),
+            data=dict(
+                name='',
+                type='regular',
+                days=str(meeting.date.toordinal()),
+                time='14:37',
+                duration='1:13',  # does not include seconds
+                show_location=True,
+                locations=room_pk,
+            )
+        )
+        self.assertContains(r, 'This field is required', status_code=400,
+                            msg_prefix='Empty name not rejected properly')
+
+        r = self.client.post(
+            self.create_timeslots_url(meeting),
+            data=dict(
+                name='this is a name',
+                type='this is not a type',
+                days=str(meeting.date.toordinal()),
+                time='14:37',
+                duration='1:13',  # does not include seconds
+                show_location=True,
+                locations=room_pk,
+            )
+        )
+        self.assertContains(r, 'Select a valid choice', status_code=400,
+                            msg_prefix='Invalid type not rejected properly')
+
+        r = self.client.post(
+            self.create_timeslots_url(meeting),
+            data=dict(
+                name='this is a name',
+                type='regular',
+                # days='',
+                time='14:37',
+                duration='1:13',  # does not include seconds
+                show_location=True,
+                locations=room_pk,
+            )
+        )
+        self.assertContains(r, 'Please select a day or specify a date', status_code=400,
+                            msg_prefix='Missing date not rejected properly')
+
+        r = self.client.post(
+            self.create_timeslots_url(meeting),
+            data=dict(
+                name='this is a name',
+                type='regular',
+                days='this is not an ordinal date',
+                time='14:37',
+                duration='1:13',  # does not include seconds
+                show_location=True,
+                locations=room_pk,
+            )
+        )
+        self.assertContains(r, 'Select a valid choice', status_code=400,
+                            msg_prefix='Invalid day not rejected properly')
+
+        r = self.client.post(
+            self.create_timeslots_url(meeting),
+            data=dict(
+                name='this is a name',
+                type='regular',
+                days=[str(meeting.date.toordinal()), 'this is not an ordinal date'],
+                time='14:37',
+                duration='1:13',  # does not include seconds
+                show_location=True,
+                locations=room_pk,
+            )
+        )
+        self.assertContains(r, 'Select a valid choice', status_code=400,
+                            msg_prefix='Invalid day with valid day not rejected properly')
+
+        r = self.client.post(
+            self.create_timeslots_url(meeting),
+            data=dict(
+                name='this is a name',
+                type='regular',
+                days=str(meeting.date.toordinal()),
+                other_date='this is not a date',
+                time='14:37',
+                duration='1:13',  # does not include seconds
+                show_location=True,
+                locations=room_pk,
+            )
+        )
+        self.assertContains(r, 'Enter a valid date', status_code=400,
+                            msg_prefix='Invalid other_date with valid days not rejected properly')
+
+        r = self.client.post(
+            self.create_timeslots_url(meeting),
+            data=dict(
+                name='this is a name',
+                type='regular',
+                days='this is not an ordinal date',
+                other_date='2021-07-13',
+                time='14:37',
+                duration='1:13',  # does not include seconds
+                show_location=True,
+                locations=room_pk,
+            )
+        )
+        self.assertContains(r, 'Select a valid choice', status_code=400,
+                            msg_prefix='Invalid day with valid other_date not rejected properly')
+
+        r = self.client.post(
+            self.create_timeslots_url(meeting),
+            data=dict(
+                name='this is a name',
+                type='regular',
+                other_date='this is not a date',
+                time='14:37',
+                duration='1:13',  # does not include seconds
+                show_location=True,
+                locations=room_pk,
+            )
+        )
+        self.assertContains(r, 'Enter a valid date', status_code=400,
+                            msg_prefix='Invalid other_date not rejected properly')
+        r = self.client.post(
+            self.create_timeslots_url(meeting),
+            data=dict(
+                name='this is a name',
+                type='regular',
+                days=str(meeting.date.toordinal()),
+                time='14:37',
+                duration="ceci n'est pas une duree",
+                show_location=True,
+                locations=room_pk,
+            )
+        )
+        self.assertContains(r, 'Enter a valid duration', status_code=400,
+                            msg_prefix='Invalid duration not rejected properly')
+
+        r = self.client.post(
+            self.create_timeslots_url(meeting),
+            data=dict(
+                name='this is a name',
+                type='regular',
+                days=str(meeting.date.toordinal()),
+                time='14:37',
+                duration="26:00",
+                show_location=True,
+                locations=room_pk,
+            )
+        )
+        self.assertContains(r, 'Ensure this value is less than or equal to', status_code=400,
+                            msg_prefix='Overlong duration not rejected properly')
+
+        r = self.client.post(
+            self.create_timeslots_url(meeting),
+            data=dict(
+                name='this is a name',
+                type='regular',
+                days=str(meeting.date.toordinal()),
+                time='14:37',
+                duration="1:13",
+                show_location=True,
+                locations='this is not a room',
+            )
+        )
+        self.assertContains(r, 'is not a valid value', status_code=400,
+                            msg_prefix='Invalid location not rejected properly')
+
+        r = self.client.post(
+            self.create_timeslots_url(meeting),
+            data=dict(
+                name='this is a name',
+                type='regular',
+                days=str(meeting.date.toordinal()),
+                time='14:37',
+                duration="1:13",
+                show_location=True,
+                locations=[room_pk, 'this is not a room'],
+            )
+        )
+        self.assertContains(r, 'is not a valid value', status_code=400,
+                            msg_prefix='Invalid location with valid location not rejected properly')
+
+        r = self.client.post(
+            self.create_timeslots_url(meeting),
+            data=dict(
+                name='this is a name',
+                type='regular',
+                days=str(meeting.date.toordinal()),
+                time='14:37',
+                duration="1:13",
+                show_location=True,
+            )
+        )
+        self.assertContains(r, 'This field is required', status_code=400,
+                            msg_prefix='Missing location not rejected properly')
+
+        self.assertEqual(TimeSlot.objects.count(), timeslot_count,
+                         'TimeSlot unexpectedly created')
+
     def test_create_bulk_timeslots(self):
         """Creating multiple timeslots should work"""
         meeting = self.create_meeting()
         timeslots_before = set(ts.pk for ts in meeting.timeslot_set.all())
         days = [meeting.get_meeting_date(n).date() for n in range(meeting.days)]
+        other_date = meeting.get_meeting_date(-1).date()  # date before start of meeting
+        self.assertNotIn(other_date, days)
         locations = meeting.room_set.all()
         post_data = dict(
             name='some name',
             type='regular',
             days=[str(d.toordinal()) for d in days],
+            other_date=other_date.strftime('%Y-%m-%d'),
             time='14:37',
             duration='1:13',  # does not include seconds
             show_location=True,
@@ -2209,8 +2571,10 @@ class EditTimeslotsTests(TestCase):
         self.assertEqual(r['Location'], self.edit_timeslots_url(meeting),
                          'Expected to be redirected to meeting timeslots edit page')
 
+        days.append(other_date)
         new_slot_count = len(days) * len(locations)
         self.assertEqual(meeting.timeslot_set.count(), len(timeslots_before) + new_slot_count)
+
         day_locs = set((day, loc) for day in days for loc in locations)  # cartesian product
         for ts in meeting.timeslot_set.exclude(pk__in=timeslots_before):
             self.assertEqual(ts.name, post_data['name'])
@@ -2271,6 +2635,87 @@ class EditTimeslotsTests(TestCase):
         )
         self.assertEqual(meeting.timeslot_set.filter(pk=ts_to_keep.pk).count(), 1,
                          'Extra timeslot deleted')
+
+    def test_ajax_delete_timeslots_invalid(self):
+        meeting = self.create_bare_meeting()
+        ts = TimeSlotFactory(meeting=meeting)
+        self.login()
+        r = self.client.post(
+            self.edit_timeslots_url(meeting),
+        )
+        self.assertEqual(r.status_code, 400, 'Missing POST data not handled')
+
+        r = self.client.post(
+            self.edit_timeslots_url(meeting),
+            data=dict()
+        )
+        self.assertEqual(r.status_code, 400, 'Empty POST data not handled')
+
+        r = self.client.post(
+            self.edit_timeslots_url(meeting),
+            data=dict(
+                slot_id=str(ts.pk),
+            )
+        )
+        self.assertEqual(r.status_code, 400, 'Missing action not handled')
+
+        r = self.client.post(
+            self.edit_timeslots_url(meeting),
+            data=dict(
+                action='deletify',
+                slot_id=str(ts.pk),
+            )
+        )
+        self.assertEqual(r.status_code, 400, 'Invalid action not handled')
+
+        r = self.client.post(
+            self.edit_timeslots_url(meeting),
+            data=dict(
+                action='delete',
+            )
+        )
+        self.assertEqual(r.status_code, 400, 'Missing slot_id not handled')
+
+        r = self.client.post(
+            self.edit_timeslots_url(meeting),
+            data=dict(
+                action='delete',
+                slot_id='not an id',
+            )
+        )
+        self.assertEqual(r.status_code, 400, 'Invalid slot_id not handled')
+
+        r = self.client.post(
+            self.edit_timeslots_url(meeting),
+            data=dict(
+                action='delete',
+                slot_id='{}, not an id'.format(ts.pk),
+            )
+        )
+        self.assertEqual(r.status_code, 400, 'Invalid slot_id not handled in bulk')
+
+        nonexistent_id = TimeSlot.objects.all().aggregate(Max('id'))['id__max'] + 1
+        r = self.client.post(
+            self.edit_timeslots_url(meeting),
+            data=dict(
+                action='delete',
+                slot_id=str(nonexistent_id),
+            )
+        )
+        self.assertEqual(r.status_code, 404, 'Nonexistent slot_id not handled in bulk')
+
+        r = self.client.post(
+            self.edit_timeslots_url(meeting),
+            data=dict(
+                action='delete',
+                slot_id='{},{}'.format(nonexistent_id, ts.pk),
+            )
+        )
+        self.assertEqual(r.status_code, 404, 'Nonexistent slot_id not handled in bulk')
+
+        self.assertEqual(meeting.timeslot_set.filter(pk=ts.pk).count(), 1,
+                         'TimeSlot unexpectedly deleted')
+
 
 class ReorderSlidesTests(TestCase):
 
