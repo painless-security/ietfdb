@@ -2102,6 +2102,165 @@ class InterimTests(IetfSeleniumTestCase):
         )
 
 
+class EditTimeslotsTests(IetfSeleniumTestCase):
+    """Test the timeslot editor"""
+    def setUp(self):
+        super().setUp()
+        self.meeting: Meeting = MeetingFactory(
+            type_id='ietf',
+            number=120,
+            date=datetime.datetime.today() + datetime.timedelta(days=10),
+            populate_schedule=False,
+        )
+        self.edit_timeslot_url = self.absreverse(
+            'ietf.meeting.views.edit_timeslots',
+            kwargs=dict(num=self.meeting.number),
+        )
+        self.wait = WebDriverWait(self.driver, 2)
+
+    def do_delete_test(self, selector, keep, delete, cancel=False):
+        self.login('secretary')
+        self.driver.get(self.edit_timeslot_url)
+        delete_button = self.wait.until(
+            expected_conditions.element_to_be_clickable(
+                (By.CSS_SELECTOR, selector)
+            ))
+        delete_button.click()
+
+        if cancel:
+            cancel_button = self.wait.until(
+                expected_conditions.element_to_be_clickable(
+                    (By.CSS_SELECTOR, '#delete-modal button[data-dismiss="modal"]')
+                ))
+            cancel_button.click()
+        else:
+            confirm_button = self.wait.until(
+                expected_conditions.element_to_be_clickable(
+                    (By.CSS_SELECTOR, '#confirm-delete-button')
+                ))
+            confirm_button.click()
+
+        self.wait.until(
+            expected_conditions.invisibility_of_element_located(
+                (By.CSS_SELECTOR, '#delete-modal')
+            ))
+
+        if cancel:
+            keep.extend(delete)
+            delete = []
+
+        self.assertEqual(
+            TimeSlot.objects.filter(pk__in=[ts.pk for ts in delete]).count(),
+            0,
+            'Not all expected timeslots deleted',
+        )
+        self.assertEqual(
+            TimeSlot.objects.filter(pk__in=[ts.pk for ts in keep]).count(),
+            len(keep),
+            'Not all expected timeslots kept'
+        )
+
+    def do_delete_timeslot_test(self, cancel=False):
+        delete = [TimeSlotFactory(meeting=self.meeting)]
+        keep = [TimeSlotFactory(meeting=self.meeting)]
+
+        self.do_delete_test(
+            '#timeslot-table #timeslot{} .delete-button'.format(delete[0].pk),
+            keep,
+            delete
+        )
+
+    def test_delete_timeslot(self):
+        """Delete button for a timeslot should delete that timeslot"""
+        self.do_delete_timeslot_test(cancel=False)
+
+    def test_delete_timeslot_cancel(self):
+        """Timeslot should not be deleted on cancel"""
+        self.do_delete_timeslot_test(cancel=True)
+
+    def do_delete_time_interval_test(self, cancel=False):
+        delete_day = self.meeting.date.date()
+        delete_time = datetime.time(hour=10)
+        other_day = self.meeting.get_meeting_date(1).date()
+        other_time = datetime.time(hour=12)
+        duration = datetime.timedelta(minutes=60)
+
+        delete: [TimeSlot] = TimeSlotFactory.create_batch(
+            2,
+            meeting=self.meeting,
+            time=datetime.datetime.combine(delete_day, delete_time),
+            duration=duration)
+
+        keep: [TimeSlot] = [
+            TimeSlotFactory(
+                meeting=self.meeting,
+                time=datetime.datetime.combine(day, time),
+                duration=duration
+            )
+            for (day, time) in (
+                # combinations of day/time that should not be deleted
+                (delete_day, other_time),
+                (other_day, delete_time),
+                (other_day, other_time),
+            )
+        ]
+
+        selector = (
+            '#timeslot-table '
+            '.delete-button[data-delete-scope="column"]'
+            '[data-col-id="{}T{}-{}"]'.format(
+                delete_day.isoformat(),
+                delete_time.strftime('%H:%M'),
+                (datetime.datetime.combine(delete_day, delete_time) + duration).strftime(
+                    '%H:%M'
+                ))
+        )
+        self.do_delete_test(selector, keep, delete, cancel)
+
+    def test_delete_time_interval(self):
+        """Delete button for a time interval should delete all timeslots in that interval"""
+        self.do_delete_time_interval_test(cancel=False)
+
+    def test_delete_time_interval_cancel(self):
+        """Should not delete a time interval on cancel"""
+        self.do_delete_time_interval_test(cancel=True)
+
+    def do_delete_day_test(self, cancel=False):
+        delete_day = self.meeting.date.date()
+        times = [datetime.time(hour=10), datetime.time(hour=12)]
+        other_days = [self.meeting.get_meeting_date(d).date() for d in range(1, 3)]
+
+        delete: [TimeSlot] = [
+            TimeSlotFactory(
+                meeting=self.meeting,
+                time=datetime.datetime.combine(delete_day, time),
+            ) for time in times
+        ]
+
+        keep: [TimeSlot] = [
+            TimeSlotFactory(
+                meeting=self.meeting,
+                time=datetime.datetime.combine(day, time),
+            ) for day in other_days for time in times
+        ]
+
+        selector = (
+            '#timeslot-table '
+            '.delete-button[data-delete-scope="day"][data-date-id="{}"]'.format(
+                delete_day.isoformat()
+            )
+        )
+        self.do_delete_test(selector, keep, delete, cancel)
+
+    def test_delete_day(self):
+        """Delete button for a day should delete all timeslots on that day"""
+        self.do_delete_day_test(cancel=False)
+
+    def test_delete_day_cancel(self):
+        """Should not delete a day on cancel"""
+        self.do_delete_day_test(cancel=True)
+
+
 # The following are useful debugging tools
 
 # If you add this to a LiveServerTestCase and run just this test, you can browse
