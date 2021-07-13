@@ -376,8 +376,8 @@ def edit_timeslots(request, num=None):
                 return HttpResponseBadRequest('invalid slot_id specification')
             missing_ids = set(slot_ids).difference(str(ts.pk) for ts in timeslots)
             if len(missing_ids) != 0:
-                return HttpResponseNotFound('TimeSlot ids not found in meeting {}: '.format(
-                    num,
+                return HttpResponseNotFound('TimeSlot ids not found in meeting {}: {}'.format(
+                    meeting.number,
                     ', '.join(sorted(missing_ids))
                 ))
             timeslots.delete()
