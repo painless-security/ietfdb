@@ -1,3 +1,4 @@
+/* globals alert, jQuery, moment */
 jQuery(document).ready(function () {
     let content = jQuery(".edit-meeting-schedule");
 
