@@ -13,6 +13,7 @@ import time
 
 from collections import defaultdict
 from functools import lru_cache
+from typing import NamedTuple, Optional
 
 from django.contrib.humanize.templatetags.humanize import intcomma
 from django.core.management.base import BaseCommand, CommandError
@@ -22,6 +23,7 @@ import debug                            # pyflakes:ignore
 
 from ietf.person.models import Person
 from ietf.meeting import models
+from ietf.meeting.helpers import get_person_by_email
 
 # 40 runs of the optimiser for IETF 106 with cycles=160 resulted in 16
 # zero-violation invocations, with a mean number of runs of 91 and 
@@ -30,6 +32,24 @@ from ietf.meeting import models
 # a reasonable rate of success in generating zero-cost schedules.
 
 OPTIMISER_MAX_CYCLES = 160
+
+
+class ScheduleId(NamedTuple):
+    """Represents a schedule id as name and owner"""
+    name: str
+    owner: Optional[str] = None
+
+    @classmethod
+    def from_str(cls, s):
+        """Parse id of the form [owner|]name"""
+        return cls(*reversed(s.split('/', 1)))
+
+    @classmethod
+    def from_schedule(cls, sched):
+        return cls(sched.name, str(sched.owner.email()))
+
+    def __str__(self):
+        return '/'.join(tok for tok in reversed(self) if tok is not None)
 
 
 class Command(BaseCommand):
@@ -43,13 +63,22 @@ class Command(BaseCommand):
         parser.add_argument('-r', '--max-runs', type=int, dest='max_cycles',
                             default=OPTIMISER_MAX_CYCLES,
                             help='maximum optimiser runs')
+        parser.add_argument('-b', '--base-schedule',
+                            type=ScheduleId.from_str,
+                            dest='base_id',
+                            default=None,
+                            help=(
+                                'Base schedule for generated schedule, specified as "[owner|]name"'
+                                ' (default is no base schedule; owner not required if name is unique)'
+                            ))
 
-    def handle(self, meeting, name, max_cycles, verbosity, *args, **kwargs):
-        ScheduleHandler(self.stdout, meeting, name, max_cycles, verbosity).run()
+    def handle(self, meeting, name, max_cycles, verbosity, base_id, *args, **kwargs):
+        ScheduleHandler(self.stdout, meeting, name, max_cycles, verbosity, base_id).run()
 
 
 class ScheduleHandler(object):
-    def __init__(self, stdout, meeting_number, name=None, max_cycles=OPTIMISER_MAX_CYCLES, verbosity=1):
+    def __init__(self, stdout, meeting_number, name=None, max_cycles=OPTIMISER_MAX_CYCLES,
+                 verbosity=1, base_id=None):
         self.stdout = stdout
         self.verbosity = verbosity
         self.name = name
@@ -61,8 +90,28 @@ class ScheduleHandler(object):
                 raise CommandError('Unknown meeting number {}'.format(meeting_number))
         else:
             self.meeting = models.Meeting.get_current_meeting()
+
+        if base_id is None:
+            self.base_schedule = None
+        else:
+            base_candidates = models.Schedule.objects.filter(meeting=self.meeting, name=base_id.name)
+            if base_id.owner is not None:
+                base_candidates = base_candidates.filter(owner=get_person_by_email(base_id.owner))
+            if base_candidates.count() == 0:
+                raise CommandError('Base schedule "{}" not found'.format(base_id))
+            elif base_candidates.count() >= 2:
+                raise CommandError('Base schedule "{}" not unique (candidates are {})'.format(
+                    base_id,
+                    ', '.join(str(ScheduleId.from_schedule(sched)) for sched in base_candidates)
+                ))
+            else:
+                self.base_schedule = base_candidates.first()  # only have one
+
         if self.verbosity >= 1:
-            self.stdout.write("\nRunning automatic schedule layout for meeting IETF %s\n\n" % self.meeting.number)
+            msgs = ['Running automatic schedule layout for meeting IETF {}'.format(self.meeting.number)]
+            if self.base_schedule is not None:
+                msgs.append('Applying schedule {} as base schedule'.format(ScheduleId.from_schedule(self.base_schedule)))
+            self.stdout.write('\n{}\n\n'.format('\n'.join(msgs)))
         self._load_meeting()
 
     def run(self):
