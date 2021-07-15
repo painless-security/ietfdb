@@ -129,7 +129,7 @@ jQuery(document).ready(function () {
             if (sessionId) {
                 let sessionIds = this.dataset.sessions;
                 if (!sessionIds) {
-                    applyChange = False;
+                    applyChange = false;
                 } else {
                     wouldViolate = sessionIds.split(",").indexOf(sessionId) !== -1;
                 }
