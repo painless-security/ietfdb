@@ -13,6 +13,8 @@ jQuery(document).ready(function () {
     let timeslots = content.find(".timeslot");
     let timeslotLabels = content.find(".time-label");
     let days = content.find(".day-flow .day");
+    let officialSchedule = content.hasClass('official-schedule');
+    let debugTime; // Change current time for debugging
 
     // hack to work around lack of position sticky support in old browsers, see https://caniuse.com/#feat=css-sticky
     if (content.find(".scheduling-panel").css("position") != "sticky") {
@@ -165,6 +167,26 @@ jQuery(document).ready(function () {
         }
     }
 
+    function isFutureTimeslot(timeslot) {
+        // resist the temptation to use native JS Date parsing, it is hopelessly broken
+        const timeslot_time = moment(timeslot.attr('data-start'), moment.ISO_8601);
+        const now = debugTime ? moment(debugTime) : moment();
+        return timeslot_time.isAfter(now);
+    }
+
+    function canEditSession(session) {
+        if (!officialSchedule) {
+            return true;
+        }
+
+        const timeslot = jQuery(session).closest('div.timeslot');
+        if (!timeslot) {
+            return true;
+        }
+
+        return isFutureTimeslot(timeslot);
+    }
+
     content.on("click", function (event) {
         if (jQuery(event.target).is(".session-info-container") || jQuery(event.target).closest(".session-info-container").length > 0)
             return;
@@ -183,10 +205,12 @@ jQuery(document).ready(function () {
     if (!content.find(".edit-grid").hasClass("read-only")) {
         // dragging
         sessions.on("dragstart", function (event) {
-            event.originalEvent.dataTransfer.setData("text/plain", this.id);
-            jQuery(this).addClass("dragging");
+            if (canEditSession(this)) {
+                event.originalEvent.dataTransfer.setData("text/plain", this.id);
+                jQuery(this).addClass("dragging");
 
-            selectSessionElement(this);
+                selectSessionElement(this);
+            }
         });
         sessions.on("dragend", function () {
             jQuery(this).removeClass("dragging");
