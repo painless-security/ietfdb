@@ -256,9 +256,17 @@ class Schedule(object):
         self.schedule = dict()
         self.best_cost = math.inf
         self.best_schedule = None
-        self.fixed_cost = 0
-        self.fixed_violations = []
+        self._fixed_costs = dict()  # key = type of cost
+        self._fixed_violations = dict()  # key = type of cost
         self.max_cycles = max_cycles
+
+    @property
+    def fixed_cost(self):
+        return sum(self._fixed_costs.values())
+
+    @property
+    def fixed_violations(self):
+        return sum(self._fixed_violations.values(), [])
 
     @property
     def free_sessions(self):
@@ -299,6 +307,7 @@ class Schedule(object):
             availables = [getattr(timeslot, t_attr) for timeslot in self.free_timeslots]
             availables.sort()
             sessions = sorted(self.free_sessions, key=lambda s: getattr(s, s_attr), reverse=True)
+            violations, cost = [], 0
             for session in sessions:
                 found_fit = False
                 for idx, available in enumerate(availables):
@@ -312,12 +321,21 @@ class Schedule(object):
                     msg = f.format(t_attr, session.group, getattr(session, s_attr), largest_available)
                     setattr(session, s_attr, largest_available)
                     availables.pop(-1)
-                    self.fixed_cost += self.business_constraint_costs['session_requires_trim']
-                    self.fixed_violations.append(msg)
-        
-        make_capacity_adjustments('duration', 'requested_duration')
-        make_capacity_adjustments('capacity', 'attendees')
-                
+                    cost += self.business_constraint_costs['session_requires_trim']
+                    violations.append(msg)
+            return violations, cost
+
+        (
+            self._fixed_violations['session_requires_duration_trim'],
+            self._fixed_costs['session_requires_duration_trim'],
+        ) = make_capacity_adjustments('duration', 'requested_duration')
+
+        (
+            self._fixed_violations['session_requires_capacity_trim'],
+            self._fixed_costs['session_requires_capacity_trim'],
+        ) = make_capacity_adjustments('capacity', 'attendees')
+
+
     def total_schedule_cost(self):
         """
         Calculate the total cost of the current schedule in self.schedule.
