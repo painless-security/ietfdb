@@ -219,6 +219,20 @@ class ScheduleHandler(object):
         })
         return sessions
 
+    def _compute_base_schedule_cost(self, business_constraint_costs):
+        """Compute the fixed cost of the base schedule"""
+        if self.base_schedule is None:
+            return  # no costs
+
+        base_sched = Schedule.from_db_schedule(
+            self.stdout,
+            self.base_schedule,
+            business_constraint_costs,
+            self.max_cycles,
+            self.verbosity
+        )
+        self.schedule.add_fixed_cost('base_schedule', *base_sched.total_schedule_cost())
+
     def _load_meeting(self):
         """Load all timeslots and sessions into in-memory objects."""
         business_constraint_costs = {
@@ -240,6 +254,7 @@ class ScheduleHandler(object):
             self.stdout, timeslots, sessions, business_constraint_costs, self.max_cycles, self.verbosity)
         self.schedule.adjust_for_timeslot_availability()
 
+        self._compute_base_schedule_cost(business_constraint_costs)
 
 class Schedule(object):
     """
@@ -268,6 +283,10 @@ class Schedule(object):
     def fixed_violations(self):
         return sum(self._fixed_violations.values(), [])
 
+    def add_fixed_cost(self, label, violations, cost):
+        self._fixed_costs[label] = cost
+        self._fixed_violations[label] = violations
+
     @property
     def free_sessions(self):
         """Sessions that can be moved by the schedule"""
@@ -277,6 +296,42 @@ class Schedule(object):
     def free_timeslots(self):
         """Timeslots that can be filled by the schedule"""
         return (t for t in self.timeslots if not t.is_fixed)
+
+    @classmethod
+    def from_db_schedule(cls, stdout, db_schedule, business_constraint_costs,
+                         max_cycles, verbosity):
+        """Create a schedule equivalent to a schedule in the database
+
+        Does not load a base schedule
+        """
+        meeting = db_schedule.meeting
+        db_sessions = meeting.session_set.filter(
+            type_id='regular',
+            schedulingevent__status_id='schedw',
+        ).select_related('group')
+        sessions = {
+            db_session.pk: Session(
+                stdout, meeting, db_session, business_constraint_costs, verbosity
+            ) for db_session in db_sessions
+        }
+        db_timeslots = meeting.timeslot_set.filter(
+            type_id='regular',
+        ).exclude(
+            location__capacity=None,
+        ).select_related('location')
+        timeslots = {
+            db_timeslot.pk: TimeSlot(db_timeslot, verbosity)
+            for db_timeslot in db_timeslots
+        }
+        for timeslot in timeslots.values():
+            timeslot.store_relations(timeslots.values())
+
+        schedule = cls(stdout, timeslots.values(), sessions.values(), business_constraint_costs, max_cycles, verbosity)
+        for assignment in db_schedule.assignments.filter(session__in=db_sessions, timeslot__in=db_timeslots):
+            schedule.schedule[timeslots[assignment.timeslot.pk]] = sessions[assignment.session.pk]
+
+        return schedule
+
 
     def save_assignments(self, schedule_db):
         for timeslot, session in self.schedule.items():
@@ -325,15 +380,15 @@ class Schedule(object):
                     violations.append(msg)
             return violations, cost
 
-        (
-            self._fixed_violations['session_requires_duration_trim'],
-            self._fixed_costs['session_requires_duration_trim'],
-        ) = make_capacity_adjustments('duration', 'requested_duration')
+        self.add_fixed_cost(
+            'session_requires_duration_trim',
+            *make_capacity_adjustments('duration', 'requested_duration'),
+        )
 
-        (
-            self._fixed_violations['session_requires_capacity_trim'],
-            self._fixed_costs['session_requires_capacity_trim'],
-        ) = make_capacity_adjustments('capacity', 'attendees')
+        self.add_fixed_cost(
+            'session_requires_capacity_trim',
+            *make_capacity_adjustments('capacity', 'attendees'),
+        )
 
 
     def total_schedule_cost(self):
