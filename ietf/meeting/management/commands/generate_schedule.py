@@ -83,6 +83,7 @@ class ScheduleHandler(object):
         self.verbosity = verbosity
         self.name = name
         self.max_cycles = max_cycles
+
         if meeting_number:
             try:
                 self.meeting = models.Meeting.objects.get(type="ietf", number=meeting_number)
@@ -116,8 +117,6 @@ class ScheduleHandler(object):
 
     def run(self):
         """Schedule all sessions"""
-
-
         beg_time = time.time()
         self.schedule.fill_initial_schedule()
         violations, cost = self.schedule.total_schedule_cost()
@@ -251,7 +250,7 @@ class Schedule(object):
     def __init__(self, stdout, timeslots, sessions, business_constraint_costs, max_cycles, verbosity):
         self.stdout = stdout
         self.timeslots = timeslots
-        self.sessions = sessions
+        self.sessions = sessions or []
         self.business_constraint_costs = business_constraint_costs
         self.verbosity = verbosity
         self.schedule = dict()
@@ -260,7 +259,17 @@ class Schedule(object):
         self.fixed_cost = 0
         self.fixed_violations = []
         self.max_cycles = max_cycles
-        
+
+    @property
+    def free_sessions(self):
+        """Sessions that can be moved by the schedule"""
+        return (sess for sess in self.sessions if not sess.is_fixed)
+
+    @property
+    def free_timeslots(self):
+        """Timeslots that can be filled by the schedule"""
+        return (t for t in self.timeslots if not t.is_fixed)
+
     def save_assignments(self, schedule_db):
         for timeslot, session in self.schedule.items():
             models.SchedTimeSessAssignment.objects.create(
@@ -280,14 +289,16 @@ class Schedule(object):
         of trimming in advance is to prevent the optimiser from trying to resolve
         a constraint that can never be resolved.
         """
-        if len(self.sessions) > len(self.timeslots):
+        num_to_schedule = len(list(self.free_sessions))
+        num_free_timeslots = len(list(self.free_timeslots))
+        if  num_to_schedule > num_free_timeslots:
             raise CommandError('More sessions ({}) than timeslots ({})'
-                               .format(len(self.sessions), len(self.timeslots)))
+                               .format(num_to_schedule, num_free_timeslots))
     
         def make_capacity_adjustments(t_attr, s_attr):
-            availables = [getattr(timeslot, t_attr) for timeslot in self.timeslots]
+            availables = [getattr(timeslot, t_attr) for timeslot in self.free_timeslots]
             availables.sort()
-            sessions = sorted(self.sessions, key=lambda s: getattr(s, s_attr), reverse=True)
+            sessions = sorted(self.free_sessions, key=lambda s: getattr(s, s_attr), reverse=True)
             for session in sessions:
                 found_fit = False
                 for idx, available in enumerate(availables):
@@ -335,8 +346,8 @@ class Schedule(object):
         group_sessions = defaultdict(set)
         overlapping_sessions = defaultdict(set)
         for timeslot, session in schedule.items():
-            group_sessions[session.group].add((timeslot, session))
-            overlapping_sessions[timeslot].update({schedule.get(t) for t in timeslot.overlaps})
+            group_sessions[session.group].add((timeslot, session))  # (timeslot, session), not just session!
+            overlapping_sessions[timeslot].update({schedule[t] for t in timeslot.overlaps if t in schedule})
             
         for timeslot, session in schedule.items():
             session_violations, session_cost = session.calculate_cost(
@@ -362,11 +373,11 @@ class Schedule(object):
         """
         if self.verbosity >= 2:
             self.stdout.write('== Initial scheduler starting, scheduling {} sessions in {} timeslots =='
-                              .format(len(self.sessions), len(self.timeslots)))
-        sessions = sorted(self.sessions, key=lambda s: s.complexity, reverse=True)
+                              .format(len(list(self.free_sessions)), len(list(self.timeslots))))
+        sessions = sorted(self.free_sessions, key=lambda s: s.complexity, reverse=True)
 
         for session in sessions:
-            possible_slots = [t for t in self.timeslots if t not in self.schedule.keys()]
+            possible_slots = [t for t in self.free_timeslots if t not in self.schedule.keys()]
             random.shuffle(possible_slots)
             
             def timeslot_preference(t):
@@ -418,6 +429,8 @@ class Schedule(object):
                 self._shuffle_conflicted_sessions(items)
 
             for original_timeslot, session in items:
+                if session.is_fixed:
+                    continue
                 best_cost = self.calculate_dynamic_cost()[1]
                 if best_cost == 0:
                     if self.verbosity >= 1 and self.stdout.isatty():
@@ -428,7 +441,7 @@ class Schedule(object):
                     return run_count
                 best_timeslot = None
 
-                for possible_new_slot in self.timeslots:
+                for possible_new_slot in self.free_timeslots:
                     cost = self._cost_for_switch(original_timeslot, possible_new_slot)
                     if cost < best_cost:
                         best_cost = cost
@@ -474,8 +487,7 @@ class Schedule(object):
                               .format(', '.join([s.group for t, s in to_reschedule])))
         
         for original_timeslot, rescheduling_session in to_reschedule:
-            possible_new_slots = list(self.timeslots)
-            possible_new_slots.remove(original_timeslot)
+            possible_new_slots = list(t for t in self.free_timeslots if t != original_timeslot)
             random.shuffle(possible_new_slots)
             
             for possible_new_slot in possible_new_slots:
@@ -498,7 +510,7 @@ class Schedule(object):
         """
         optimised_timeslots = set()
         for timeslot in list(self.schedule.keys()):
-            if timeslot in optimised_timeslots:
+            if timeslot in optimised_timeslots or timeslot.is_fixed:
                 continue
             timeslot_overlaps = sorted(timeslot.full_overlaps, key=lambda t: t.capacity, reverse=True)
             sessions_overlaps = [self.schedule.get(t) for t in timeslot_overlaps]
@@ -506,6 +518,8 @@ class Schedule(object):
             assert len(timeslot_overlaps) == len(sessions_overlaps)
             
             for new_timeslot in timeslot_overlaps:
+                if new_timeslot.is_fixed:
+                    continue
                 new_session = sessions_overlaps.pop(0)
                 if not new_session and new_timeslot in self.schedule:
                     del self.schedule[new_timeslot]
@@ -736,20 +750,25 @@ class Session(object):
         The return value is a tuple of violations (list of strings) and a cost (integer).        
         """
         violations, cost = [], 0
-        overlapping_sessions = tuple(overlapping_sessions)
-        
-        if self.attendees > my_timeslot.capacity:
-            violations.append('{}: scheduled scheduled in too small room'.format(self.group))
-            cost += self.business_constraint_costs['session_requires_trim']
+        # Ignore overlap between two fixed sessions when calculating dynamic cost
+        overlapping_sessions = tuple(
+            o for o in overlapping_sessions
+            if not (self.is_fixed and o.is_fixed)
+        )
 
-        if self.requested_duration > my_timeslot.duration:
-            violations.append('{}: scheduled scheduled in too short timeslot'.format(self.group))
-            cost += self.business_constraint_costs['session_requires_trim']
+        if not self.is_fixed:
+            if self.attendees > my_timeslot.capacity:
+                violations.append('{}: scheduled scheduled in too small room'.format(self.group))
+                cost += self.business_constraint_costs['session_requires_trim']
 
-        if my_timeslot.time_group in self.timeranges_unavailable:
-            violations.append('{}: scheduled in unavailable timerange {}'
-                              .format(self.group, my_timeslot.time_group))
-            cost += self.timeranges_unavailable_penalty
+            if self.requested_duration > my_timeslot.duration:
+                violations.append('{}: scheduled scheduled in too short timeslot'.format(self.group))
+                cost += self.business_constraint_costs['session_requires_trim']
+
+            if my_timeslot.time_group in self.timeranges_unavailable:
+                violations.append('{}: scheduled in unavailable timerange {}'
+                                  .format(self.group, my_timeslot.time_group))
+                cost += self.timeranges_unavailable_penalty
             
         v, c = self._calculate_cost_overlapping_groups(overlapping_sessions)
         violations += v
@@ -779,6 +798,8 @@ class Session(object):
         for other in overlapping_sessions:
             if not other:
                 continue
+            if self.is_fixed and other.is_fixed:
+                continue
             if other.group == self.group:
                 violations.append('{}: scheduled twice in overlapping slots'.format(self.group))
                 cost += math.inf
@@ -798,6 +819,8 @@ class Session(object):
         violations, cost = [], 0
         for other in overlapping_sessions:
             if not other:
+                continue
+            if self.is_fixed and other.is_fixed:
                 continue
             # BoFs cannot conflict with PRGs
             if self.is_bof and other.is_prg:
@@ -837,23 +860,34 @@ class Session(object):
     
     @lru_cache(maxsize=10000)
     def _calculate_cost_my_other_sessions(self, my_sessions):
+        """Calculate cost due to other sessions for same group
+
+        my_sessions is a set of (TimeSlot, Session) tuples.
+        """
+        def sort_sessions(timeslot_session_pairs):
+            return sorted(timeslot_session_pairs, key=lambda item: item[1].session_pk)
+
         violations, cost = [], 0
-        my_sessions = list(my_sessions)
         if len(my_sessions) >= 2:
-            if my_sessions != sorted(my_sessions, key=lambda i: i[1].session_pk):
-                session_order = [s.session_pk for t, s in my_sessions]
+            my_fixed_sessions = [m for m in my_sessions if m[1].is_fixed]
+            fixed_sessions_in_order = (my_fixed_sessions == sort_sessions(my_fixed_sessions))
+            # Only possible to keep sessions in order if fixed sessions are in order - ignore cost if not.
+            if fixed_sessions_in_order and (list(my_sessions) != sort_sessions(my_sessions)):
+                session_order = [s.session_pk for t, s in list(my_sessions)]
                 violations.append('{}: sessions out of order: {}'.format(self.group, session_order))
                 cost += self.business_constraint_costs['sessions_out_of_order']
                 
-        if self.time_relation and len(my_sessions) >= 2:
-            group_days = [t.start.date() for t, s in my_sessions]
-            difference_days = abs((group_days[1] - group_days[0]).days)
-            if self.time_relation == 'subsequent-days' and difference_days != 1:
-                violations.append('{}: has time relation subsequent-days but difference is {}'
-                                  .format(self.group, difference_days))
-                cost += self.time_relation_penalty
-            elif self.time_relation == 'one-day-seperation' and difference_days == 1:
-                violations.append('{}: has time relation one-day-seperation but difference is {}'
-                                  .format(self.group, difference_days))
-                cost += self.time_relation_penalty
+            if self.time_relation:
+                group_days = [t.start.date() for t, s in my_sessions]
+                # ignore conflict between two fixed sessions
+                if not (my_sessions[0][1].is_fixed and my_sessions[1][1].is_fixed):
+                    difference_days = abs((group_days[1] - group_days[0]).days)
+                    if self.time_relation == 'subsequent-days' and difference_days != 1:
+                        violations.append('{}: has time relation subsequent-days but difference is {}'
+                                          .format(self.group, difference_days))
+                        cost += self.time_relation_penalty
+                    elif self.time_relation == 'one-day-seperation' and difference_days == 1:
+                        violations.append('{}: has time relation one-day-seperation but difference is {}'
+                                          .format(self.group, difference_days))
+                        cost += self.time_relation_penalty
         return violations, cost
