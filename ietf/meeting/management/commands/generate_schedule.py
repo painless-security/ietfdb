@@ -156,6 +156,7 @@ class ScheduleHandler(object):
         schedule_db = models.Schedule.objects.create(
             meeting=self.meeting,
             name=self.name,
+            base=self.base_schedule,
             owner=Person.objects.get(name='(System)'),
             public=False,
             visible=True,
@@ -163,32 +164,74 @@ class ScheduleHandler(object):
         )
         self.schedule.save_assignments(schedule_db)
         self.stdout.write('Schedule saved as {}'.format(self.name))
-        
+
+    def _available_timeslots(self):
+        """Find timeslots available for schedule generation
+
+        Excludes:
+          * sunday timeslots
+          *  timeslots used by the base schedule, if any
+        """
+        # n.b., models.TimeSlot is not the same as TimeSlot!
+        timeslots_db = models.TimeSlot.objects.filter(
+            meeting=self.meeting,
+            type_id='regular',
+        ).exclude(
+            location__capacity=None,
+        )
+
+        if self.base_schedule is None:
+            fixed_timeslots = models.TimeSlot.objects.none()
+        else:
+            fixed_timeslots = timeslots_db.filter(pk__in=self.base_schedule.qs_timeslots_in_use())
+        free_timeslots = timeslots_db.exclude(pk__in=fixed_timeslots)
+
+        timeslots = {TimeSlot(t, self.verbosity) for t in free_timeslots.select_related('location')}
+        timeslots.update(
+            TimeSlot(t, self.verbosity, is_fixed=True) for t in fixed_timeslots.select_related('location')
+        )
+        return {t for t in timeslots if t.day != 'sunday'}
+
+    def _sessions_to_schedule(self, *args, **kwargs):
+        """Find sessions that need to be scheduled
+
+        Extra arguments are passed to the Session constructor.
+        """
+        sessions_db = models.Session.objects.filter(
+            meeting=self.meeting,
+            type_id='regular',
+            schedulingevent__status_id='schedw',
+        )
+
+        if self.base_schedule is None:
+            fixed_sessions = models.Session.objects.none()
+        else:
+            fixed_sessions = sessions_db.filter(pk__in=self.base_schedule.qs_sessions_scheduled())
+        free_sessions = sessions_db.exclude(pk__in=fixed_sessions)
+
+        sessions = {
+            Session(self.stdout, self.meeting, s, is_fixed=False, *args, **kwargs)
+            for s in free_sessions.select_related('group')
+        }
+
+        sessions.update({
+            Session(self.stdout, self.meeting, s, is_fixed=True, *args, **kwargs)
+            for s in fixed_sessions.select_related('group')
+        })
+        return sessions
+
     def _load_meeting(self):
         """Load all timeslots and sessions into in-memory objects."""
         business_constraint_costs = {
             bc.slug: bc.penalty
             for bc in models.BusinessConstraint.objects.all()
         }
-        
-        timeslots_db = models.TimeSlot.objects.filter(
-            meeting=self.meeting,
-            type_id='regular',
-        ).exclude(location__capacity=None).select_related('location')
-        
-        timeslots = {TimeSlot(t, self.verbosity) for t in timeslots_db}
-        timeslots = {t for t in timeslots if t.day != 'sunday'}
+
+        timeslots = self._available_timeslots()
         for timeslot in timeslots:
             timeslot.store_relations(timeslots)
 
-        sessions_db = models.Session.objects.filter(
-            meeting=self.meeting,
-            type_id='regular',
-            schedulingevent__status_id='schedw',
-        ).select_related('group')
-        
-        sessions = {Session(self.stdout, self.meeting, s, business_constraint_costs, self.verbosity)
-                    for s in sessions_db}
+        sessions = self._sessions_to_schedule(business_constraint_costs, self.verbosity)
         for session in sessions:
             # The complexity of a session also depends on how many
             # sessions have declared a conflict towards this session.
@@ -531,9 +574,10 @@ class TimeSlot(object):
     This TimeSlot class is analogous to the TimeSlot class in the models,
     i.e. it represents a timeframe in a particular location.
     """
-    def __init__(self, timeslot_db, verbosity):
+    def __init__(self, timeslot_db, verbosity, is_fixed=False):
         """Initialise this object from a TimeSlot model instance."""
         self.verbosity = verbosity
+        self.is_fixed = is_fixed
         self.timeslot_pk = timeslot_db.pk
         self.location_pk = timeslot_db.location.pk
         self.capacity = timeslot_db.location.capacity
@@ -583,7 +627,7 @@ class Session(object):
     i.e. it represents a single session to be scheduled. It also pulls
     in data about constraints, group parents, etc.
     """
-    def __init__(self, stdout, meeting, session_db, business_constraint_costs, verbosity):
+    def __init__(self, stdout, meeting, session_db, business_constraint_costs, verbosity, is_fixed=False):
         """
         Initialise this object from a Session model instance.
         This includes collecting all constraints from the database,
@@ -604,6 +648,7 @@ class Session(object):
         ])
         self.is_bof = session_db.group.state_id == 'bof'
         self.is_prg = session_db.group.type_id == 'rg' and session_db.group.state_id == 'proposed'
+        self.is_fixed = is_fixed  # if True, cannot be moved
 
         self.attendees = session_db.attendees
         if not self.attendees:
