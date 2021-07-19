@@ -327,42 +327,6 @@ class Schedule(object):
             base_schedule[timeslot_lut[assignment.timeslot.pk]] = session_lut[assignment.session.pk]
         return base_schedule
 
-    @classmethod
-    def from_db_schedule(cls, stdout, db_schedule, business_constraint_costs,
-                         max_cycles, verbosity):
-        """Create a schedule equivalent to a schedule in the database
-
-        Does not load a base schedule
-        """
-        meeting = db_schedule.meeting
-        db_sessions = meeting.session_set.filter(
-            type_id='regular',
-            schedulingevent__status_id='schedw',
-        ).select_related('group')
-        sessions = {
-            db_session.pk: Session(
-                stdout, meeting, db_session, business_constraint_costs, verbosity
-            ) for db_session in db_sessions
-        }
-        db_timeslots = meeting.timeslot_set.filter(
-            type_id='regular',
-        ).exclude(
-            location__capacity=None,
-        ).select_related('location')
-        timeslots = {
-            db_timeslot.pk: TimeSlot(db_timeslot, verbosity)
-            for db_timeslot in db_timeslots
-        }
-        for timeslot in timeslots.values():
-            timeslot.store_relations(timeslots.values())
-
-        schedule = cls(stdout, timeslots.values(), sessions.values(), business_constraint_costs, max_cycles, verbosity)
-        for assignment in db_schedule.assignments.filter(session__in=db_sessions, timeslot__in=db_timeslots):
-            schedule.schedule[timeslots[assignment.timeslot.pk]] = sessions[assignment.session.pk]
-
-        return schedule
-
-
     def save_assignments(self, schedule_db):
         for timeslot, session in self.schedule.items():
             models.SchedTimeSessAssignment.objects.create(
