@@ -395,7 +395,8 @@ class Schedule(object):
         """
         violations, cost = self.calculate_dynamic_cost()
         if self.base_schedule is not None:
-            # include fixed costs from the base schedule
+            # Include dynamic costs from the base schedule as a fixed cost for the generated schedule.
+            # Fixed costs from the base schedule are included in the costs computed by adjust_for_timeslot_availability.
             self.add_fixed_cost('base_schedule', *self.calculate_dynamic_cost(self.base_schedule, include_fixed=True))
         violations += self.fixed_violations
         cost += self.fixed_cost
