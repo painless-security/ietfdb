@@ -219,20 +219,6 @@ class ScheduleHandler(object):
         })
         return sessions
 
-    def _compute_base_schedule_cost(self, business_constraint_costs):
-        """Compute the fixed cost of the base schedule"""
-        if self.base_schedule is None:
-            return  # no costs
-
-        base_sched = Schedule.from_db_schedule(
-            self.stdout,
-            self.base_schedule,
-            business_constraint_costs,
-            self.max_cycles,
-            self.verbosity
-        )
-        self.schedule.add_fixed_cost('base_schedule', *base_sched.total_schedule_cost())
-
     def _load_meeting(self):
         """Load all timeslots and sessions into in-memory objects."""
         business_constraint_costs = {
@@ -251,10 +237,16 @@ class ScheduleHandler(object):
             session.update_complexity(sessions)
 
         self.schedule = Schedule(
-            self.stdout, timeslots, sessions, business_constraint_costs, self.max_cycles, self.verbosity)
-        self.schedule.adjust_for_timeslot_availability()
+            self.stdout,
+            timeslots,
+            sessions,
+            business_constraint_costs,
+            self.max_cycles,
+            self.verbosity,
+            self.base_schedule,
+        )
+        self.schedule.adjust_for_timeslot_availability()  # calculates some fixed costs
 
-        self._compute_base_schedule_cost(business_constraint_costs)
 
 class Schedule(object):
     """
@@ -262,7 +254,8 @@ class Schedule(object):
     The schedule is internally represented as a dict, timeslots being keys, sessions being values.
     Note that "timeslot" means the combination of a timeframe and a location.
     """
-    def __init__(self, stdout, timeslots, sessions, business_constraint_costs, max_cycles, verbosity):
+    def __init__(self, stdout, timeslots, sessions, business_constraint_costs,
+                 max_cycles, verbosity, base_schedule=None):
         self.stdout = stdout
         self.timeslots = timeslots
         self.sessions = sessions or []
@@ -274,6 +267,35 @@ class Schedule(object):
         self._fixed_costs = dict()  # key = type of cost
         self._fixed_violations = dict()  # key = type of cost
         self.max_cycles = max_cycles
+        self.base_schedule = self._load_base_schedule(base_schedule) if base_schedule else None
+
+    def __str__(self):
+        return 'Schedule ({} timeslots, {} sessions, {} scheduled, {} in base schedule)'.format(
+            len(self.timeslots),
+            len(self.sessions),
+            len(self.schedule),
+            len(self.base_schedule) if self.base_schedule else 0,
+        )
+
+    def pretty_print(self, include_base=True):
+        """Pretty print the schedule"""
+        last_day = None
+        sched = dict(self.schedule)
+        if include_base:
+            sched.update(self.base_schedule)
+        for slot in sorted(sched, key=lambda ts: ts.start):
+            if last_day != slot.start.date():
+                last_day = slot.start.date()
+                print("""
+-----------------
+ Day: {}
+-----------------""".format(slot.start.date()))
+
+            print('{}: {}{}'.format(
+                models.TimeSlot.objects.get(pk=slot.timeslot_pk),
+                models.Session.objects.get(pk=sched[slot].session_pk),
+                ' [BASE]' if slot in self.base_schedule else '',
+            ))
 
     @property
     def fixed_cost(self):
@@ -296,6 +318,14 @@ class Schedule(object):
     def free_timeslots(self):
         """Timeslots that can be filled by the schedule"""
         return (t for t in self.timeslots if not t.is_fixed)
+
+    def _load_base_schedule(self, db_base_schedule):
+        session_lut = {s.session_pk: s for s in self.sessions}
+        timeslot_lut = {t.timeslot_pk: t for t in self.timeslots}
+        base_schedule = dict()
+        for assignment in db_base_schedule.assignments.filter(session__in=session_lut, timeslot__in=timeslot_lut):
+            base_schedule[timeslot_lut[assignment.timeslot.pk]] = session_lut[assignment.session.pk]
+        return base_schedule
 
     @classmethod
     def from_db_schedule(cls, stdout, db_schedule, business_constraint_costs,
@@ -400,11 +430,14 @@ class Schedule(object):
         Returns a tuple of violations (list of strings) and the total cost (integer). 
         """
         violations, cost = self.calculate_dynamic_cost()
+        if self.base_schedule is not None:
+            # include fixed costs from the base schedule
+            self.add_fixed_cost('base_schedule', *self.calculate_dynamic_cost(self.base_schedule, include_fixed=True))
         violations += self.fixed_violations
         cost += self.fixed_cost
         return violations, cost
 
-    def calculate_dynamic_cost(self, schedule=None):
+    def calculate_dynamic_cost(self, schedule=None, include_fixed=False):
         """
         Calculate the dynamic cost of the current schedule in self.schedule,
         or a different provided schedule. "Dynamic" cost means these are costs
@@ -413,6 +446,10 @@ class Schedule(object):
         """
         if not schedule:
             schedule = self.schedule
+        if self.base_schedule is not None:
+            schedule = dict(schedule)  # make a copy
+            schedule.update(self.base_schedule)
+
         violations, cost = [], 0
         
         # For performance, a few values are pre-calculated in bulk
@@ -424,7 +461,8 @@ class Schedule(object):
             
         for timeslot, session in schedule.items():
             session_violations, session_cost = session.calculate_cost(
-                schedule, timeslot, overlapping_sessions[timeslot], group_sessions[session.group])
+                schedule, timeslot, overlapping_sessions[timeslot], group_sessions[session.group], include_fixed
+            )
             violations += session_violations
             cost += session_cost
 
@@ -446,7 +484,7 @@ class Schedule(object):
         """
         if self.verbosity >= 2:
             self.stdout.write('== Initial scheduler starting, scheduling {} sessions in {} timeslots =='
-                              .format(len(list(self.free_sessions)), len(list(self.timeslots))))
+                              .format(len(list(self.free_sessions)), len(list(self.free_timeslots))))
         sessions = sorted(self.free_sessions, key=lambda s: s.complexity, reverse=True)
 
         for session in sessions:
@@ -810,7 +848,7 @@ class Session(object):
     def fits_in_timeslot(self, timeslot):
         return self.attendees <= timeslot.capacity and self.requested_duration <= timeslot.duration
 
-    def calculate_cost(self, schedule, my_timeslot, overlapping_sessions, my_sessions):
+    def calculate_cost(self, schedule, my_timeslot, overlapping_sessions, my_sessions, include_fixed=False):
         """
         Calculate the cost of this session, in the provided schedule, with this session
         being in my_timeslot, and a given set of overlapping sessions and the set of
@@ -826,16 +864,16 @@ class Session(object):
         # Ignore overlap between two fixed sessions when calculating dynamic cost
         overlapping_sessions = tuple(
             o for o in overlapping_sessions
-            if not (self.is_fixed and o.is_fixed)
+            if include_fixed or not (self.is_fixed and o.is_fixed)
         )
 
-        if not self.is_fixed:
+        if include_fixed or (not self.is_fixed):
             if self.attendees > my_timeslot.capacity:
-                violations.append('{}: scheduled scheduled in too small room'.format(self.group))
+                violations.append('{}: scheduled in too small room'.format(self.group))
                 cost += self.business_constraint_costs['session_requires_trim']
 
             if self.requested_duration > my_timeslot.duration:
-                violations.append('{}: scheduled scheduled in too short timeslot'.format(self.group))
+                violations.append('{}: scheduled in too short timeslot'.format(self.group))
                 cost += self.business_constraint_costs['session_requires_trim']
 
             if my_timeslot.time_group in self.timeranges_unavailable:
