@@ -893,7 +893,7 @@ class Session(object):
         violations += v
         cost += c
 
-        if self.wg_adjacent:
+        if self.wg_adjacent and (include_fixed or not self.is_fixed):
             adjacent_groups = tuple([schedule[t].group for t in my_timeslot.adjacent if t in schedule])
             if self.wg_adjacent not in adjacent_groups:
                 violations.append('{}: missing adjacency with {}, adjacents are: {}'
