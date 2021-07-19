@@ -41,7 +41,7 @@ class ScheduleId(NamedTuple):
 
     @classmethod
     def from_str(cls, s):
-        """Parse id of the form [owner|]name"""
+        """Parse id of the form [owner/]name"""
         return cls(*reversed(s.split('/', 1)))
 
     @classmethod
@@ -68,7 +68,7 @@ class Command(BaseCommand):
                             dest='base_id',
                             default=None,
                             help=(
-                                'Base schedule for generated schedule, specified as "[owner|]name"'
+                                'Base schedule for generated schedule, specified as "[owner/]name"'
                                 ' (default is no base schedule; owner not required if name is unique)'
                             ))
 
