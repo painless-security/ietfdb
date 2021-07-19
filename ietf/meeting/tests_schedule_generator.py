@@ -10,7 +10,7 @@ from ietf.group.factories import GroupFactory, RoleFactory
 from ietf.person.factories import PersonFactory
 from ietf.meeting.models import Constraint, TimerangeName, BusinessConstraint, SchedTimeSessAssignment, Schedule
 from ietf.meeting.factories import MeetingFactory, RoomFactory, TimeSlotFactory, SessionFactory, ScheduleFactory
-from ietf.meeting.management.commands.generate_schedule import ScheduleHandler, ScheduleId
+from ietf.meeting.management.commands import generate_schedule
 
 
 class ScheduleGeneratorTest(TestCase):
@@ -62,7 +62,7 @@ class ScheduleGeneratorTest(TestCase):
 
     def test_normal_schedule(self):
         self._create_basic_sessions()
-        generator = ScheduleHandler(self.stdout, self.meeting.number, verbosity=3)
+        generator = generate_schedule.ScheduleHandler(self.stdout, self.meeting.number, verbosity=3)
         violations, cost = generator.run()
         self.assertEqual(violations, self.fixed_violations)
         self.assertEqual(cost, self.fixed_cost)
@@ -88,7 +88,7 @@ class ScheduleGeneratorTest(TestCase):
             Constraint.objects.create(meeting=self.meeting, source=group,
                                       name_id='bethere', person=self.person1)
 
-        generator = ScheduleHandler(self.stdout, self.meeting.number, verbosity=2)
+        generator = generate_schedule.ScheduleHandler(self.stdout, self.meeting.number, verbosity=2)
         violations, cost = generator.run()
         self.assertNotEqual(violations, [])
         self.assertGreater(cost, self.fixed_cost)
@@ -101,12 +101,12 @@ class ScheduleGeneratorTest(TestCase):
         self._create_basic_sessions()
         self._create_basic_sessions()
         with self.assertRaises(CommandError):
-            generator = ScheduleHandler(self.stdout, self.meeting.number, verbosity=0)
+            generator = generate_schedule.ScheduleHandler(self.stdout, self.meeting.number, verbosity=0)
             generator.run()
 
     def test_invalid_meeting_number(self):
         with self.assertRaises(CommandError):
-            generator = ScheduleHandler(self.stdout, 'not-valid-meeting-number-aaaa', verbosity=0)
+            generator = generate_schedule.ScheduleHandler(self.stdout, 'not-valid-meeting-number-aaaa', verbosity=0)
             generator.run()
 
     def test_base_schedule(self):
@@ -116,11 +116,11 @@ class ScheduleGeneratorTest(TestCase):
         base_session = assignment.session
         base_timeslot = assignment.timeslot
 
-        generator = ScheduleHandler(
+        generator = generate_schedule.ScheduleHandler(
             self.stdout,
             self.meeting.number,
             verbosity=3,
-            base_id=ScheduleId.from_schedule(base_schedule),
+            base_id=generate_schedule.ScheduleId.from_schedule(base_schedule),
         )
         violations, cost = generator.run()
 
@@ -146,7 +146,9 @@ class ScheduleGeneratorTest(TestCase):
 
         self.stdout.seek(0)
         output = self.stdout.read()
-        self.assertIn('Applying schedule {} as base schedule'.format(ScheduleId.from_schedule(base_schedule)), output)
+        self.assertIn('Applying schedule {} as base schedule'.format(
+            generate_schedule.ScheduleId.from_schedule(base_schedule)
+        ), output)
         self.assertIn('WARNING: session wg2 (pk 13) has no attendees set', output)
         self.assertIn('scheduling 13 sessions in 19 timeslots', output)  # 19 because base is using one
         self.assertIn('Optimiser starting run 1', output)
