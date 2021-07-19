@@ -8,9 +8,9 @@ from django.core.management.base import CommandError
 from ietf.utils.test_utils import TestCase
 from ietf.group.factories import GroupFactory, RoleFactory
 from ietf.person.factories import PersonFactory
-from ietf.meeting.models import Constraint, TimerangeName, BusinessConstraint
-from ietf.meeting.factories import MeetingFactory, RoomFactory, TimeSlotFactory, SessionFactory
-from ietf.meeting.management.commands.generate_schedule import ScheduleHandler
+from ietf.meeting.models import Constraint, TimerangeName, BusinessConstraint, SchedTimeSessAssignment, Schedule
+from ietf.meeting.factories import MeetingFactory, RoomFactory, TimeSlotFactory, SessionFactory, ScheduleFactory
+from ietf.meeting.management.commands.generate_schedule import ScheduleHandler, ScheduleId
 
 
 class ScheduleGeneratorTest(TestCase):
@@ -109,6 +109,49 @@ class ScheduleGeneratorTest(TestCase):
             generator = ScheduleHandler(self.stdout, 'not-valid-meeting-number-aaaa', verbosity=0)
             generator.run()
 
+    def test_base_schedule(self):
+        self._create_basic_sessions()
+        base_schedule = self._create_base_schedule()
+        assignment = base_schedule.assignments.first()
+        base_session = assignment.session
+        base_timeslot = assignment.timeslot
+
+        generator = ScheduleHandler(
+            self.stdout,
+            self.meeting.number,
+            verbosity=3,
+            base_id=ScheduleId.from_schedule(base_schedule),
+        )
+        violations, cost = generator.run()
+
+        expected_violations = self.fixed_violations + [
+            '{}: scheduled in too small room'.format(base_session.group.acronym),
+        ]
+        expected_cost = sum([
+            self.fixed_cost,
+            BusinessConstraint.objects.get(slug='session_requires_trim').penalty,
+        ])
+
+        self.assertEqual(violations, expected_violations)
+        self.assertEqual(cost, expected_cost)
+
+        generated_schedule = Schedule.objects.get(name=generator.name)
+        self.assertEqual(generated_schedule.base, base_schedule,
+                         'Base schedule should be attached to generated schedule')
+        self.assertCountEqual(
+            [a.session for a in base_timeslot.sessionassignments.all()],
+            [base_session],
+            'A session must not be scheduled on top of a base schedule assignment',
+        )
+
+        self.stdout.seek(0)
+        output = self.stdout.read()
+        self.assertIn('Applying schedule {} as base schedule'.format(ScheduleId.from_schedule(base_schedule)), output)
+        self.assertIn('WARNING: session wg2 (pk 13) has no attendees set', output)
+        self.assertIn('scheduling 13 sessions in 19 timeslots', output)  # 19 because base is using one
+        self.assertIn('Optimiser starting run 1', output)
+        self.assertIn('Optimiser found an optimal schedule', output)
+
     def _create_basic_sessions(self):
         for group in self.all_groups:
             SessionFactory(meeting=self.meeting, group=group, add_to_schedule=False, attendees=5,
@@ -144,3 +187,31 @@ class ScheduleGeneratorTest(TestCase):
                                  'No timeslot with sufficient capacity available for wg2, '
                                  'requested 500, trimmed to 100']
         self.fixed_cost = BusinessConstraint.objects.get(slug='session_requires_trim').penalty * 2
+
+    def _create_base_schedule(self):
+        """Create a base schedule
+
+        Generates a base schedule using the first Monday timeslot with a location
+        with capacity smaller than 200.
+        """
+        base_schedule = ScheduleFactory(meeting=self.meeting)
+        base_reg_session = SessionFactory(
+            meeting=self.meeting,
+            requested_duration=datetime.timedelta(minutes=60),
+            attendees=200,
+           add_to_schedule=False
+        )
+        # use a timeslot not on Sunday
+        ts = self.meeting.timeslot_set.filter(
+            time__gt=self.meeting.date + datetime.timedelta(days=1),
+            location__capacity__lt=base_reg_session.attendees,
+        ).order_by(
+            'time'
+        ).first()
+        SchedTimeSessAssignment.objects.create(
+            schedule=base_schedule,
+            session=base_reg_session,
+            timeslot=ts,
+        )
+        return base_schedule
+
