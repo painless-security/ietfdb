@@ -12,6 +12,10 @@
     .parent-{{ parent.acronym }}.selected { background-color: {{ parent.light_scheduling_color }}; }
     .parent-{{ parent.acronym }}.other-session-selected { background-color: {{ parent.light_scheduling_color }}; }
   {% endfor %}
+  {# style past sessions to indicate they are not editable #}
+  .edit-meeting-schedule .edit-grid .timeslot.past-hint { filter: brightness(0.9); }
+  .edit-meeting-schedule .edit-grid .timeslot .past-flag { visibility: hidden; font-size: smaller; }
+  .edit-meeting-schedule .edit-grid .timeslot.past .past-flag { visibility: visible; color: #aaaaaa; }
 {% endblock morecss %}
 
 {% block title %}{{ schedule.name }}: IETF {{ meeting.number }} meeting agenda{% endblock %}
@@ -123,7 +127,9 @@
                            data-scheduledatlabel="{{ t.time|date:"l G:i" }}-{{ t.end_time|date:"G:i" }}"
                            style="width: {{ t.layout_width }}rem;">
                         <div class="time-label">
-                          {{ t.time|date:"G:i" }} - {{ t.end_time|date:"G:i" }}
+                          <div class="past-flag">&nbsp;{# blank div keeps time centered vertically #}</div>
+                          <div>{{ t.time|date:"G:i" }} - {{ t.end_time|date:"G:i" }}</div>
+                          <div class="past-flag">Past</div>
                         </div>
 
                         <div class="drop-target">

@@ -1,6 +1,12 @@
 /* globals alert, jQuery, moment */
 jQuery(document).ready(function () {
     let content = jQuery(".edit-meeting-schedule");
+    /* Drag data stored via the drag event dataTransfer interface is only accessible on
+     * dragstart and dragend events. Other drag events can see only the MIME types with
+     * data. Use a non-registered type to identify our session drags. Unregistered MIME
+     * types are strongly discouraged by RFC6838, but we are not actually attempting to
+     * exchange data with anything outside this script so that really does not apply. */
+    const dnd_mime_type = 'text/x.session-drag';
 
     function reportServerError(xhr, textStatus, error) {
         let errorText = error || textStatus;
@@ -14,7 +20,6 @@ jQuery(document).ready(function () {
     let timeslotLabels = content.find(".time-label");
     let days = content.find(".day-flow .day");
     let officialSchedule = content.hasClass('official-schedule');
-    let debugTime; // Change current time for debugging
 
     // hack to work around lack of position sticky support in old browsers, see https://caniuse.com/#feat=css-sticky
     if (content.find(".scheduling-panel").css("position") != "sticky") {
@@ -167,11 +172,29 @@ jQuery(document).ready(function () {
         }
     }
 
-    function isFutureTimeslot(timeslot) {
+    // uses current time if now is not passed in
+    function isFutureTimeslot(timeslot, now) {
         // resist the temptation to use native JS Date parsing, it is hopelessly broken
         const timeslot_time = moment(timeslot.attr('data-start'), moment.ISO_8601);
-        const now = debugTime ? moment(debugTime) : moment();
-        return timeslot_time.isAfter(now);
+        return timeslot_time.isAfter(now || moment());
+    }
+
+    function hidePastTimeslotHints() {
+        timeslots.removeClass('past-hint');
+    }
+
+    function showPastTimeslotHints() {
+        const now = moment();
+        timeslots.filter('.past').addClass('past-hint');
+    }
+
+    function updatePastTimeslots() {
+        const now = moment();
+        timeslots.filter(
+          ':not(.past)'
+        ).filter(
+          (_, ts) => !isFutureTimeslot(jQuery(ts), now)
+        ).addClass('past');
     }
 
     function canEditSession(session) {
@@ -201,19 +224,37 @@ jQuery(document).ready(function () {
         }
     });
 
+    // Was this drag started by dragging a session?
+    function isSessionDragEvent(event) {
+        return Boolean(event.originalEvent.dataTransfer.getData(dnd_mime_type));
+    }
+
+    /**
+     * Can a session be dropped in this element?
+     *
+     * Drop is allowed in drop-zones that are in unassigned-session or timeslot containers
+     * not marked as 'past'.
+     */
+    function sessionDropAllowed(elt) {
+        const relevant_parent = elt.closest('.timeslot, .unassigned-sessions');
+        return relevant_parent && !(relevant_parent.classList.contains('past'));
+    }
 
     if (!content.find(".edit-grid").hasClass("read-only")) {
         // dragging
         sessions.on("dragstart", function (event) {
             if (canEditSession(this)) {
-                event.originalEvent.dataTransfer.setData("text/plain", this.id);
+                event.originalEvent.dataTransfer.setData(dnd_mime_type, this.id);
                 jQuery(this).addClass("dragging");
-
                 selectSessionElement(this);
+                showPastTimeslotHints();
+            } else {
+                event.preventDefault(); // do not start the drag
             }
         });
         sessions.on("dragend", function () {
             jQuery(this).removeClass("dragging");
+            hidePastTimeslotHints();
         });
 
         sessions.prop('draggable', true);
@@ -221,41 +262,51 @@ jQuery(document).ready(function () {
         // dropping
         let dropElements = content.find(".timeslot .drop-target,.unassigned-sessions .drop-target");
         dropElements.on('dragenter', function (event) {
-            if ((event.originalEvent.dataTransfer.getData("text/plain") || "").slice(0, "session".length) != "session")
-                return;
-
-            event.preventDefault(); // default action is signalling that this is not a valid target
-            jQuery(this).parent().addClass("dropping");
+            if (sessionDropAllowed(this)) {
+                event.preventDefault(); // default action is signalling that this is not a valid target
+                jQuery(this).parent().addClass("dropping");
+            }
         });
 
         dropElements.on('dragover', function (event) {
             // we don't actually need this event, except we need to signal
             // that this is a valid drop target, by cancelling the default
             // action
-            event.preventDefault();
+            if (sessionDropAllowed(this)) {
+                event.preventDefault();
+            }
         });
 
         dropElements.on('dragleave', function (event) {
             // skip dragleave events if they are to children
-            if (event.originalEvent.currentTarget.contains(event.originalEvent.relatedTarget))
-                return;
-
-            jQuery(this).parent().removeClass("dropping");
+            const leaving_child = event.originalEvent.currentTarget.contains(event.originalEvent.relatedTarget);
+            if (!leaving_child && sessionDropAllowed(this)) {
+                jQuery(this).parent().removeClass('dropping');
+            }
         });
 
         dropElements.on('drop', function (event) {
             let dropElement = jQuery(this);
 
-            let sessionId = event.originalEvent.dataTransfer.getData("text/plain");
-            if ((event.originalEvent.dataTransfer.getData("text/plain") || "").slice(0, "session".length) != "session") {
+            if (!isSessionDragEvent(event)) {
+                // event is result of something other than a session drag
                 dropElement.parent().removeClass("dropping");
                 return;
             }
 
+            const sessionId = event.originalEvent.dataTransfer.getData(dnd_mime_type);
             let sessionElement = sessions.filter("#" + sessionId);
-            if (sessionElement.length == 0) {
+            if (sessionElement.length === 0) {
+                // drag event is not from a session we recognize
                 dropElement.parent().removeClass("dropping");
                 return;
+            }
+
+            // We now know this is a drop of a recognized session
+
+            if (!sessionDropAllowed(this)) {
+                dropElement.parent().removeClass("dropping"); // just in case
+                return; // drop not allowed
             }
 
             event.preventDefault(); // prevent opening as link
@@ -595,6 +646,7 @@ jQuery(document).ready(function () {
 
     timeslotGroupInputs.on("click change", updateTimeslotGroupToggling);
     updateTimeslotGroupToggling();
+    updatePastTimeslots();
 
     // session info
     content.find(".session-info-container").on("mouseover", ".other-session", function (event) {
