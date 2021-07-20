@@ -27,13 +27,21 @@ jQuery(document).ready(function () {
         content.css("padding-bottom", "14em");
     }
 
+    function startMoment(timeslot) {
+        return moment(timeslot.data('start'), moment.ISO_8601);
+    }
+
+    function endMoment(timeslot) {
+        return moment(timeslot.data('end'), moment.ISO_8601);
+    }
+
     function findTimeslotsOverlapping(intervals) {
         let res = [];
 
         timeslots.each(function () {
             var timeslot = jQuery(this);
-            let start = timeslot.data("start");
-            let end = timeslot.data("end");
+            let start = startMoment(timeslot);
+            let end = endMoment(timeslot);
 
             for (let i = 0; i < intervals.length; ++i) {
                 if (end >= intervals[i][0] && intervals[i][1] >= start) {
@@ -175,7 +183,7 @@ jQuery(document).ready(function () {
     // uses current time if now is not passed in
     function isFutureTimeslot(timeslot, now) {
         // resist the temptation to use native JS Date parsing, it is hopelessly broken
-        const timeslot_time = moment(timeslot.attr('data-start'), moment.ISO_8601);
+        const timeslot_time = startMoment(timeslot);
         return timeslot_time.isAfter(now || moment());
     }
 
@@ -184,7 +192,6 @@ jQuery(document).ready(function () {
     }
 
     function showPastTimeslotHints() {
-        const now = moment();
         timeslots.filter('.past').addClass('past-hint');
     }
 
@@ -450,14 +457,15 @@ jQuery(document).ready(function () {
 
         sessions.each(function () {
             let timeslot = jQuery(this).closest(".timeslot");
-            if (timeslot.length == 1)
+            if (timeslot.length === 1) {
                 scheduledSessions.push({
-                    start: timeslot.data("start"),
-                    end: timeslot.data("end"),
-                    id: this.id.slice("session".length),
+                    start: startMoment(timeslot),
+                    end: endMoment(timeslot),
+                    id: this.id.slice('session'.length),
                     element: jQuery(this),
                     timeslot: timeslot.get(0)
                 });
+            }
         });
 
         scheduledSessions.sort(function (a, b) {
