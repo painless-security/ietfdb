@@ -1142,6 +1142,10 @@ a.fc-event, .fc-event, .fc-content, .fc-title, .fc-event-container {
   outline: #ffe0e0 solid 0.4em;
 }
 
+.edit-meeting-schedule .edit-grid .timeslot.would-violate-hint.dropping {
+  background-color: #ccb3b3;
+}
+
 .edit-meeting-schedule .constraints .encircled,
 .edit-meeting-schedule .formatted-constraints .encircled {
   border: 1px solid #000;
