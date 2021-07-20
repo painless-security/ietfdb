@@ -283,6 +283,71 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
         self.assertTrue(self.driver.find_elements_by_css_selector('#timeslot{} #session{}'.format(slot1b.pk, s1.pk)),
                         'Session s1 should have moved to second timeslot on first meeting day')
 
+    def test_past_flags(self):
+        """Test that timeslots and sessions in the past are marked accordingly
+
+        Would also like to test that past-hint flags are applied when a session is dragged, but that
+        requires simulating HTML5 drag-and-drop. Have not yet found a good way to do this.
+        """
+        wait = WebDriverWait(self.driver, 2)
+        tz = pytz.timezone('Atlantic/Reykjavik')  # work in a non-utc, non-local time zone (for most of us, anyway)
+        meeting = MeetingFactory(type_id='ietf', date=datetime.date.today(), time_zone=tz.zone)
+        room = RoomFactory(meeting=meeting)
+        right_now = tz.localize(datetime.datetime.utcnow()).replace(tzinfo=None)  # convert to a naive datetime
+        past_timeslots = [
+            TimeSlotFactory(meeting=meeting, time=right_now - datetime.timedelta(hours=n),
+                            duration=datetime.timedelta(hours=1), location=room)
+            for n in range(1,4)
+        ]
+        future_timeslots = [
+            TimeSlotFactory(meeting=meeting, time=right_now + datetime.timedelta(hours=n),
+                            duration=datetime.timedelta(hours=1), location=room)
+            for n in range(1,4)
+        ]
+
+        past_sessions = [
+            SchedTimeSessAssignment.objects.create(
+                schedule=meeting.schedule,
+                timeslot=ts,
+                session=SessionFactory(meeting=meeting, add_to_schedule=False),
+            ).session
+            for ts in past_timeslots
+        ]
+        future_sessions = [
+            SchedTimeSessAssignment.objects.create(
+                schedule=meeting.schedule,
+                timeslot=ts,
+                session=SessionFactory(meeting=meeting, add_to_schedule=False),
+            ).session
+            for ts in future_timeslots
+        ]
+
+        url = self.absreverse('ietf.meeting.views.edit_meeting_schedule', kwargs=dict(num=meeting.number))
+        self.login('secretary')
+        self.driver.get(url)
+
+        past_flags = self.driver.find_elements_by_css_selector(
+            ','.join('#timeslot{} .past-flag'.format(ts.pk) for ts in past_timeslots)
+        )
+        self.assertGreaterEqual(len(past_flags), len(past_timeslots) + len(past_sessions),
+                                'Expected at least one flag for each past timeslot and session')
+
+        future_flags = self.driver.find_elements_by_css_selector(
+            ','.join('#timeslot{} .past-flag'.format(ts.pk) for ts in future_timeslots)
+        )
+        self.assertGreaterEqual(len(future_flags), len(future_timeslots) + len(future_sessions),
+                                'Expected at least one flag for each future timeslot and session')
+
+        wait.until(expected_conditions.presence_of_element_located(
+            (By.CSS_SELECTOR, '#timeslot{}.past'.format(past_timeslots[0].pk))
+        ))
+
+        for flag in past_flags:
+            self.assertTrue(flag.is_displayed(), 'Past timeslot or session not flagged as past')
+
+        for flag in future_flags:
+            self.assertFalse(flag.is_displayed(), 'Future timeslot or session is flagged as past')
+
     def test_unassigned_sessions_sort(self):
         """Unassigned session sorting should behave correctly
 
