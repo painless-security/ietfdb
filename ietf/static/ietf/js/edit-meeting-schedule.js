@@ -647,6 +647,7 @@ jQuery(document).ready(function () {
     timeslotGroupInputs.on("click change", updateTimeslotGroupToggling);
     updateTimeslotGroupToggling();
     updatePastTimeslots();
+    setInterval(updatePastTimeslots, 10 * 1000 /* ms */);
 
     // session info
     content.find(".session-info-container").on("mouseover", ".other-session", function (event) {
