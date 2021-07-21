@@ -11,6 +11,7 @@ from unittest import skipIf
 
 import django
 from django.utils.text import slugify
+from django.utils.timezone import now
 from django.db.models import F
 import pytz
 
@@ -290,10 +291,16 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
         requires simulating HTML5 drag-and-drop. Have not yet found a good way to do this.
         """
         wait = WebDriverWait(self.driver, 2)
-        tz = pytz.timezone('Atlantic/Reykjavik')  # work in a non-utc, non-local time zone (for most of us, anyway)
-        meeting = MeetingFactory(type_id='ietf', date=datetime.date.today(), time_zone=tz.zone)
+        meeting = MeetingFactory(type_id='ietf')
         room = RoomFactory(meeting=meeting)
-        right_now = tz.localize(datetime.datetime.utcnow()).replace(tzinfo=None)  # convert to a naive datetime
+
+        # get current time in meeting time zone
+        right_now = now().astimezone(
+            pytz.timezone(meeting.time_zone)
+        )
+        if not settings.USE_TZ:
+            right_now = right_now.replace(tzinfo=None)
+
         past_timeslots = [
             TimeSlotFactory(meeting=meeting, time=right_now - datetime.timedelta(hours=n),
                             duration=datetime.timedelta(hours=1), location=room)
@@ -323,7 +330,7 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
         ]
 
         url = self.absreverse('ietf.meeting.views.edit_meeting_schedule', kwargs=dict(num=meeting.number))
-        self.login('secretary')
+        self.login(username=meeting.schedule.owner.user.username)
         self.driver.get(url)
 
         past_flags = self.driver.find_elements_by_css_selector(
@@ -341,7 +348,6 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
         wait.until(expected_conditions.presence_of_element_located(
             (By.CSS_SELECTOR, '#timeslot{}.past'.format(past_timeslots[0].pk))
         ))
-
         for flag in past_flags:
             self.assertTrue(flag.is_displayed(), 'Past timeslot or session not flagged as past')
 
