@@ -7,6 +7,7 @@ jQuery(document).ready(function () {
      * types are strongly discouraged by RFC6838, but we are not actually attempting to
      * exchange data with anything outside this script so that really does not apply. */
     const dnd_mime_type = 'text/x.session-drag';
+    const meetingTimeZone = content.data('timezone');
 
     function reportServerError(xhr, textStatus, error) {
         let errorText = error || textStatus;
@@ -18,6 +19,8 @@ jQuery(document).ready(function () {
     let sessions = content.find(".session").not(".readonly");
     let timeslots = content.find(".timeslot");
     let timeslotLabels = content.find(".time-label");
+    let swapDaysButtons = content.find('.swap-days');
+    let swapTimeslotButtons = content.find('.swap-timeslot-col');
     let days = content.find(".day-flow .day");
     let officialSchedule = content.hasClass('official-schedule');
 
@@ -27,12 +30,19 @@ jQuery(document).ready(function () {
         content.css("padding-bottom", "14em");
     }
 
+    /**
+     * Parse a timestamp using meeting-local time zone if the timestamp does not specify one.
+     */
+    function parseISOTimestamp(s) {
+        return moment.tz(s, moment.ISO_8601, meetingTimeZone);
+    }
+
     function startMoment(timeslot) {
-        return moment(timeslot.data('start'), moment.ISO_8601);
+        return parseISOTimestamp(timeslot.data('start'));
     }
 
     function endMoment(timeslot) {
-        return moment(timeslot.data('end'), moment.ISO_8601);
+        return parseISOTimestamp(timeslot.data('end'));
     }
 
     function findTimeslotsOverlapping(intervals) {
@@ -197,11 +207,23 @@ jQuery(document).ready(function () {
 
     function updatePastTimeslots() {
         const now = moment();
+
+        // mark timeslots
         timeslots.filter(
           ':not(.past)'
         ).filter(
           (_, ts) => !isFutureTimeslot(jQuery(ts), now)
         ).addClass('past');
+
+        // hide swap day/timeslot column buttons
+        if (officialSchedule) {
+            swapDaysButtons.filter(
+              (_, elt) => parseISOTimestamp(elt.dataset.start).isSameOrBefore(now, 'day')
+            ).hide();
+            swapTimeslotButtons.filter(
+              (_, elt) => parseISOTimestamp(elt.dataset.start).isSameOrBefore(now, 'minute')
+            ).hide();
+        }
     }
 
     function canEditSession(session) {
@@ -384,16 +406,26 @@ jQuery(document).ready(function () {
         };
 
         // Disable a particular swap modal radio input
-        let updateSwapRadios = function (labels, radios, disableValue) {
-          labels.removeClass('text-muted');
-          radios.prop('disabled', false);
-          radios.prop('checked', false);
-          let disableInput = radios.filter('[value="' + disableValue + '"]');
-          if (disableInput) {
-              disableInput.parent().addClass('text-muted');
-              disableInput.prop('disabled', true);
-          }
-          return disableInput; // return the input that was disabled, if any
+        let updateSwapRadios = function (labels, radios, disableValue, datePrecision) {
+            labels.removeClass('text-muted');
+            radios.prop('disabled', false);
+            radios.prop('checked', false);
+            // disable the input requested by value
+            let disableInput = radios.filter('[value="' + disableValue + '"]');
+            if (disableInput) {
+                disableInput.parent().addClass('text-muted');
+                disableInput.prop('disabled', true);
+            }
+            if (officialSchedule) {
+                // disable any that have passed
+                const now=moment();
+                const past_radios = radios.filter(
+                  (_, radio) => parseISOTimestamp(radio.dataset.start).isSameOrBefore(now, datePrecision)
+                );
+                past_radios.parent().addClass('text-muted');
+                past_radios.prop('disabled', true);
+                return disableInput; // return the input that was specifically disabled, if any
+            }
         };
 
         // swap days
@@ -406,7 +438,7 @@ jQuery(document).ready(function () {
         // handler to prep and open the modal
         content.find(".swap-days").on("click", function () {
             let originDay = this.dataset.dayid;
-            let originRadio = updateSwapRadios(swapDaysLabels, swapDaysRadios, originDay);
+            let originRadio = updateSwapRadios(swapDaysLabels, swapDaysRadios, originDay, 'day');
 
             // Fill in label in the modal title
             swapDaysModal.find(".modal-title .day").text(jQuery.trim(originRadio.parent().text()));
@@ -429,7 +461,7 @@ jQuery(document).ready(function () {
         // handler to prep and open the modal
         content.find('.swap-timeslot-col').on('click', function() {
             let roomGroup = this.closest('.room-group').dataset;
-            updateSwapRadios(swapTimeslotsLabels, swapTimeslotsRadios, this.dataset.timeslotPk)
+            updateSwapRadios(swapTimeslotsLabels, swapTimeslotsRadios, this.dataset.timeslotPk, 'minute');
 
             // show only options for this room group
             swapTimeslotsModal.find('.room-group').hide();

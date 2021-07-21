@@ -354,6 +354,31 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
         for flag in future_flags:
             self.assertFalse(flag.is_displayed(), 'Future timeslot or session is flagged as past')
 
+    def test_past_swap_buttons(self):
+        """Swap days/timeslot column buttons should be hidden for past items"""
+        wait = WebDriverWait(self.driver, 2)
+        meeting = MeetingFactory(type_id='ietf')
+        room = RoomFactory(meeting=meeting)
+
+        # get current time in meeting time zone
+        right_now = now().astimezone(
+            pytz.timezone(meeting.time_zone)
+        )
+        if not settings.USE_TZ:
+            right_now = right_now.replace(tzinfo=None)
+
+        past_timeslots = [
+            TimeSlotFactory(meeting=meeting, time=right_now - datetime.timedelta(hours=n),
+                            duration=datetime.timedelta(hours=1), location=room)
+            for n in range(1,4)
+        ]
+        future_timeslots = [
+            TimeSlotFactory(meeting=meeting, time=right_now + datetime.timedelta(hours=n),
+                            duration=datetime.timedelta(hours=1), location=room)
+            for n in range(1,4)
+        ]
+
+
     def test_unassigned_sessions_sort(self):
         """Unassigned session sorting should behave correctly
 
