@@ -426,8 +426,8 @@ jQuery(document).ready(function () {
                 );
                 past_radios.parent().addClass('text-muted');
                 past_radios.prop('disabled', true);
-                return disableInput; // return the input that was specifically disabled, if any
             }
+            return disableInput; // return the input that was specifically disabled, if any
         };
 
         // swap days
