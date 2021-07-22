@@ -1027,7 +1027,7 @@ class EditMeetingScheduleTests(TestCase):
             time_header_labels = rg_div.find('div.time-header div.time-label').text()
             timeslot_rows = rg_div.find('div.timeslots')
             for row in timeslot_rows.items():
-                time_labels = row.find('div.time-label').text()
+                time_labels = row.find('div.time-label div:not(.past-flag)').text()
                 self.assertEqual(time_labels, time_header_labels)
 
     def test_bof_session_tag(self):
