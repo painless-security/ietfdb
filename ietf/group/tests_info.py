@@ -273,8 +273,6 @@ class GroupPagesTests(TestCase):
 
     def test_group_about(self):
 
-        RoleFactory(group=Group.objects.get(acronym='iab'),name_id='member',person=PersonFactory(user__username='iab-member'))
-
         interesting_users = [ 'plain','iana','iab-chair','irtf-chair', 'marschairman', 'teamchairman','ad', 'iab-member', 'secretary', ]
 
         can_edit = {
@@ -563,7 +561,7 @@ class GroupEditTests(TestCase):
         q = PyQuery(r.content)
         self.assertTrue(len(q('form .has-error')) > 0)
 
-        # try elevating BoF to WG
+        # try elevating BOF to WG
         group.state_id = "bof"
         group.save()
 
@@ -1320,6 +1318,18 @@ class MilestoneTests(TestCase):
         self.assertEqual(GroupMilestone.objects.filter(due=m1.due, desc=m1.desc, state="charter").count(), 1)
 
         self.assertEqual(group.charter.docevent_set.count(), events_before + 2) # 1 delete, 1 add
+
+    def test_edit_sort(self):
+        group = GroupFactory(uses_milestone_dates=False)
+        DatelessGroupMilestoneFactory(group=group,order=1)
+        DatelessGroupMilestoneFactory(group=group,order=0)
+        DatelessGroupMilestoneFactory(group=group,order=None)
+        url = urlreverse('ietf.group.milestones.edit_milestones;current', kwargs=dict(group_type=group.type_id, acronym=group.acronym))
+        login_testing_unauthorized(self, "secretary", url)
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        q = PyQuery(r.content)
+        self.assertEqual([x.value for x in q('input[id^=id_m][id$=order]')], [None, '0', '1'])
 
 class DatelessMilestoneTests(TestCase):
     def test_switch_to_dateless(self):

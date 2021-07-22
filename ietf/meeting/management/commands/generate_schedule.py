@@ -546,7 +546,7 @@ class Session(object):
         self.session_pk = session_db.pk
         self.group = session_db.group.acronym
         self.parent = session_db.group.parent.acronym if session_db.group.parent else None
-        self.ad = session_db.group.ad_role().pk if session_db.group.ad_role() else None
+        self.ad = session_db.group.ad_role().person.pk if session_db.group.ad_role() else None
         self.is_area_meeting = any([
             session_db.group.type_id == 'area',
             session_db.group.type_id == 'ag',
@@ -705,24 +705,24 @@ class Session(object):
         for other in overlapping_sessions:
             if not other:
                 continue
-            # BoFs cannot conflict with PRGs
+            # BOFs cannot conflict with PRGs
             if self.is_bof and other.is_prg:
-                violations.append('{}: BoF overlaps with PRG: {}'
+                violations.append('{}: BOF overlaps with PRG: {}'
                                   .format(self.group, other.group))
                 cost += self.business_constraint_costs['bof_overlapping_prg']
-            # BoFs cannot conflict with any other BoFs 
+            # BOFs cannot conflict with any other BOFs 
             if self.is_bof and other.is_bof:
-                violations.append('{}: BoF overlaps with other BoF: {}'
+                violations.append('{}: BOF overlaps with other BOF: {}'
                                   .format(self.group, other.group))
                 cost += self.business_constraint_costs['bof_overlapping_bof']
-            # BoFs cannot conflict with any other WGs in their area
+            # BOFs cannot conflict with any other WGs in their area
             if self.is_bof and self.parent == other.parent:
-                violations.append('{}: BoF overlaps with other session from same area: {}'
+                violations.append('{}: BOF overlaps with other session from same area: {}'
                                   .format(self.group, other.group))
                 cost += self.business_constraint_costs['bof_overlapping_area_wg']
-            # BoFs cannot conflict with any area-wide meetings (of any area) 
+            # BOFs cannot conflict with any area-wide meetings (of any area) 
             if self.is_bof and other.is_area_meeting:
-                violations.append('{}: BoF overlaps with area meeting {}'
+                violations.append('{}: BOF overlaps with area meeting {}'
                                   .format(self.group, other.group))
                 cost += self.business_constraint_costs['bof_overlapping_area_meeting']
             # Area meetings cannot conflict with anything else in their area 
