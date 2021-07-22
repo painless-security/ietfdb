@@ -170,7 +170,9 @@ jQuery(document).ready(function () {
         if (selectedSession) {
             let intervals = [];
             timeslots.filter(":has(.session .constraints > span.would-violate-hint)").each(function () {
-                intervals.push([this.dataset.start, this.dataset.end]);
+                intervals.push(
+                  [parseISOTimestamp(this.dataset.start), parseISOTimestamp(this.dataset.end)]
+                );
             });
 
             let overlappingTimeslots = findTimeslotsOverlapping(intervals);
