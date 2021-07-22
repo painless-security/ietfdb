@@ -354,10 +354,99 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
         for flag in future_flags:
             self.assertFalse(flag.is_displayed(), 'Future timeslot or session is flagged as past')
 
-    def test_past_swap_buttons(self):
-        """Swap days/timeslot column buttons should be hidden for past items"""
+    def test_past_swap_days_buttons(self):
+        """Swap days buttons should be hidden for past items"""
         wait = WebDriverWait(self.driver, 2)
-        meeting = MeetingFactory(type_id='ietf')
+        meeting = MeetingFactory(type_id='ietf', date=datetime.datetime.today() - datetime.timedelta(days=3), days=7)
+        room = RoomFactory(meeting=meeting)
+
+        # get current time in meeting time zone
+        right_now = now().astimezone(
+            pytz.timezone(meeting.time_zone)
+        )
+        if not settings.USE_TZ:
+            right_now = right_now.replace(tzinfo=None)
+
+        past_timeslots = [
+            TimeSlotFactory(meeting=meeting, time=right_now - datetime.timedelta(days=n),
+                            duration=datetime.timedelta(hours=1), location=room)
+            for n in range(4)  # includes 0
+        ]
+        future_timeslots = [
+            TimeSlotFactory(meeting=meeting, time=right_now + datetime.timedelta(days=n),
+                            duration=datetime.timedelta(hours=1), location=room)
+            for n in range(1,4)
+        ]
+
+        url = self.absreverse('ietf.meeting.views.edit_meeting_schedule', kwargs=dict(num=meeting.number))
+        self.login(username=meeting.schedule.owner.user.username)
+        self.driver.get(url)
+
+        past_swap_days_buttons = self.driver.find_elements_by_css_selector(
+            ','.join(
+                '.swap-days[data-start="{}"]'.format(ts.time.date().isoformat()) for ts in past_timeslots
+            )
+        )
+        self.assertEqual(len(past_swap_days_buttons), len(past_timeslots), 'Missing past swap days buttons')
+
+        future_swap_days_buttons = self.driver.find_elements_by_css_selector(
+            ','.join(
+                '.swap-days[data-start="{}"]'.format(ts.time.date().isoformat()) for ts in future_timeslots
+            )
+        )
+        self.assertEqual(len(future_swap_days_buttons), len(future_timeslots), 'Missing future swap days buttons')
+
+        wait.until(
+            expected_conditions.presence_of_element_located(
+                (By.CSS_SELECTOR, '.timeslot.past')  # wait until timeslots are updated by JS
+            )
+        )
+
+        # check that swap buttons are disabled for past days
+        self.assertFalse(
+            any(button.is_displayed() for button in past_swap_days_buttons),
+            'Past swap days buttons still visible for official schedule',
+        )
+        self.assertTrue(
+            all(button.is_displayed() for button in future_swap_days_buttons),
+            'Future swap days buttons not visible for official schedule',
+        )
+
+        # Open the swap days modal to verify that past day radios are disabled.
+        # Use a middle day because whichever day we click will be disabled as an
+        # option to swap. If we used the first or last day, a fencepost error in
+        # disabling options by date might be hidden.
+        clicked_index = 1
+        future_swap_days_buttons[clicked_index].click()
+        try:
+            modal = wait.until(
+                expected_conditions.visibility_of_element_located(
+                    (By.CSS_SELECTOR, '#swap-days-modal')
+                )
+            )
+        except TimeoutException:
+            self.fail('Modal never appeared')
+        self.assertFalse(
+            any(radio.is_enabled()
+                for radio in modal.find_elements_by_css_selector(','.join(
+                'input[name="target_day"][value="{}"]'.format(ts.time.date().isoformat()) for ts in past_timeslots)
+            )),
+            'Past day is enabled in swap-days modal for official schedule',
+        )
+        # future_timeslots[:-1] in the next selector because swapping a day with itself is disabled
+        enabled_timeslots = (ts for ts in future_timeslots if ts != future_timeslots[clicked_index])
+        self.assertTrue(
+            all(radio.is_enabled()
+                for radio in modal.find_elements_by_css_selector(','.join(
+                'input[name="target_day"][value="{}"]'.format(ts.time.date().isoformat()) for ts in enabled_timeslots)
+            )),
+            'Future day is not enabled in swap-days modal for official schedule',
+        )
+
+    def test_past_swap_timeslot_col_buttons(self):
+        """Swap timeslot column buttons should be hidden for past items"""
+        wait = WebDriverWait(self.driver, 2)
+        meeting = MeetingFactory(type_id='ietf', date=datetime.datetime.today() - datetime.timedelta(days=3), days=7)
         room = RoomFactory(meeting=meeting)
 
         # get current time in meeting time zone
@@ -370,7 +459,7 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
         past_timeslots = [
             TimeSlotFactory(meeting=meeting, time=right_now - datetime.timedelta(hours=n),
                             duration=datetime.timedelta(hours=1), location=room)
-            for n in range(1,4)
+            for n in range(1,4)  # does not include 0 to avoid race conditions
         ]
         future_timeslots = [
             TimeSlotFactory(meeting=meeting, time=right_now + datetime.timedelta(hours=n),
@@ -378,6 +467,70 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
             for n in range(1,4)
         ]
 
+        url = self.absreverse('ietf.meeting.views.edit_meeting_schedule', kwargs=dict(num=meeting.number))
+        self.login(username=meeting.schedule.owner.user.username)
+        self.driver.get(url)
+
+        past_swap_ts_buttons = self.driver.find_elements_by_css_selector(
+            ','.join(
+                '.swap-timeslot-col[data-start="{}"]'.format(ts.utc_start_time().isoformat()) for ts in past_timeslots
+            )
+        )
+        self.assertEqual(len(past_swap_ts_buttons), len(past_timeslots), 'Missing past swap timeslot col buttons')
+
+        future_swap_ts_buttons = self.driver.find_elements_by_css_selector(
+            ','.join(
+                '.swap-timeslot-col[data-start="{}"]'.format(ts.utc_start_time().isoformat()) for ts in future_timeslots
+            )
+        )
+        self.assertEqual(len(future_swap_ts_buttons), len(future_timeslots), 'Missing future swap timeslot col buttons')
+
+        wait.until(
+            expected_conditions.presence_of_element_located(
+                (By.CSS_SELECTOR, '.timeslot.past')  # wait until timeslots are updated by JS
+            )
+        )
+
+        # check that swap buttons are disabled for past days
+        self.assertFalse(
+            any(button.is_displayed() for button in past_swap_ts_buttons),
+            'Past swap timeslot col buttons still visible for official schedule',
+        )
+        self.assertTrue(
+            all(button.is_displayed() for button in future_swap_ts_buttons),
+            'Future swap timeslot col buttons not visible for official schedule',
+        )
+
+        # Open the swap days modal to verify that past day radios are disabled.
+        # Use a middle day because whichever day we click will be disabled as an
+        # option to swap. If we used the first or last day, a fencepost error in
+        # disabling options by date might be hidden.
+        clicked_index = 1
+        future_swap_ts_buttons[clicked_index].click()
+        try:
+            modal = wait.until(
+                expected_conditions.visibility_of_element_located(
+                    (By.CSS_SELECTOR, '#swap-timeslot-col-modal')
+                )
+            )
+        except TimeoutException:
+            self.fail('Modal never appeared')
+        self.assertFalse(
+            any(radio.is_enabled()
+                for radio in modal.find_elements_by_css_selector(','.join(
+                'input[name="target_timeslot"][value="{}"]'.format(ts.pk) for ts in past_timeslots)
+            )),
+            'Past timeslot is enabled in swap-timeslot-col modal for official schedule',
+        )
+        # future_timeslots[:-1] in the next selector because swapping a timeslot with itself is disabled
+        enabled_timeslots = (ts for ts in future_timeslots if ts != future_timeslots[clicked_index])
+        self.assertTrue(
+            all(radio.is_enabled()
+                for radio in modal.find_elements_by_css_selector(','.join(
+                'input[name="target_timeslot"][value="{}"]'.format(ts.pk) for ts in enabled_timeslots)
+            )),
+            'Future timeslot is not enabled in swap-timeslot-col modal for official schedule',
+        )
 
     def test_unassigned_sessions_sort(self):
         """Unassigned session sorting should behave correctly
