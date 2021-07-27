@@ -114,10 +114,7 @@ class SecrMeetingTestCase(TestCase):
             selected_items = q('#id_group_conflict_types input[checked]')
             selected_values = [si.value for si in selected_items]
             expected_values = [cn.slug for cn in mtg.group_conflict_types.all()]
-            try:
-                self.assertCountEqual(selected_values, expected_values)
-            except:
-                import pdb; pdb.set_trace()
+            self.assertCountEqual(selected_values, expected_values)
 
         self.client.login(username='secretary', password='secretary+password')
 
