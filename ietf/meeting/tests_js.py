@@ -24,14 +24,15 @@ from ietf.group import colors
 from ietf.person.models import Person
 from ietf.group.models import Group
 from ietf.group.factories import GroupFactory
-from ietf.meeting.factories import MeetingFactory, SessionFactory, TimeSlotFactory
+from ietf.meeting.factories import MeetingFactory, RoomFactory, SessionFactory, TimeSlotFactory
 from ietf.meeting.test_data import make_meeting_test_data, make_interim_meeting
 from ietf.meeting.models import (Schedule, SchedTimeSessAssignment, Session,
                                  Room, TimeSlot, Constraint, ConstraintName,
                                  Meeting, SchedulingEvent, SessionStatusName)
 from ietf.meeting.utils import add_event_info_to_session_qs
 from ietf.utils.test_utils import assert_ical_response_is_valid
-from ietf.utils.jstest import IetfSeleniumTestCase, ifSeleniumEnabled, selenium_enabled
+from ietf.utils.jstest import ( IetfSeleniumTestCase, ifSeleniumEnabled, selenium_enabled,
+                                presence_of_element_child_by_css_selector )
 from ietf import settings
 
 if selenium_enabled():
@@ -50,7 +51,9 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
         schedule = Schedule.objects.filter(meeting=meeting, owner__user__username="plain").first()
 
         room1 = Room.objects.get(name="Test Room")
-        slot1 = TimeSlot.objects.filter(meeting=meeting, location=room1).order_by('time').first()
+        slot1 = TimeSlot.objects.filter(meeting=meeting, location=room1, type='regular').order_by('time').first()
+        slot1b = TimeSlot.objects.filter(meeting=meeting, location=room1, type='regular').order_by('time').last()
+        self.assertNotEqual(slot1.pk, slot1b.pk)
 
         room2 = Room.objects.create(meeting=meeting, name="Test Room2", capacity=1)
         room2.session_types.add('regular')
@@ -108,8 +111,15 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
 
         # select - show session info
         s2_element = self.driver.find_element_by_css_selector('#session{}'.format(s2.pk))
+        s2b_element = self.driver.find_element_by_css_selector('#session{}'.format(s2b.pk))
+        self.assertNotIn('other-session-selected', s2b_element.get_attribute('class'))
         s2_element.click()
 
+        # other session for group should be flagged for highlighting
+        s2b_element = self.driver.find_element_by_css_selector('#session{}'.format(s2b.pk))
+        self.assertIn('other-session-selected', s2b_element.get_attribute('class'))
+
+        # other session for group should appear in the info panel
         session_info_container = self.driver.find_element_by_css_selector('.session-info-container')
         self.assertIn(s2.group.acronym, session_info_container.find_element_by_css_selector(".title").text)
         self.assertEqual(session_info_container.find_element_by_css_selector(".other-session .time").text, "not yet scheduled")
@@ -118,6 +128,7 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
         self.driver.find_element_by_css_selector('.scheduling-panel').click()
 
         self.assertEqual(session_info_container.find_elements_by_css_selector(".title"), [])
+        self.assertNotIn('other-session-selected', s2b_element.get_attribute('class'))
 
         # unschedule
 
@@ -171,10 +182,31 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
         s1_element = self.driver.find_element_by_css_selector('#session{}'.format(s1.pk))
         s1_element.click()
 
-        # violated due to constraints
+        # violated due to constraints - both the timeslot and its timeslot label
         self.assertTrue(self.driver.find_elements_by_css_selector('#timeslot{}.would-violate-hint'.format(slot1.pk)))
+        # Find the timeslot label for slot1 - it's the first timeslot in the first room group
+        slot1_roomgroup_elt = self.driver.find_element_by_css_selector(
+            '.day-flow .day:first-child .room-group:nth-child(2)'  # count from 2 - first-child is the day label
+        )
+        self.assertTrue(
+            slot1_roomgroup_elt.find_elements_by_css_selector(
+                '.time-header > .time-label.would-violate-hint:first-child'
+            ),
+            'Timeslot header label should show a would-violate hint for a constraint violation'
+        )
+
         # violated due to missing capacity
         self.assertTrue(self.driver.find_elements_by_css_selector('#timeslot{}.would-violate-hint'.format(slot3.pk)))
+        # Find the timeslot label for slot3 - it's the second timeslot in the second room group
+        slot3_roomgroup_elt = self.driver.find_element_by_css_selector(
+            '.day-flow .day:first-child .room-group:nth-child(3)'  # count from 2 - first-child is the day label
+        )
+        self.assertFalse(
+            slot3_roomgroup_elt.find_elements_by_css_selector(
+                '.time-header > .time-label.would-violate-hint:nth-child(2)'
+            ),
+            'Timeslot header label should not show a would-violate hint for room capacity violation'
+        )
 
         # reschedule
         self.driver.execute_script("jQuery('#session{}').simulateDragDrop({{dropTarget: '#timeslot{} .drop-target'}});".format(s2.pk, slot2.pk))
@@ -192,6 +224,7 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
 
         # constraint hints
         s1_element.click()
+        self.assertIn('would-violate-hint', s2_element.get_attribute('class'))
         constraint_element = s2_element.find_element_by_css_selector(".constraints span[data-sessions=\"{}\"].would-violate-hint".format(s1.pk))
         self.assertTrue(constraint_element.is_displayed())
 
@@ -206,9 +239,20 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
         # hide sessions in area
         self.assertTrue(s1_element.is_displayed())
         self.driver.find_element_by_css_selector(".session-parent-toggles [value=\"{}\"]".format(s1.group.parent.acronym)).click()
-        self.assertTrue(not s1_element.is_displayed())
+        self.assertTrue(s1_element.is_displayed())  # should still be displayed
+        self.assertIn('hidden-parent', s1_element.get_attribute('class'),
+                      'Session should be hidden when parent disabled')
+        s1_element.click()  # try to select
+        self.assertNotIn('selected', s1_element.get_attribute('class'),
+                         'Session should not be selectable when parent disabled')
+
         self.driver.find_element_by_css_selector(".session-parent-toggles [value=\"{}\"]".format(s1.group.parent.acronym)).click()
         self.assertTrue(s1_element.is_displayed())
+        self.assertNotIn('hidden-parent', s1_element.get_attribute('class'),
+                         'Session should not be hidden when parent enabled')
+        s1_element.click()  # try to select
+        self.assertIn('selected', s1_element.get_attribute('class'),
+                         'Session should be selectable when parent enabled')
 
         # hide timeslots
         self.driver.find_element_by_css_selector(".timeslot-group-toggles button").click()
@@ -218,12 +262,26 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
         self.assertTrue(not self.driver.find_element_by_css_selector("#timeslot-group-toggles-modal").is_displayed())
 
         # swap days
-        self.driver.find_element_by_css_selector(".day [data-target=\"#swap-days-modal\"][data-dayid=\"{}\"]".format(slot4.time.date().isoformat())).click()
+        self.driver.find_element_by_css_selector(".day .swap-days[data-dayid=\"{}\"]".format(slot4.time.date().isoformat())).click()
         self.assertTrue(self.driver.find_element_by_css_selector("#swap-days-modal").is_displayed())
         self.driver.find_element_by_css_selector("#swap-days-modal input[name=\"target_day\"][value=\"{}\"]".format(slot1.time.date().isoformat())).click()
         self.driver.find_element_by_css_selector("#swap-days-modal button[type=\"submit\"]").click()
 
-        self.assertTrue(self.driver.find_elements_by_css_selector('#timeslot{} #session{}'.format(slot4.pk, s1.pk)))
+        self.assertTrue(self.driver.find_elements_by_css_selector('#timeslot{} #session{}'.format(slot4.pk, s1.pk)),
+                        'Session s1 should have moved to second meeting day')
+
+        # swap timeslot column - put session in a differently-timed timeslot
+        self.driver.find_element_by_css_selector(
+            '.day .swap-timeslot-col[data-timeslot-pk="{}"]'.format(slot1b.pk)
+        ).click()  # open modal on the second timeslot for room1
+        self.assertTrue(self.driver.find_element_by_css_selector("#swap-timeslot-col-modal").is_displayed())
+        self.driver.find_element_by_css_selector(
+            '#swap-timeslot-col-modal input[name="target_timeslot"][value="{}"]'.format(slot4.pk)
+        ).click()  # select room1 timeslot that has a session in it
+        self.driver.find_element_by_css_selector('#swap-timeslot-col-modal button[type="submit"]').click()
+
+        self.assertTrue(self.driver.find_elements_by_css_selector('#timeslot{} #session{}'.format(slot1b.pk, s1.pk)),
+                        'Session s1 should have moved to second timeslot on first meeting day')
 
     def test_unassigned_sessions_sort(self):
         """Unassigned session sorting should behave correctly
@@ -273,6 +331,9 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
         # Create an IETF meeting...
         meeting = MeetingFactory(type_id='ietf')
 
+        # ...add a room that has no timeslots to be sure it's handled...
+        RoomFactory(meeting=meeting)
+
         # ...and sessions for the groups. Use durations that are in a different order than
         # area or name. The wgs list is in ascending acronym order, so use descending durations.
         sessions = []
@@ -296,7 +357,6 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
         url = self.absreverse('ietf.meeting.views.edit_meeting_schedule', kwargs=dict(num=meeting.number))
         self.login('secretary')
         self.driver.get(url)
-
 
         select = self.driver.find_element_by_name('sort_unassigned')
         options = {
@@ -862,6 +922,7 @@ class AgendaTests(IetfSeleniumTestCase):
         
         # Click the group button
         group_button = self.get_agenda_filter_group_button(wait, group_acronym)
+        self.scroll_to_element(group_button)
         group_button.click()
 
         # Check visibility
@@ -927,6 +988,7 @@ class AgendaTests(IetfSeleniumTestCase):
 
         # enable hackathon group
         group_button = self.get_agenda_filter_group_button(wait, 'hackathon')
+        self.scroll_to_element(group_button)
         group_button.click()
         self.assert_agenda_item_visibility(['mars', 'hackathon'])
 
@@ -968,6 +1030,7 @@ class AgendaTests(IetfSeleniumTestCase):
 
         # Be sure we're at the URL we think we're at before we click
         self.assertEqual(self.driver.current_url, url)
+        self.scroll_to_element(group_button)
         group_button.click()  # click!
 
         expected_url = '%s?show=%s' % (url, group_acronym)
@@ -1077,6 +1140,7 @@ class AgendaTests(IetfSeleniumTestCase):
             ),
             'Modal open button not found or not clickable',
         )
+        self.scroll_to_element(open_modal_button)
         open_modal_button.click()
         WebDriverWait(self.driver, 2).until(
             expected_conditions.visibility_of(modal_div),
@@ -1109,6 +1173,7 @@ class AgendaTests(IetfSeleniumTestCase):
             ),
             'Modal close button not found or not clickable',
         )
+        self.scroll_to_element(close_modal_button)
         close_modal_button.click()
         WebDriverWait(self.driver, 2).until(
             expected_conditions.invisibility_of_element(modal_div),
@@ -1128,6 +1193,7 @@ class AgendaTests(IetfSeleniumTestCase):
             ),
             'Modal open button not found or not clickable for refresh test',
         )
+        self.scroll_to_element(open_modal_button)
         open_modal_button.click()
         WebDriverWait(self.driver, 2).until(
             expected_conditions.visibility_of(modal_div),
@@ -1289,7 +1355,65 @@ class AgendaTests(IetfSeleniumTestCase):
             wait.until(in_iframe_href('tz=america/halifax', 'weekview'))
         except:
             self.fail('iframe href not updated to contain selected time zone')
-        
+
+    def test_agenda_session_selection(self):
+        wait = WebDriverWait(self.driver, 2)
+        url = self.absreverse('ietf.meeting.views.agenda_personalize', kwargs={'num': self.meeting.number})
+        self.driver.get(url)
+
+        # Verify that elements are all updated when the filters change. That the correct elements
+        # have the appropriate classes is a separate test.
+        elements_to_check = self.driver.find_elements_by_css_selector('.agenda-link.filterable')
+        self.assertGreater(len(elements_to_check), 0, 'No elements with agenda links to update were found')
+
+        self.assertFalse(
+            any(checkbox.is_selected()
+                for checkbox in self.driver.find_elements_by_css_selector(
+                'input.checkbox[name="selected-sessions"]')),
+            'Sessions were selected before being clicked',
+        )
+
+        mars_checkbox = self.driver.find_element_by_css_selector('input[type="checkbox"][name="selected-sessions"][data-filter-item="mars"]')
+        break_checkbox = self.driver.find_element_by_css_selector('input[type="checkbox"][name="selected-sessions"][data-filter-item="secretariat-sessb"]')
+        registration_checkbox = self.driver.find_element_by_css_selector('input[type="checkbox"][name="selected-sessions"][data-filter-item="secretariat-sessa"]')
+        secretariat_button = self.driver.find_element_by_css_selector('button[data-filter-item="secretariat"]')
+
+        mars_checkbox.click()  # select mars session
+        try:
+            wait.until(
+                lambda driver: all('?show=mars' in el.get_attribute('href') for el in elements_to_check)
+            )
+        except TimeoutException:
+            self.fail('Some agenda links were not updated when mars session was selected')
+        self.assertTrue(mars_checkbox.is_selected(), 'mars session checkbox was not selected after being clicked')
+        self.assertFalse(break_checkbox.is_selected(), 'break checkbox was selected without being clicked')
+        self.assertFalse(registration_checkbox.is_selected(), 'registration checkbox was selected without being clicked')
+
+        mars_checkbox.click()  # deselect mars session
+        try:
+            wait.until(
+                lambda driver: not any('?show=mars' in el.get_attribute('href') for el in elements_to_check)
+            )
+        except TimeoutException:
+            self.fail('Some agenda links were not updated when mars session was de-selected')
+        self.assertFalse(mars_checkbox.is_selected(), 'mars session checkbox was still selected after being clicked')
+        self.assertFalse(break_checkbox.is_selected(), 'break checkbox was selected without being clicked')
+        self.assertFalse(registration_checkbox.is_selected(), 'registration checkbox was selected without being clicked')
+
+        secretariat_button.click()  # turn on all secretariat sessions
+        break_checkbox.click()  # also select the break
+
+        try:
+            wait.until(
+                lambda driver: all(
+                    '?show=secretariat&hide=secretariat-sessb' in el.get_attribute('href')
+                    for el in elements_to_check
+                ))
+        except TimeoutException:
+            self.fail('Some agenda links were not updated when secretariat group but not break was selected')
+        self.assertFalse(mars_checkbox.is_selected(), 'mars session checkbox was unexpectedly selected')
+        self.assertFalse(break_checkbox.is_selected(), 'break checkbox was unexpectedly selected')
+        self.assertTrue(registration_checkbox.is_selected(), 'registration checkbox was expected to be selected')
 
 @ifSeleniumEnabled
 class WeekviewTests(IetfSeleniumTestCase):
@@ -1507,6 +1631,7 @@ class InterimTests(IetfSeleniumTestCase):
         sg_sess.save()
         sg_slot.save()
 
+        self.wait = WebDriverWait(self.driver, 2)
 
     def tearDown(self):
         settings.AGENDA_PATH = self.saved_agenda_path
@@ -1582,9 +1707,10 @@ class InterimTests(IetfSeleniumTestCase):
     def assert_upcoming_meeting_calendar(self, visible_meetings=None):
         """Assert that correct items are sent to the calendar"""
         def advance_month():
-            button = WebDriverWait(self.driver, 2).until(
+            button = self.wait.until(
                 expected_conditions.element_to_be_clickable(
                     (By.CSS_SELECTOR, 'div#calendar button.fc-next-button')))
+            self.scroll_to_element(button)
             button.click()
 
         seen = set()
@@ -1625,7 +1751,10 @@ class InterimTests(IetfSeleniumTestCase):
         self.assert_upcoming_view_filter_matches_ics_filter(querystring)
 
         # Check the ical links
-        simplified_querystring = querystring.replace(' ', '%20')  # encode spaces'
+        simplified_querystring = querystring.replace(' ', '')  # remove spaces
+        if simplified_querystring in ['?show=', '?hide=', '?show=&hide=']:
+            simplified_querystring = ''  # these empty querystrings will be dropped (not an exhaustive list)
+
         ics_link = self.driver.find_element_by_link_text('Download as .ics')
         self.assertIn(simplified_querystring, ics_link.get_attribute('href'))
         webcal_link = self.driver.find_element_by_link_text('Subscribe with webcal')
@@ -1784,8 +1913,6 @@ class InterimTests(IetfSeleniumTestCase):
         self.do_upcoming_view_filter_test('?show=mars , ames &hide=   ames', meetings)
 
     def test_upcoming_view_time_zone_selection(self):
-        wait = WebDriverWait(self.driver, 2)
-
         def _assert_interim_tz_correct(sessions, tz):
             zone = pytz.timezone(tz)
             for session in sessions:
@@ -1831,7 +1958,7 @@ class InterimTests(IetfSeleniumTestCase):
         # wait for the select box to be updated - look for an arbitrary time zone to be in
         # its options list to detect this
         arbitrary_tz = 'America/Halifax'
-        arbitrary_tz_opt = wait.until(
+        arbitrary_tz_opt = self.wait.until(
             expected_conditions.presence_of_element_located(
                 (By.CSS_SELECTOR, '#timezone-select > option[value="%s"]' % arbitrary_tz)
             )
@@ -1857,7 +1984,7 @@ class InterimTests(IetfSeleniumTestCase):
 
         # click 'utc' button
         utc_tz_link.click()
-        wait.until(expected_conditions.element_to_be_selected(utc_tz_opt))
+        self.wait.until(expected_conditions.element_to_be_selected(utc_tz_opt))
         self.assertFalse(local_tz_opt.is_selected())
         self.assertFalse(local_tz_bottom_opt.is_selected())
         self.assertFalse(arbitrary_tz_opt.is_selected())
@@ -1869,7 +1996,7 @@ class InterimTests(IetfSeleniumTestCase):
 
         # click back to 'local'
         local_tz_link.click()
-        wait.until(expected_conditions.element_to_be_selected(local_tz_opt))
+        self.wait.until(expected_conditions.element_to_be_selected(local_tz_opt))
         self.assertTrue(local_tz_opt.is_selected())
         self.assertTrue(local_tz_bottom_opt.is_selected())
         self.assertFalse(arbitrary_tz_opt.is_selected())
@@ -1881,7 +2008,7 @@ class InterimTests(IetfSeleniumTestCase):
 
         # Now select a different item from the select input
         arbitrary_tz_opt.click()
-        wait.until(expected_conditions.element_to_be_selected(arbitrary_tz_opt))
+        self.wait.until(expected_conditions.element_to_be_selected(arbitrary_tz_opt))
         self.assertFalse(local_tz_opt.is_selected())
         self.assertFalse(local_tz_bottom_opt.is_selected())
         self.assertTrue(arbitrary_tz_opt.is_selected())
@@ -1894,7 +2021,7 @@ class InterimTests(IetfSeleniumTestCase):
         # Now repeat those tests using the widgets at the bottom of the page
         # click 'utc' button
         utc_tz_bottom_link.click()
-        wait.until(expected_conditions.element_to_be_selected(utc_tz_opt))
+        self.wait.until(expected_conditions.element_to_be_selected(utc_tz_opt))
         self.assertFalse(local_tz_opt.is_selected())
         self.assertFalse(local_tz_bottom_opt.is_selected())
         self.assertFalse(arbitrary_tz_opt.is_selected())
@@ -1906,7 +2033,7 @@ class InterimTests(IetfSeleniumTestCase):
 
         # click back to 'local'
         local_tz_bottom_link.click()
-        wait.until(expected_conditions.element_to_be_selected(local_tz_opt))
+        self.wait.until(expected_conditions.element_to_be_selected(local_tz_opt))
         self.assertTrue(local_tz_opt.is_selected())
         self.assertTrue(local_tz_bottom_opt.is_selected())
         self.assertFalse(arbitrary_tz_opt.is_selected())
@@ -1918,7 +2045,7 @@ class InterimTests(IetfSeleniumTestCase):
 
         # Now select a different item from the select input
         arbitrary_tz_bottom_opt.click()
-        wait.until(expected_conditions.element_to_be_selected(arbitrary_tz_opt))
+        self.wait.until(expected_conditions.element_to_be_selected(arbitrary_tz_opt))
         self.assertFalse(local_tz_opt.is_selected())
         self.assertFalse(local_tz_bottom_opt.is_selected())
         self.assertTrue(arbitrary_tz_opt.is_selected())
@@ -1927,6 +2054,52 @@ class InterimTests(IetfSeleniumTestCase):
         self.assertFalse(utc_tz_bottom_opt.is_selected())
         _assert_interim_tz_correct(sessions, arbitrary_tz)
         _assert_ietf_tz_correct(ietf_meetings, arbitrary_tz)
+
+    def test_upcoming_materials_modal(self):
+        """Test opening and closing a materals modal
+
+        This does not test dynamic reloading of the meeting materials - it relies on the main
+        agenda page testing that. If the materials modal handling diverges between here and
+        there, this should be updated to include that test.
+        """
+        url = self.absreverse('ietf.meeting.views.upcoming')
+        self.driver.get(url)
+
+        interim = self.displayed_interims(['mars'])[0]
+        session = interim.session_set.first()
+        assignment = session.official_timeslotassignment()
+        slug = assignment.slug()
+
+        # modal should start hidden
+        modal_div = self.driver.find_element_by_css_selector('div#modal-%s' % slug)
+        self.assertFalse(modal_div.is_displayed())
+
+        # Click the 'materials' button
+        open_modal_button = self.wait.until(
+            expected_conditions.element_to_be_clickable(
+                (By.CSS_SELECTOR, '[data-target="#modal-%s"]' % slug)
+            ),
+            'Modal open button not found or not clickable',
+        )
+        open_modal_button.click()
+        self.wait.until(
+            expected_conditions.visibility_of(modal_div),
+            'Modal did not become visible after clicking open button',
+        )
+
+        # Now close the modal
+        close_modal_button = self.wait.until(
+            presence_of_element_child_by_css_selector(
+                modal_div,
+                '.modal-footer button[data-dismiss="modal"]',
+            ),
+            'Modal close button not found or not clickable',
+        )
+        close_modal_button.click()
+        self.wait.until(
+            expected_conditions.invisibility_of_element(modal_div),
+            'Modal was not hidden after clicking close button',
+        )
 
 
 # The following are useful debugging tools

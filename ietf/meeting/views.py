@@ -16,7 +16,6 @@ import tarfile
 import tempfile
 import markdown2
 
-
 from calendar import timegm
 from collections import OrderedDict, Counter, deque, defaultdict
 from urllib.parse import unquote
@@ -57,7 +56,7 @@ from ietf.ietfauth.utils import role_required, has_role, user_is_person
 from ietf.mailtrigger.utils import gather_address_lists
 from ietf.meeting.models import Meeting, Session, Schedule, FloorPlan, SessionPresentation, TimeSlot, SlideSubmission
 from ietf.meeting.models import SessionStatusName, SchedulingEvent, SchedTimeSessAssignment, Room, TimeSlotTypeName
-from ietf.meeting.forms import CustomDurationField
+from ietf.meeting.forms import CustomDurationField, SwapDaysForm, SwapTimeslotsForm
 from ietf.meeting.helpers import get_areas, get_person_by_email, get_schedule_by_name
 from ietf.meeting.helpers import build_all_agenda_slices, get_wg_name_list
 from ietf.meeting.helpers import get_all_assignments_from_schedule
@@ -66,7 +65,7 @@ from ietf.meeting.helpers import get_wg_list, find_ads_for_meeting
 from ietf.meeting.helpers import get_meeting, get_ietf_meeting, get_current_ietf_meeting_num
 from ietf.meeting.helpers import get_schedule, schedule_permissions, is_regular_agenda_filter_group
 from ietf.meeting.helpers import preprocess_assignments_for_agenda, read_agenda_file
-from ietf.meeting.helpers import filter_keywords_for_session, tag_assignments_with_filter_keywords
+from ietf.meeting.helpers import filter_keywords_for_session, tag_assignments_with_filter_keywords, filter_keyword_for_specific_session
 from ietf.meeting.helpers import convert_draft_to_pdf, get_earliest_session_date
 from ietf.meeting.helpers import can_view_interim_request, can_approve_interim_request
 from ietf.meeting.helpers import can_edit_interim_request
@@ -456,11 +455,6 @@ def new_meeting_schedule(request, num, owner=None, name=None):
         'form': form,
     })
 
-
-class SwapDaysForm(forms.Form):
-    source_day = forms.DateField(required=True)
-    target_day = forms.DateField(required=True)
-
 @ensure_csrf_cookie
 def edit_meeting_schedule(request, num=None, owner=None, name=None):
     meeting = get_meeting(num)
@@ -494,8 +488,6 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
     assignments_by_session = defaultdict(list)
     for a in assignments:
         assignments_by_session[a.session_id].append(a)
-
-    rooms = meeting.room_set.filter(session_types__slug='regular').distinct().order_by("capacity")
 
     tombstone_states = ['canceled', 'canceledpa', 'resched']
 
@@ -581,6 +573,145 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
 
             s.readonly = s.current_status in tombstone_states or any(a.schedule_id != schedule.pk for a in assignments_by_session.get(s.pk, []))
 
+    def prepare_timeslots_for_display(timeslots, rooms):
+        """Prepare timeslot data for template
+
+        Prepares timeslots for display by sorting into groups in a structure
+        that can be rendered by the template and by adding some data to the timeslot
+        instances. Currently adds a 'layout_width' property to each timeslot instance.
+        The layout_width is the width, in em, that should be used to style the timeslot's
+        width.
+
+        Rooms are partitioned into groups that have identical sets of timeslots
+        for the entire meeting.
+
+        The result of this method is an OrderedDict, days, keyed by the Date
+        of each day that has at least one timeslot. The value of days[day] is a
+        list with one entry for each group of rooms. Each entry is a list of
+        dicts with keys 'room' and 'timeslots'. The 'room' value is the room
+        instance and 'timeslots' is a list of timeslot instances for that room.
+
+        The format is more easily illustrated than explained:
+
+        days = OrderedDict(
+          Date(2021, 5, 27): [
+            [  # room group 1
+              {'room': <room1>, 'timeslots': [<room1 timeslot1>, <room1 timeslot2>]},
+              {'room': <room2>, 'timeslots': [<room2 timeslot1>, <room2 timeslot2>]},
+              {'room': <room3>, 'timeslots': [<room3 timeslot1>, <room3 timeslot2>]},
+            ],
+            [  # room group 2
+              {'room': <room4>, 'timeslots': [<room4 timeslot1>]},
+            ],
+          ],
+          Date(2021, 5, 28): [
+            [ # room group 1
+              {'room': <room1>, 'timeslots': [<room1 timeslot3>]},
+              {'room': <room2>, 'timeslots': [<room2 timeslot3>]},
+              {'room': <room3>, 'timeslots': [<room3 timeslot3>]},
+            ],
+            [ # room group 2
+              {'room': <room4>, 'timeslots': []},
+            ],
+          ],
+        )
+        """
+
+        # Populate room_data. This collects the timeslots for each room binned by
+        # day, plus data needed for sorting the rooms for display.
+        room_data = dict()
+        all_days = set()
+        # timeslots_qs is already sorted by location, name, and time
+        for t in timeslots:
+            if t.location not in rooms:
+                continue
+
+            t.layout_width = timedelta_to_css_ems(t.duration)
+            if t.location_id not in room_data:
+                room_data[t.location_id] = dict(
+                    timeslots_by_day=dict(),
+                    timeslot_count=0,
+                    start_and_duration=[],
+                    first_timeslot = t,
+                )
+            rd = room_data[t.location_id]
+            rd['timeslot_count'] += 1
+            rd['start_and_duration'].append((t.time, t.duration))
+            ttd = t.time.date()
+            all_days.add(ttd)
+            if ttd not in rd['timeslots_by_day']:
+                rd['timeslots_by_day'][ttd] = []
+            rd['timeslots_by_day'][ttd].append(t)
+
+        all_days = sorted(all_days)  # changes set to a list
+        # Note the maximum timeslot count for any room
+        max_timeslots = max(rd['timeslot_count'] for rd in room_data.values())
+
+        # Partition rooms into groups with identical timeslot arrangements.
+        # Start by discarding any roos that have no timeslots.
+        rooms_with_timeslots = [r for r in rooms if r.pk in room_data]
+        # Then sort the remaining rooms.
+        sorted_rooms = sorted(
+            rooms_with_timeslots,
+            key=lambda room: (
+                # First, sort regular session rooms ahead of others - these will usually
+                # have more timeslots than other room types.
+                0 if room_data[room.pk]['timeslot_count'] == max_timeslots else 1,
+                # Sort rooms with earlier timeslots ahead of later
+                room_data[room.pk]['first_timeslot'].time,
+                # Sort rooms with more sessions ahead of rooms with fewer
+                0 - room_data[room.pk]['timeslot_count'],
+                # Sort by list of starting time and duration so that groups with identical
+                # timeslot structure will be neighbors. The grouping algorithm relies on this!
+                room_data[room.pk]['start_and_duration'],
+                # Within each group, sort higher capacity rooms first.
+                room.capacity,
+                # Finally, sort alphabetically by name
+                room.name
+            )
+        )
+
+        # Rooms are now ordered so rooms with identical timeslot arrangements are neighbors.
+        # Walk the list, splitting these into groups.
+        room_groups = []
+        last_start_and_duration = None  # Used to watch for changes in start_and_duration
+        for room in sorted_rooms:
+            if last_start_and_duration != room_data[room.pk]['start_and_duration']:
+                room_groups.append([])  # start a new room_group
+                last_start_and_duration = room_data[room.pk]['start_and_duration']
+            room_groups[-1].append(room)
+
+        # Next, build the structure that will hold the data for the view. This makes it
+        # easier to arrange that every room has an entry for every day, even if there is
+        # no timeslot for that day. This makes the HTML template much easier to write.
+        # Use OrderedDicts instead of lists so that we can easily put timeslot data in the
+        # right place.
+        days = OrderedDict(
+            (
+                day,  # key in the Ordered Dict
+                [
+                    # each value is an OrderedDict of room group data
+                    OrderedDict(
+                        (room.pk, dict(room=room, timeslots=[]))
+                        for room in rg
+                    ) for rg in room_groups
+                ]
+            ) for day in all_days
+        )
+
+        # With the structure's skeleton built, now fill in the data. The loops must
+        # preserve the order of room groups and rooms within each group.
+        for rg_num, rgroup in enumerate(room_groups):
+            for room in rgroup:
+                for day, ts_for_day in room_data[room.pk]['timeslots_by_day'].items():
+                    days[day][rg_num][room.pk]['timeslots'] = ts_for_day
+
+        # Now convert the OrderedDict entries into lists since we don't need to
+        # do lookup by pk any more.
+        for day in days.keys():
+            days[day] = [list(rg.values()) for rg in days[day]]
+
+        return days
 
     if request.method == 'POST':
         if not can_edit:
@@ -658,36 +789,44 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
 
             return HttpResponseRedirect(request.get_full_path())
 
+        elif action == 'swaptimeslots':
+            # Swap sets of timeslots with equal start/end time for a given set of rooms.
+            # Gets start and end times from TimeSlot instances for the origin and target,
+            # then swaps all timeslots for the requested rooms whose start/end match those.
+            # The origin/target timeslots do not need to be the same duration.
+            swap_timeslots_form = SwapTimeslotsForm(meeting, request.POST)
+            if not swap_timeslots_form.is_valid():
+                return HttpResponse("Invalid swap: {}".format(swap_timeslots_form.errors), status=400)
+
+            affected_rooms = swap_timeslots_form.cleaned_data['rooms']
+            origin_timeslot = swap_timeslots_form.cleaned_data['origin_timeslot']
+            target_timeslot = swap_timeslots_form.cleaned_data['target_timeslot']
+
+            origin_timeslots = meeting.timeslot_set.filter(
+                location__in=affected_rooms,
+                time=origin_timeslot.time,
+                duration=origin_timeslot.duration,
+            )
+            target_timeslots = meeting.timeslot_set.filter(
+                location__in=affected_rooms,
+                time=target_timeslot.time,
+                duration=target_timeslot.duration,
+            )
+            swap_meeting_schedule_timeslot_assignments(
+                schedule,
+                list(origin_timeslots),
+                list(target_timeslots),
+                target_timeslot.time - origin_timeslot.time,
+            )
+            return HttpResponseRedirect(request.get_full_path())
+
         return HttpResponse("Invalid parameters", status=400)
 
-    # prepare timeslot layout
+    # Show only rooms that have regular sessions
+    rooms = meeting.room_set.filter(session_types__slug='regular')
 
-    timeslots_by_room_and_day = defaultdict(list)
-    room_has_timeslots = set()
-    for t in timeslots_qs:
-        room_has_timeslots.add(t.location_id)
-        timeslots_by_room_and_day[(t.location_id, t.time.date())].append(t)
-
-    days = []
-    for day in sorted(set(t.time.date() for t in timeslots_qs)):
-        room_timeslots = []
-        for r in rooms:
-            if r.pk not in room_has_timeslots:
-                continue
-
-            timeslots = []
-            for t in timeslots_by_room_and_day.get((r.pk, day), []):
-                t.layout_width = timedelta_to_css_ems(t.end_time() - t.time)
-                timeslots.append(t)
-
-            room_timeslots.append((r, timeslots))
-
-        days.append({
-            'day': day,
-            'room_timeslots': room_timeslots,
-        })
-
-    room_labels = [[r for r in rooms if r.pk in room_has_timeslots] for i in range(len(days))]
+    # Construct timeslot data for the template to render
+    days = prepare_timeslots_for_display(timeslots_qs, rooms)
 
     # possible timeslot start/ends
     timeslot_groups = defaultdict(set)
@@ -761,7 +900,6 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
         'can_edit_properties': can_edit or secretariat,
         'secretariat': secretariat,
         'days': days,
-        'room_labels': room_labels,
         'timeslot_groups': sorted((d, list(sorted(t_groups))) for d, t_groups in timeslot_groups.items()),
         'unassigned_sessions': unassigned_sessions,
         'session_parents': session_parents,
@@ -1326,6 +1464,119 @@ def session_materials(request, session_id):
     assignment = assignments[0]
     return render(request, 'meeting/session_materials.html', dict(item=assignment))
 
+
+def get_assignments_for_agenda(schedule):
+    """Get queryset containing assignments to show on the agenda"""
+    return SchedTimeSessAssignment.objects.filter(
+        schedule__in=[schedule, schedule.base],
+        timeslot__type__private=False,
+    )
+
+
+def extract_groups_hierarchy(prepped_assignments):
+    """Extract groups hierarchy for agenda display
+
+    It's a little bit complicated because we can be dealing with historic groups.
+    """
+    seen = set()
+    groups = [a.session.historic_group for a in prepped_assignments
+              if a.session
+              and a.session.historic_group
+              and is_regular_agenda_filter_group(a.session.historic_group)
+              and a.session.historic_group.historic_parent]
+    group_parents = []
+    for g in groups:
+        if g.historic_parent.acronym not in seen:
+            group_parents.append(g.historic_parent)
+            seen.add(g.historic_parent.acronym)
+
+    seen = set()
+    for p in group_parents:
+        p.group_list = []
+        for g in groups:
+            if g.acronym not in seen and g.historic_parent.acronym == p.acronym:
+                p.group_list.append(g)
+                seen.add(g.acronym)
+
+        p.group_list.sort(key=lambda g: g.acronym)
+    return group_parents
+
+
+def prepare_filter_keywords(tagged_assignments, group_parents):
+    #
+    # The agenda_filter template expects a list of categorized header buttons, each
+    # with a list of children. Make two categories: the IETF areas and the other parent groups.
+    # We also pass a list of 'extra' buttons - currently Office Hours and miscellaneous filters.
+    # All but the last of these are additionally used by the agenda.html template to make
+    # a list of filtered ical buttons. The last group is ignored for this.
+    area_group_filters = []
+    other_group_filters = []
+    extra_filters = []
+
+    for p in group_parents:
+        new_filter = dict(
+            label=p.acronym.upper(),
+            keyword=p.acronym.lower(),
+            children=[
+                dict(
+                    label=g.acronym,
+                    keyword=g.acronym.lower(),
+                    is_bof=g.is_bof(),
+                ) for g in p.group_list
+            ]
+        )
+        if p.type.slug == 'area':
+            area_group_filters.append(new_filter)
+        else:
+            other_group_filters.append(new_filter)
+
+    office_hours_labels = set()
+    for a in tagged_assignments:
+        suffix = ' office hours'
+        if a.session.name.lower().endswith(suffix):
+            office_hours_labels.add(a.session.name[:-len(suffix)].strip())
+
+    if len(office_hours_labels) > 0:
+        # keyword needs to match what's tagged in filter_keywords_for_session()
+        extra_filters.append(dict(
+            label='Office Hours',
+            keyword='officehours',
+            children=[
+                dict(
+                    label=label,
+                    keyword=label.lower().replace(' ', '')+'officehours',
+                    is_bof=False,
+                ) for label in office_hours_labels
+            ]
+        ))
+
+    # Keywords that should appear in 'non-area' column
+    non_area_labels = [
+        'BOF', 'EDU', 'Hackathon', 'IEPG', 'IESG', 'IETF', 'Plenary', 'Secretariat', 'Tools',
+    ]
+    # Remove any unused non-area keywords
+    non_area_filters = [
+        dict(label=label, keyword=label.lower(), is_bof=False)
+        for label in non_area_labels if any([
+            label.lower() in assignment.filter_keywords
+            for assignment in tagged_assignments
+        ])
+    ]
+    if len(non_area_filters) > 0:
+        extra_filters.append(dict(
+            label=None,
+            keyword=None,
+            children=non_area_filters,
+        ))
+
+    area_group_filters.sort(key=lambda p:p['label'])
+    other_group_filters.sort(key=lambda p:p['label'])
+    filter_categories = [category
+                         for category in [area_group_filters, other_group_filters, extra_filters]
+                         if len(category) > 0]
+    return filter_categories, non_area_labels
+
+
 @ensure_csrf_cookie
 def agenda(request, num=None, name=None, base=None, ext=None, owner=None, utc=""):
     base = base if base else 'agenda'
@@ -1348,6 +1599,7 @@ def agenda(request, num=None, name=None, base=None, ext=None, owner=None, utc=""
         else:
             raise Http404("No such meeting")
 
+    # Select the schedule to show
     if name is None:
         schedule = get_schedule(meeting, name)
     else:
@@ -1359,112 +1611,23 @@ def agenda(request, num=None, name=None, base=None, ext=None, owner=None, utc=""
         return render(request, "meeting/no-"+base+ext, {'meeting':meeting }, content_type=mimetype[ext])
 
     updated = meeting.updated()
-    filtered_assignments = SchedTimeSessAssignment.objects.filter(
-        schedule__in=[schedule, schedule.base],
-        timeslot__type__private=False,
+
+    # Select and prepare sessions that should be included
+    filtered_assignments = preprocess_assignments_for_agenda(
+        get_assignments_for_agenda(schedule),
+        meeting
     )
-    filtered_assignments = preprocess_assignments_for_agenda(filtered_assignments, meeting)
     tag_assignments_with_filter_keywords(filtered_assignments)
 
+    # Done processing for CSV output
     if ext == ".csv":
         return agenda_csv(schedule, filtered_assignments)
 
-    # extract groups hierarchy, it's a little bit complicated because
-    # we can be dealing with historic groups
-    seen = set()
-    groups = [a.session.historic_group for a in filtered_assignments
-              if a.session
-              and a.session.historic_group
-              and is_regular_agenda_filter_group(a.session.historic_group)
-              and a.session.historic_group.historic_parent]
-    group_parents = []
-    for g in groups:
-        if g.historic_parent.acronym not in seen:
-            group_parents.append(g.historic_parent)
-            seen.add(g.historic_parent.acronym)
-
-    seen = set()
-    for p in group_parents:
-        p.group_list = []
-        for g in groups:
-            if g.acronym not in seen and g.historic_parent.acronym == p.acronym:
-                p.group_list.append(g)
-                seen.add(g.acronym)
-
-        p.group_list.sort(key=lambda g: g.acronym)
-
-    # Groups gathered and processed. Now arrange for the filter UI.
-    #
-    # The agenda_filter template expects a list of categorized header buttons, each
-    # with a list of children. Make two categories: the IETF areas and the other parent groups.
-    # We also pass a list of 'extra' buttons - currently Office Hours and miscellaneous filters.
-    # All but the last of these are additionally used by the agenda.html template to make
-    # a list of filtered ical buttons. The last group is ignored for this. 
-    area_group_filters = []
-    other_group_filters = []
-    extra_filters = []
-    
-    for p in group_parents:
-        new_filter = dict(
-            label=p.acronym.upper(),
-            keyword=p.acronym.lower(),
-            children=[
-                dict(
-                    label=g.acronym,
-                    keyword=g.acronym.lower(),
-                    is_bof=g.is_bof(),
-                ) for g in p.group_list
-            ]
-        )
-        if p.type.slug == 'area':
-            area_group_filters.append(new_filter)
-        else:
-            other_group_filters.append(new_filter)
-
-    office_hours_labels = set()
-    for a in filtered_assignments:
-        suffix = ' office hours'
-        if a.session.name.lower().endswith(suffix):
-            office_hours_labels.add(a.session.name[:-len(suffix)].strip())
-
-    if len(office_hours_labels) > 0:
-        # keyword needs to match what's tagged in filter_keywords_for_session() 
-        extra_filters.append(dict(
-            label='Office Hours',
-            keyword='officehours',
-            children=[
-                dict(
-                    label=label,
-                    keyword=label.lower().replace(' ', '')+'officehours',
-                    is_bof=False,
-                ) for label in office_hours_labels
-            ]
-        ))
-
-    # Keywords that should appear in 'non-area' column
-    non_area_labels = [
-        'BoF', 'EDU', 'Hackathon', 'IEPG', 'IESG', 'IETF', 'Plenary', 'Secretariat', 'Tools',
-    ]
-    # Remove any unused non-area keywords
-    non_area_filters = [
-        dict(label=label, keyword=label.lower(), is_bof=False) 
-        for label in non_area_labels if any([
-            label.lower() in assignment.filter_keywords 
-            for assignment in filtered_assignments
-        ])
-    ]
-    if len(non_area_filters) > 0:
-        extra_filters.append(dict(
-            label=None,
-            keyword=None,
-            children=non_area_filters,
-        ))
-
-    area_group_filters.sort(key=lambda p:p['label'])
-    other_group_filters.sort(key=lambda p:p['label'])
-    filter_categories = [category 
-                         for category in [area_group_filters, other_group_filters, extra_filters]
-                         if len(category) > 0]
+    # Now prep the filter UI
+    filter_categories, non_area_labels = prepare_filter_keywords(
+        filtered_assignments,
+        extract_groups_hierarchy(filtered_assignments),
+    )
 
     is_current_meeting = (num is None) or (num == get_current_ietf_meeting_num())
 
@@ -1617,6 +1780,45 @@ def agenda_by_type_ics(request,num=None,type=None):
         assignments = assignments.filter(session__type__slug=type)
     updated = meeting.updated()
     return render(request,"meeting/agenda.ics",{"schedule":schedule,"updated":updated,"assignments":assignments},content_type="text/calendar")
+
+
+def agenda_personalize(request, num):
+    meeting = get_ietf_meeting(num)  # num may be None, which requests the current meeting
+    if meeting is None or meeting.schedule is None:
+        raise Http404('No such meeting')
+
+    # Select and prepare sessions that should be included
+    filtered_assignments = preprocess_assignments_for_agenda(
+        get_assignments_for_agenda(meeting.schedule),
+        meeting
+    )
+    tag_assignments_with_filter_keywords(filtered_assignments)
+    for assignment in filtered_assignments:
+        # may be None for some sessions
+        assignment.session_keyword = filter_keyword_for_specific_session(assignment.session)
+
+    # Now prep the filter UI
+    filter_categories, non_area_labels = prepare_filter_keywords(
+        filtered_assignments,
+        extract_groups_hierarchy(filtered_assignments),
+    )
+
+    is_current_meeting = (num is None) or (num == get_current_ietf_meeting_num())
+
+    return render(
+        request,
+        "meeting/agenda_personalize.html",
+        {
+            'schedule': meeting.schedule,
+            'updated': meeting.updated(),
+            'filtered_assignments': filtered_assignments,
+            'filter_categories': filter_categories,
+            'non_area_labels': non_area_labels,
+            'timezone': meeting.time_zone,
+            'is_current_meeting': is_current_meeting,
+            'cache_time': 150 if is_current_meeting else 3600,
+        }
+    )
 
 def session_draft_list(num, acronym):
     try:
@@ -2166,6 +2368,8 @@ def session_details(request, num, acronym):
         for qs in [session.filtered_artifacts,session.filtered_slides,session.filtered_drafts]:
             qs = [p for p in qs if p.document.get_state_slug(p.document.type_id)!='deleted']
             session.type_counter.update([p.document.type.slug for p in qs])
+
+        session.order_number = session.order_in_meeting()
 
     # we somewhat arbitrarily use the group of the last session we get from
     # get_sessions() above when checking can_manage_session_materials()
@@ -3542,7 +3746,7 @@ def proceedings(request, num=None):
 
     meeting = get_meeting(num)
 
-    if (meeting.number.isdigit() and int(meeting.number) <= 64):
+    if (meeting.number.isdigit() and int(meeting.number) <= 96):
         return HttpResponseRedirect( 'https://www.ietf.org/proceedings/%s' % num )
 
     if not meeting.schedule or not meeting.schedule.assignments.exists():
@@ -3898,7 +4102,7 @@ def request_minutes(request, num=None):
         body = render_to_string('meeting/request_minutes.txt', body_context)
         initial = {'to': 'wgchairs@ietf.org',
                    'cc': 'irsg@irtf.org',
-                   'subject': 'Request for IETF WG and Bof Session Minutes',
+                   'subject': 'Request for IETF WG and BOF Session Minutes',
                    'body': body,
                   }
         form = RequestMinutesForm(initial=initial)

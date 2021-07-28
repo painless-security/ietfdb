@@ -36,6 +36,7 @@ from ietf.meeting.helpers import can_approve_interim_request, can_view_interim_r
 from ietf.meeting.helpers import send_interim_approval_request
 from ietf.meeting.helpers import send_interim_meeting_cancellation_notice, send_interim_session_cancellation_notice
 from ietf.meeting.helpers import send_interim_minutes_reminder, populate_important_dates, update_important_dates
+from ietf.meeting.helpers import filter_keyword_for_specific_session
 from ietf.meeting.models import Session, TimeSlot, Meeting, SchedTimeSessAssignment, Schedule, SessionPresentation, SlideSubmission, SchedulingEvent, Room, Constraint, ConstraintName
 from ietf.meeting.test_data import make_meeting_test_data, make_interim_meeting, make_interim_test_data
 from ietf.meeting.utils import finalize, condition_slide_order
@@ -50,7 +51,7 @@ from ietf.utils.text import xslugify
 from ietf.person.factories import PersonFactory
 from ietf.group.factories import GroupFactory, GroupEventFactory, RoleFactory
 from ietf.meeting.factories import ( SessionFactory, SessionPresentationFactory, ScheduleFactory,
-    MeetingFactory, FloorPlanFactory, TimeSlotFactory, SlideSubmissionFactory )
+    MeetingFactory, FloorPlanFactory, TimeSlotFactory, SlideSubmissionFactory, RoomFactory )
 from ietf.doc.factories import DocumentFactory, WgDraftFactory
 from ietf.submit.tests import submission_file
 from ietf.utils.test_utils import assert_ical_response_is_valid
@@ -376,6 +377,63 @@ class MeetingTests(TestCase):
         self.assertEqual(r_with_tz.status_code,200)
         self.assertEqual(r.content, r_with_tz.content)
 
+    def test_agenda_personalize(self):
+        """Session selection page should have a checkbox for each session with appropriate keywords"""
+        meeting = make_meeting_test_data()
+        url = urlreverse("ietf.meeting.views.agenda_personalize",kwargs=dict(num=meeting.number))
+        r = self.client.get(url)
+        self.assertEqual(r.status_code,200)
+        q = PyQuery(r.content)
+        for assignment in SchedTimeSessAssignment.objects.filter(
+                schedule__in=[meeting.schedule, meeting.schedule.base],
+                timeslot__type__private=False,
+        ):
+            row = q('#row-{}'.format(assignment.slug()))
+            self.assertIsNotNone(row, 'No row for assignment {}'.format(assignment))
+            checkboxes = row('input[type="checkbox"][name="selected-sessions"]')
+            self.assertEqual(len(checkboxes), 1,
+                             'Row for assignment {} does not have a checkbox input'.format(assignment))
+            checkbox = checkboxes.eq(0)
+            self.assertEqual(
+                checkbox.attr('data-filter-item'),
+                filter_keyword_for_specific_session(assignment.session),
+            )
+
+    def test_agenda_personalize_updates_urls(self):
+        """The correct URLs should be updated when filter settings change on the personalize agenda view
+
+        Tests that the expected elements have the necessary classes. The actual update of these fields
+        is tested in the JS tests
+        """
+        meeting = make_meeting_test_data()
+        url = urlreverse("ietf.meeting.views.agenda_personalize",kwargs=dict(num=meeting.number))
+        r = self.client.get(url)
+        self.assertEqual(r.status_code,200)
+        q = PyQuery(r.content)
+
+        # Find all the elements expected to be updated
+        expected_elements = []
+        nav_tab_anchors = q('ul.nav.nav-tabs > li > a')
+        for anchor in nav_tab_anchors.items():
+            text = anchor.text().strip()
+            if text in ['Agenda', 'UTC Agenda', 'Select Sessions']:
+                expected_elements.append(anchor)
+        for btn in q('.buttonlist a.btn').items():
+            text = btn.text().strip()
+            if text in ['View customized agenda', 'Download as .ics', 'Subscribe with webcal']:
+                expected_elements.append(btn)
+
+        # Check that all the expected elements have the correct classes
+        for elt in expected_elements:
+            self.assertTrue(elt.has_class('agenda-link'))
+            self.assertTrue(elt.has_class('filterable'))
+
+        # Finally, check that there are no unexpected elements marked to be updated.
+        # If there are, they should be added to the test above.
+        self.assertEqual(len(expected_elements),
+                         len(q('.agenda-link.filterable')),
+                         'Unexpected elements updated')
+
     @override_settings(MEETING_MATERIALS_SERVE_LOCALLY=False, MEETING_DOC_HREFS = settings.MEETING_DOC_CDN_HREFS)
     def test_materials_through_cdn(self):
         meeting = make_meeting_test_data(create_interims=True)
@@ -542,7 +600,7 @@ class MeetingTests(TestCase):
         self.assertEqual(r.status_code, 200)
 
     def test_proceedings(self):
-        meeting = make_meeting_test_data()
+        meeting = make_meeting_test_data(meeting=MeetingFactory(type_id='ietf', number='100'))
         session = Session.objects.filter(meeting=meeting, group__acronym="mars").first()
         GroupEventFactory(group=session.group,type='status_update')
         SessionPresentationFactory(document__type_id='recording',session=session)
@@ -695,7 +753,7 @@ class MeetingTests(TestCase):
 
         # Should be a 'non-area events' link showing appropriate types        
         non_area_labels = [
-            'BoF', 'EDU', 'Hackathon', 'IEPG', 'IESG', 'IETF', 'Plenary', 'Secretariat', 'Tools',
+            'BOF', 'EDU', 'Hackathon', 'IEPG', 'IESG', 'IETF', 'Plenary', 'Secretariat', 'Tools',
         ]
         self.assertIn('%s?show=%s' % (ical_url, ','.join(non_area_labels).lower()), content)
 
@@ -890,6 +948,291 @@ class MeetingTests(TestCase):
         # deleted slides should not be found
         for slide in deleted_slides:
             self.assertFalse(q('ul li a:contains("%s")' % slide.title))
+
+
+class EditMeetingScheduleTests(TestCase):
+    """Tests of the meeting editor view
+
+    This has tests in tests_js.py as well.
+    """
+    def test_room_grouping(self):
+        """Blocks of rooms in the editor should have identical timeslots"""
+        # set up a meeting, but we'll construct our own timeslots/rooms
+        meeting = MeetingFactory(type_id='ietf', populate_schedule=False)
+        sched = ScheduleFactory(meeting=meeting)
+
+        # Make groups of rooms with timeslots identical within a group, distinct between groups
+        times = [
+            [datetime.time(11,0), datetime.time(12,0), datetime.time(13,0)],
+            [datetime.time(11,0), datetime.time(12,0), datetime.time(13,0)],  # same times, but durations will differ
+            [datetime.time(11,30), datetime.time(12, 0), datetime.time(13,0)],  # different time
+            [datetime.time(12,0)],  # different number of timeslots
+        ]
+        durations = [
+            [30, 60, 90],
+            [60, 60, 90],
+            [30, 60, 90],
+            [60],
+        ]
+        # check that times and durations are same-sized arrays
+        self.assertEqual(len(times), len(durations))
+        for time_row, duration_row in zip(times, durations):
+            self.assertEqual(len(time_row), len(duration_row))
+
+        # Create an array of room groups, each with rooms_per_group Rooms in it.
+        # Assign TimeSlots according to the times/durations above to each Room.
+        room_groups = []
+        rooms_in_group = 1  # will be incremented with each group
+        for time_row, duration_row in zip(times, durations):
+            room_groups.append(RoomFactory.create_batch(rooms_in_group, meeting=meeting))
+            rooms_in_group += 1  # put a different number of rooms in each group to help identify errors in grouping
+            for time, duration in zip(time_row, duration_row):
+                for room in room_groups[-1]:
+                    TimeSlotFactory(
+                        meeting=meeting,
+                        location=room,
+                        time=datetime.datetime.combine(meeting.date, time),
+                        duration=datetime.timedelta(minutes=duration),
+                    )
+
+        # Now retrieve the edit meeting schedule page
+        url = urlreverse('ietf.meeting.views.edit_meeting_schedule',
+                         kwargs=dict(num=meeting.number, owner=sched.owner.email(), name=sched.name))
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+
+        q = PyQuery(r.content)
+        day_divs = q('div.day')
+        # There's only one day with TimeSlots. This means there will be two divs with class 'day':
+        # the first is the room label column, the second is the TimeSlot grid.
+        # Using eq() instead of [] gives us PyQuery objects instead of Elements
+        label_divs = day_divs.eq(0).find('div.room-group')
+        self.assertEqual(len(label_divs), len(room_groups))
+        room_group_divs = day_divs.eq(1).find('div.room-group')
+        self.assertEqual(len(room_group_divs), len(room_groups))
+        for rg, l_div, rg_div in zip(
+                room_groups,
+                label_divs.items(),  # items() gives us PyQuery objects
+                room_group_divs.items(),  # items() gives us PyQuery objects
+        ):
+            # Check that room labels are correctly grouped
+            self.assertCountEqual(
+                [div.text() for div in l_div.find('div.room-name').items()],
+                [room.name for room in rg],
+            )
+
+            # And that the time labels are correct. Just check that the individual timeslot labels agree with
+            # the time-header above each room group.
+            time_header_labels = rg_div.find('div.time-header div.time-label').text()
+            timeslot_rows = rg_div.find('div.timeslots')
+            for row in timeslot_rows.items():
+                time_labels = row.find('div.time-label').text()
+                self.assertEqual(time_labels, time_header_labels)
+
+    def test_bof_session_tag(self):
+        """Sessions for BOF groups should be marked as such"""
+        meeting = MeetingFactory(type_id='ietf')
+
+        non_bof_session = SessionFactory(meeting=meeting)
+        bof_session = SessionFactory(meeting=meeting, group__state_id='bof')
+
+        url = urlreverse('ietf.meeting.views.edit_meeting_schedule',
+                         kwargs=dict(num=meeting.number))
+
+        self.client.login(username='secretary', password='secretary+password')
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+
+        q = PyQuery(r.content)
+        self.assertEqual(len(q('#session{} .bof-tag'.format(non_bof_session.pk))), 0,
+                         'Non-BOF session should not be tagged as a BOF session')
+
+        bof_tags = q('#session{} .bof-tag'.format(bof_session.pk))
+        self.assertEqual(len(bof_tags), 1,
+                         'BOF session should have one BOF session tag')
+        self.assertIn('BOF', bof_tags.eq(0).text(),
+                      'BOF tag should contain text "BOF"')
+
+    def _setup_for_swap_timeslots(self):
+        """Create a meeting, rooms, and schedule for swap_timeslots testing
+
+        Creates two groups of rooms with disjoint timeslot sets, modeling the room grouping in
+        the edit_meeting_schedule view.
+        """
+        # Meeting must be in the future so it can be edited
+        meeting = MeetingFactory(
+            type_id='ietf',
+            date=datetime.date.today() + datetime.timedelta(days=7),
+            populate_schedule=False,
+        )
+        meeting.schedule = ScheduleFactory(meeting=meeting)
+        meeting.save()
+
+        # Create room groups
+        room_groups = [
+            RoomFactory.create_batch(2, meeting=meeting),
+            RoomFactory.create_batch(2, meeting=meeting),
+        ]
+
+        # Set up different sets of timeslots
+        t0 = datetime.datetime.combine(meeting.date, datetime.time(11, 0))
+        dur = datetime.timedelta(hours=2)
+        for room in room_groups[0]:
+            TimeSlotFactory(meeting=meeting, location=room, duration=dur, time=t0)
+            TimeSlotFactory(meeting=meeting, location=room, duration=dur, time=t0 + datetime.timedelta(days=1, hours=2))
+            TimeSlotFactory(meeting=meeting, location=room, duration=dur, time=t0 + datetime.timedelta(days=2, hours=4))
+
+        for room in room_groups[1]:
+            TimeSlotFactory(meeting=meeting, location=room, duration=dur, time=t0 + datetime.timedelta(hours=1))
+            TimeSlotFactory(meeting=meeting, location=room, duration=dur, time=t0 + datetime.timedelta(days=1, hours=3))
+            TimeSlotFactory(meeting=meeting, location=room, duration=dur, time=t0 + datetime.timedelta(days=2, hours=5))
+
+        # And now put sessions in the timeslots
+        for ts in meeting.timeslot_set.all():
+            SessionFactory(
+                meeting=meeting,
+                name=str(ts.pk),  # label to identify where it started
+                add_to_schedule=False,
+            ).timeslotassignments.create(
+                timeslot=ts,
+                schedule=meeting.schedule,
+            )
+        return meeting, room_groups
+
+    def test_swap_timeslots(self):
+        """Schedule timeslot groups should swap properly
+
+        This tests the case currently exercised by the UI - where the rooms are grouped according to
+        entirely equivalent sets of timeslots. Thus, there is always a matching timeslot for every (or no)
+        room as long as the rooms parameter to the ajax call includes only one group.
+        """
+        meeting, room_groups = self._setup_for_swap_timeslots()
+
+        url = urlreverse('ietf.meeting.views.edit_meeting_schedule', kwargs=dict(num=meeting.number))
+        username = meeting.schedule.owner.user.username
+        self.client.login(username=username, password=username + '+password')
+
+        # Swap group 0's first and last sessions
+        r = self.client.post(
+            url,
+            dict(
+                action='swaptimeslots',
+                origin_timeslot=str(room_groups[0][0].timeslot_set.first().pk),
+                target_timeslot=str(room_groups[0][0].timeslot_set.last().pk),
+                rooms=','.join([str(room.pk) for room in room_groups[0]]),
+            )
+        )
+        self.assertEqual(r.status_code, 302)
+
+        # Validate results
+        for index, room in enumerate(room_groups[0]):
+            timeslots = list(room.timeslot_set.all())
+            self.assertEqual(timeslots[0].session.name, str(timeslots[-1].pk),
+                             'Session from last timeslot in room (0, {}) should now be in first'.format(index))
+            self.assertEqual(timeslots[-1].session.name, str(timeslots[0].pk),
+                             'Session from first timeslot in room (0, {}) should now be in last'.format(index))
+            self.assertEqual(
+                [ts.session.name for ts in timeslots[1:-1]],
+                [str(ts.pk) for ts in timeslots[1:-1]],
+                'Sessions in middle timeslots should be unchanged'
+            )
+        for index, room in enumerate(room_groups[1]):
+            timeslots = list(room.timeslot_set.all())
+            self.assertFalse(
+                any(ts.session is None for ts in timeslots),
+                "Sessions in other room group's timeslots should still be assigned"
+            )
+            self.assertEqual(
+                [ts.session.name for ts in timeslots],
+                [str(ts.pk) for ts in timeslots],
+                "Sessions in other room group's timeslots should be unchanged"
+            )
+
+    def test_swap_timeslots_handles_unmatched(self):
+        """Sessions in unmatched timeslots should be unassigned when swapped
+
+        This more generally tests the back end by exercising the situation where a timeslot in the
+        affected rooms does not have an equivalent timeslot target. This is not used by the UI as of
+        now (2021-06-22), but should function correctly.
+        """
+        meeting, room_groups = self._setup_for_swap_timeslots()
+
+        # Remove a timeslot and session from only one room in group 0
+        ts_to_remove = room_groups[0][1].timeslot_set.last()
+        ts_to_remove.session.delete()
+        ts_to_remove.delete()  # our object still exists but has no db object
+
+        # Add a matching timeslot to group 1 so we can be sure it's being ignored.
+        # If not, this session will be unassigned when we swap timeslots on group 0.
+        new_ts = TimeSlotFactory(
+            meeting=meeting,
+            location=room_groups[1][0],
+            duration=ts_to_remove.duration,
+            time=ts_to_remove.time,
+        )
+        SessionFactory(
+            meeting=meeting,
+            name=str(new_ts.pk),
+            add_to_schedule=False,
+        ).timeslotassignments.create(
+            timeslot=new_ts,
+            schedule=meeting.schedule,
+        )
+
+        url = urlreverse('ietf.meeting.views.edit_meeting_schedule', kwargs=dict(num=meeting.number))
+        username = meeting.schedule.owner.user.username
+        self.client.login(username=username, password=username + '+password')
+
+        # Now swap between first and last timeslots in group 0
+        r = self.client.post(
+            url,
+            dict(
+                action='swaptimeslots',
+                origin_timeslot=str(room_groups[0][0].timeslot_set.first().pk),
+                target_timeslot=str(room_groups[0][0].timeslot_set.last().pk),
+                rooms=','.join([str(room.pk) for room in room_groups[0]]),
+            )
+        )
+        self.assertEqual(r.status_code, 302)
+
+        # Validate results
+        for index, room in enumerate(room_groups[0]):
+            timeslots = list(room.timeslot_set.all())
+            if index == 1:
+                # special case - this has no matching timeslot because we deleted it above
+                self.assertIsNone(timeslots[0].session, 'Unmatched timeslot should be empty after swap')
+                session_that_should_be_unassigned = Session.objects.get(name=str(timeslots[0].pk))
+                self.assertEqual(session_that_should_be_unassigned.timeslotassignments.count(), 0,
+                                 'Session that was in an unmatched timeslot should now be unassigned')
+                # check from 2nd timeslot to the last since we deleted the original last timeslot
+                self.assertEqual(
+                    [ts.session.name for ts in timeslots[1:]],
+                    [str(ts.pk) for ts in timeslots[1:]],
+                    'Sessions in middle timeslots should be unchanged'
+                )
+            else:
+                self.assertEqual(timeslots[0].session.name, str(timeslots[-1].pk),
+                                 'Session from last timeslot in room (0, {}) should now be in first'.format(index))
+                self.assertEqual(timeslots[-1].session.name, str(timeslots[0].pk),
+                                 'Session from first timeslot in room (0, {}) should now be in last'.format(index))
+                self.assertEqual(
+                    [ts.session.name for ts in timeslots[1:-1]],
+                    [str(ts.pk) for ts in timeslots[1:-1]],
+                    'Sessions in middle timeslots should be unchanged'
+                )
+
+        # Still should have no effect on other rooms, even if they matched a timeslot
+        for index, room in enumerate(room_groups[1]):
+            timeslots = list(room.timeslot_set.all())
+            self.assertFalse(
+                any(ts.session is None for ts in timeslots),
+                "Sessions in other room group's timeslots should still be assigned"
+            )
+            self.assertEqual(
+                [ts.session.name for ts in timeslots],
+                [str(ts.pk) for ts in timeslots],
+                "Sessions in other room group's timeslots should be unchanged"
+            )
 
 
 class ReorderSlidesTests(TestCase):

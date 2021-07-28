@@ -150,13 +150,12 @@ class RoomFactory(factory.DjangoModelFactory):
     name = factory.Faker('name')
 
     @factory.post_generation
-    def session_types(obj, create, extracted, **kwargs):  # pylint: disable-no-self-argument
+    def session_types(obj, create, extracted, **kwargs): # pylint: disable=no-self-argument
+        """Prep session types m2m relationship for room, defaulting to 'regular'"""
         if create:
-            if extracted is None:
-                obj.session_types.add(TimeSlotTypeName.objects.get(slug='regular'))
-            else:
-                for timeslottype_name in extracted:
-                    obj.session_types.add(timeslottype_name)
+            session_types = extracted if extracted is not None else ['regular']
+            for st in session_types:
+                obj.session_types.add(st)
 
 
 class TimeSlotFactory(factory.DjangoModelFactory):
