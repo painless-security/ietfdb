@@ -82,6 +82,8 @@ class SessionRequestTestCase(TestCase):
         group2 = GroupFactory()
         group3 = GroupFactory()
         group4 = GroupFactory()
+        iabprog = GroupFactory(type_id='program')
+
         SessionFactory(meeting=meeting,group=mars,status_id='sched')
 
         url = reverse('ietf.secr.sreq.views.edit', kwargs={'acronym':'mars'})
@@ -92,7 +94,7 @@ class SessionRequestTestCase(TestCase):
                      'length_session1':'3600',
                      'length_session2':'3600',
                      'attendees':'10',
-                     'constraint_chair_conflict':'',
+                     'constraint_chair_conflict':iabprog.acronym,
                      'comments':'need lights',
                      'session_time_relation': 'subsequent-days',
                      'adjacent_with_wg': group2.acronym,
@@ -108,6 +110,8 @@ class SessionRequestTestCase(TestCase):
         sessions = Session.objects.filter(meeting=meeting, group=mars)
         self.assertEqual(len(sessions), 2)
         session = sessions[0]
+
+        self.assertEqual(session.constraints().get(name='conflict').target.acronym, iabprog.acronym)
         self.assertEqual(session.constraints().get(name='time_relation').time_relation, 'subsequent-days')
         self.assertEqual(session.constraints().get(name='wg_adjacent').target.acronym, group2.acronym)
         self.assertEqual(
@@ -615,8 +619,11 @@ class SessionFormTest(TestCase):
             'num_session': 1,
             'joint_for_session': '1',
         })
-        self.assertEqual(form.non_field_errors(), ['Time between sessions can only be used when two '
-                                                   'sessions are requested.'])
+        self.assertEqual(form.errors,
+                         {
+                             'session_time_relation': ['Time between sessions can only be used when two '
+                                                       'sessions are requested.']
+                         })
 
     def test_invalid_joint_for_session(self):
         form = self._invalid_test_helper({
@@ -624,8 +631,11 @@ class SessionFormTest(TestCase):
             'num_session': 2,
             'joint_for_session': '3',
         })
-        self.assertEqual(form.non_field_errors(), ['The third session can not be the joint session, '
-                                                   'because you have not requested a third session.'])
+        self.assertEqual(form.errors,
+                         {
+                             'joint_for_session': ['The third session can not be the joint session, '
+                                                   'because you have not requested a third session.']
+                         })
 
         form = self._invalid_test_helper({
             'third_session': '',
@@ -634,21 +644,42 @@ class SessionFormTest(TestCase):
             'joint_for_session': '2',
             'session_time_relation': '',
         })
-        self.assertEqual(form.non_field_errors(), ['The second session can not be the joint session, '
-                                                   'because you have not requested a second session.'])
+        self.assertEqual(form.errors,
+                         {
+                             'joint_for_session': ['The second session can not be the joint session, '
+                                                   'because you have not requested a second session.']
+                         })
     
     def test_invalid_missing_session_length(self):
         form = self._invalid_test_helper({
             'length_session2': '',
-            'third_session': 'true',
+            'third_session': 'false',
+            'joint_for_session': None,
         })
-        self.assertEqual(form.non_field_errors(), ['You must enter a length for all sessions'])
+        self.assertEqual(form.errors,
+                         {
+                             'length_session2': ['You must enter a length for all sessions'],
+                         })
 
-        form = self._invalid_test_helper({'length_session2': ''})
-        self.assertEqual(form.non_field_errors(), ['You must enter a length for all sessions'])
+        form = self._invalid_test_helper({
+            'length_session2': '',
+            'length_session3': '',
+            'joint_for_session': None,
+        })
+        self.assertEqual(form.errors,
+                         {
+                             'length_session2': ['You must enter a length for all sessions'],
+                             'length_session3': ['You must enter a length for all sessions'],
+                         })
 
-        form = self._invalid_test_helper({'length_session3': ''})
-        self.assertEqual(form.non_field_errors(), ['You must enter a length for all sessions'])
+        form = self._invalid_test_helper({
+            'length_session3': '',
+            'joint_for_session': None,
+        })
+        self.assertEqual(form.errors,
+                         {
+                             'length_session3': ['You must enter a length for all sessions'],
+                         })
 
     def _invalid_test_helper(self, new_form_data):
         form_data = dict(self.valid_form_data, **new_form_data)

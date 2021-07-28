@@ -26,7 +26,7 @@ from ietf.community.utils import docs_tracked_by_community_list
 from ietf.doc.models import Document, DocHistory, State, DocumentAuthor, DocHistoryAuthor
 from ietf.doc.models import DocAlias, RelatedDocument, RelatedDocHistory, BallotType, DocReminder
 from ietf.doc.models import DocEvent, ConsensusDocEvent, BallotDocEvent, IRSGBallotDocEvent, NewRevisionDocEvent, StateDocEvent
-from ietf.doc.models import TelechatDocEvent, DocumentActionHolder
+from ietf.doc.models import TelechatDocEvent, DocumentActionHolder, EditedAuthorsDocEvent
 from ietf.name.models import DocReminderTypeName, DocRelationshipName
 from ietf.group.models import Role, Group
 from ietf.ietfauth.utils import has_role, is_authorized_in_doc_stream, is_individual_draft_author
@@ -351,7 +351,7 @@ def add_links_in_new_revision_events(doc, events, diff_revisions):
         full_url = diff_url = diff_urls[(e.doc.name, e.rev)]
 
         if doc.type_id in "draft": # work around special diff url for drafts
-            full_url = "https://tools.ietf.org/id/" + diff_url + ".txt"
+            full_url = "https://www.ietf.org/archive/id/" + diff_url + ".txt"
 
         # build links
         links = r'<a href="%s">\1</a>' % full_url
@@ -516,6 +516,82 @@ def update_action_holders(doc, prev_state=None, new_state=None, prev_tags=None, 
         reason='IESG state changed',
     )
 
+
+def update_documentauthors(doc, new_docauthors, by=None, basis=None):
+    """Update the list of authors for a document
+
+    Returns an iterable of events describing the change. These must be saved by the caller if
+    they are to be kept.
+
+    The new_docauthors argument should be an iterable containing objects that
+    have person, email, affiliation, and country attributes. An easy way to create
+    these objects is to use DocumentAuthor(), but e.g., a named tuple could be
+    used. These objects will not be saved, their attributes will be used to create new
+    DocumentAuthor instances. (The document and order fields will be ignored.)
+    """
+    def _change_field_and_describe(auth, field, newval):
+        # make the change
+        oldval = getattr(auth, field)
+        setattr(auth, field, newval)
+        
+        was_empty = oldval is None or len(str(oldval)) == 0
+        now_empty = newval is None or len(str(newval)) == 0
+        
+        # describe the change
+        if oldval == newval:
+            return None
+        else:
+            if was_empty and not now_empty:
+                return 'set {field} to "{new}"'.format(field=field, new=newval)
+            elif now_empty and not was_empty:
+                return 'cleared {field} (was "{old}")'.format(field=field, old=oldval)
+            else:
+                return 'changed {field} from "{old}" to "{new}"'.format(
+                    field=field, old=oldval, new=newval
+                )
+
+    persons = []
+    changes = []  # list of change descriptions
+
+    for order, docauthor in enumerate(new_docauthors):
+        # If an existing DocumentAuthor matches, use that
+        auth = doc.documentauthor_set.filter(person=docauthor.person).first()
+        is_new_auth = auth is None
+        if is_new_auth:
+            # None exists, so create a new one (do not just use docauthor here because that
+            # will modify the input and might cause side effects)
+            auth = DocumentAuthor(document=doc, person=docauthor.person)
+            changes.append('Added "{name}" as author'.format(name=auth.person.name))
+
+        author_changes = []
+        # Now fill in other author details
+        author_changes.append(_change_field_and_describe(auth, 'email', docauthor.email))
+        author_changes.append(_change_field_and_describe(auth, 'affiliation', docauthor.affiliation or ''))
+        author_changes.append(_change_field_and_describe(auth, 'country', docauthor.country or ''))
+        author_changes.append(_change_field_and_describe(auth, 'order', order + 1))
+        auth.save()
+        log.assertion('auth.email_id != "none"')
+        persons.append(docauthor.person)
+        if not is_new_auth:
+            all_author_changes = ', '.join([ch for ch in author_changes if ch is not None])
+            if len(all_author_changes) > 0:
+                changes.append('Changed author "{name}": {changes}'.format(
+                    name=auth.person.name, changes=all_author_changes
+                ))
+
+    # Finally, remove any authors no longer in the list
+    removed_authors = doc.documentauthor_set.exclude(person__in=persons) 
+    changes.extend(['Removed "{name}" as author'.format(name=auth.person.name)
+                    for auth in removed_authors])
+    removed_authors.delete()
+
+    # Create change events - one event per author added/changed/removed.
+    # Caller must save these if they want them persisted.
+    return [
+        EditedAuthorsDocEvent(
+            type='edited_authors', by=by, doc=doc, rev=doc.rev, desc=change, basis=basis
+        ) for change in changes
+    ] 
 
 def update_reminder(doc, reminder_type_slug, event, due_date):
     reminder_type = DocReminderTypeName.objects.get(slug=reminder_type_slug)
@@ -957,7 +1033,6 @@ def build_file_urls(doc):
             file_urls.append(("pdf", base + "pdfrfc/" + name + ".txt.pdf"))
 
         if "txt" in found_types:
-            file_urls.append(("htmlized (tools)", settings.TOOLS_ID_HTML_URL + name))
             file_urls.append(("htmlized", urlreverse('ietf.doc.views_doc.document_html', kwargs=dict(name=name))))
             if doc.tags.filter(slug="verified-errata").exists():
                 file_urls.append(("with errata", settings.RFC_EDITOR_INLINE_ERRATA_URL.format(rfc_number=doc.rfc_number())))
@@ -974,7 +1049,6 @@ def build_file_urls(doc):
 
         if "pdf" not in found_types:
             file_urls.append(("pdf", settings.TOOLS_ID_PDF_URL + doc.name + "-" + doc.rev + ".pdf"))
-        file_urls.append(("htmlized (tools)", settings.TOOLS_ID_HTML_URL + doc.name + "-" + doc.rev))
         file_urls.append(("htmlized", urlreverse('ietf.doc.views_doc.document_html', kwargs=dict(name=doc.name, rev=doc.rev))))
         file_urls.append(("bibtex", urlreverse('ietf.doc.views_doc.document_main',kwargs=dict(name=doc.name,rev=doc.rev))+"bibtex"))
 

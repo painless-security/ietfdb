@@ -696,6 +696,11 @@ class Schedule(models.Model):
     def is_official(self):
         return (self.meeting.schedule == self)
 
+    @property
+    def is_official_record(self):
+        return (self.is_official and
+                self.meeting.end_date() <= datetime.date.today() )
+
     # returns a dictionary {group -> [schedtimesessassignment+]}
     # and it has [] if the session is not placed.
     # if there is more than one session for that group,
@@ -1200,6 +1205,17 @@ class Session(models.Model):
         sess_mtg = Session.objects.filter(meeting=self.meeting, group=self.group).order_by('pk')
         index = list(sess_mtg).index(self)
         return 'sess%s' % (string.ascii_lowercase[index])
+
+    def docname_token_only_for_multiple(self):
+        sess_mtg = Session.objects.filter(meeting=self.meeting, group=self.group).order_by('pk')
+        if len(list(sess_mtg)) > 1:
+            index = list(sess_mtg).index(self)
+            if index < 26:
+                token = 'sess%s' % (string.ascii_lowercase[index])
+            else:
+                token = 'sess%s%s' % (string.ascii_lowercase[index//26],string.ascii_lowercase[index%26])
+            return token
+        return None
         
     def constraints(self):
         return Constraint.objects.filter(source=self.group, meeting=self.meeting).order_by('name__name', 'target__acronym', 'person__name').prefetch_related("source","target","person")

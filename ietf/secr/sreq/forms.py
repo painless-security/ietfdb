@@ -28,7 +28,7 @@ JOINT_FOR_SESSION_CHOICES = (('1', 'First session'), ('2', 'Second session'), ('
 # Helper Functions
 # -------------------------------------------------
 def allowed_conflicting_groups():
-    return Group.objects.filter(type__in=['wg', 'ag', 'rg', 'rag'], state__in=['bof', 'proposed', 'active'])
+    return Group.objects.filter(type__in=['wg', 'ag', 'rg', 'rag', 'program'], state__in=['bof', 'proposed', 'active'])
 
 def check_conflict(groups, source_group):
     '''
@@ -109,16 +109,13 @@ class SessionForm(forms.Form):
         for constraintname in meeting.group_conflict_types.all():
             # two fields for each constraint: a CharField for the group list and a selector to add entries
             constraint_field = forms.CharField(max_length=255, required=False)
-            # add a new class, taking care in case some already exist
-            existing_classes = constraint_field.widget.attrs.get('class', '').split()
-            constraint_field.widget.attrs['class'] = ' '.join(existing_classes + ['wg_constraint'])
             constraint_field.widget.attrs['data-slug'] = constraintname.slug
             constraint_field.widget.attrs['data-constraint-name'] = str(constraintname).title()
+            self._add_widget_class(constraint_field.widget, 'wg_constraint')
 
             selector_field = forms.ChoiceField(choices=group_acronym_choices, required=False)
-            existing_classes = selector_field.widget.attrs.get('class', '').split()
-            selector_field.widget.attrs['class'] = ' '.join(existing_classes + ['wg_constraint_selector'])
             selector_field.widget.attrs['data-slug'] = constraintname.slug  # used by onChange handler
+            self._add_widget_class(selector_field.widget, 'wg_constraint_selector')
 
             cfield_id = 'constraint_{}'.format(constraintname.slug)
             cselector_id = 'wg_selector_{}'.format(constraintname.slug)
@@ -127,7 +124,6 @@ class SessionForm(forms.Form):
             log.assertion('cselector_id not in self.fields')
             self.fields[cfield_id] = constraint_field
             self.fields[cselector_id] = selector_field
-            self.define_clean_constraint_method(cfield_id)
             self._wg_field_data.append((constraintname, cfield_id, cselector_id))
 
         # Show constraints that are not actually used by the meeting so these don't get lost
@@ -196,21 +192,17 @@ class SessionForm(forms.Form):
         for cname, _, field_id in self._inactive_wg_field_data:
             yield cname, field_id
 
-    def define_clean_constraint_method(self, cfield_id):
-        """Create a clean_* method for a constraint field"""
-        def cleaner():
-            conflict = self.cleaned_data[cfield_id]
-            check_conflict(conflict, self.group)
-            return conflict
-        clean_method_name = 'clean_{}'.format(cfield_id)
-        log.assertion('not hasattr(self, clean_method_name)')
-        setattr(self, clean_method_name, cleaner)
+    @staticmethod
+    def _add_widget_class(widget, new_class):
+        """Add a new class, taking care in case some already exist"""
+        existing_classes = widget.attrs.get('class', '').split()
+        widget.attrs['class'] = ' '.join(existing_classes + [new_class])
 
     def _join_conflicts(self, cleaned_data, slugs):
         """Concatenate constraint fields from cleaned data into a single list"""
         conflicts = []
         for cname, cfield_id, _ in self._wg_field_data:
-            if cname.slug in slugs:
+            if cname.slug in slugs and cfield_id in cleaned_data:
                 groups = cleaned_data[cfield_id]
                 # convert to python list (allow space or comma separated lists)
                 items = groups.replace(',',' ').split()
@@ -224,12 +216,16 @@ class SessionForm(forms.Form):
         """
         # Only the older constraints (conflict, conflic2, conflic3) need to be mutually exclusive.
         all_conflicts = self._join_conflicts(cleaned_data, ['conflict', 'conflic2', 'conflic3'])
-        temp = []
+        seen = []
+        duplicated = []
+        errors = []
         for c in all_conflicts:
-            if c not in temp:
-                temp.append(c)
-            else:
-                raise forms.ValidationError('%s appears in conflicts more than once' % c)
+            if c not in seen:
+                seen.append(c)
+            elif c not in duplicated:  # only report once
+                duplicated.append(c)
+                errors.append(forms.ValidationError('%s appears in conflicts more than once' % c))
+        return errors
 
     def clean_joint_with_groups(self):
         groups = self.cleaned_data['joint_with_groups']
@@ -241,32 +237,52 @@ class SessionForm(forms.Form):
 
     def clean(self):
         super(SessionForm, self).clean()
-        if self.errors:
-            return self.cleaned_data
         data = self.cleaned_data
 
+        # Validate the individual conflict fields
+        for _, cfield_id, _ in self._wg_field_data:
+            try:
+                check_conflict(data[cfield_id], self.group)
+            except forms.ValidationError as e:
+                self.add_error(cfield_id, e)
+
+        # Skip remaining tests if individual field tests had errors,
+        if self.errors:
+            return data
+
         # error if conflicts contain disallowed dupes
-        self._validate_duplicate_conflicts(data)
+        for error in self._validate_duplicate_conflicts(data):
+            self.add_error(None, error)
 
         # verify session_length and num_session correspond
         # if default (empty) option is selected, cleaned_data won't include num_session key
         if data.get('num_session','') == '2':
             if not data['length_session2']:
-                raise forms.ValidationError('You must enter a length for all sessions')
+                self.add_error('length_session2', forms.ValidationError('You must enter a length for all sessions'))
         else:
             if data.get('session_time_relation'):
-                raise forms.ValidationError('Time between sessions can only be used when two '
-                                            'sessions are requested.')
-            if data['joint_for_session'] == '2':
-                raise forms.ValidationError('The second session can not be the joint session, '
-                                            'because you have not requested a second session.')
+                self.add_error(
+                    'session_time_relation',
+                    forms.ValidationError('Time between sessions can only be used when two sessions are requested.')
+                )
+            if data.get('joint_for_session') == '2':
+                self.add_error(
+                    'joint_for_session',
+                    forms.ValidationError(
+                        'The second session can not be the joint session, because you have not requested a second session.'
+                    )
+                )
 
-        if data.get('third_session',False):
-            if not data['length_session2'] or not data.get('length_session3',None):
-                raise forms.ValidationError('You must enter a length for all sessions')
-        elif data['joint_for_session'] == '3':
-                raise forms.ValidationError('The third session can not be the joint session, '
-                                            'because you have not requested a third session.')
+        if data.get('third_session', False):
+            if not data.get('length_session3',None):
+                self.add_error('length_session3', forms.ValidationError('You must enter a length for all sessions'))
+        elif data.get('joint_for_session') == '3':
+                self.add_error(
+                    'joint_for_session',
+                    forms.ValidationError(
+                        'The third session can not be the joint session, because you have not requested a third session.'
+                    )
+                )
         
         return data
 
