@@ -9,7 +9,7 @@ import datetime
 from django.core.files.base import ContentFile
 
 from ietf.meeting.models import Meeting, Session, SchedulingEvent, Schedule, TimeSlot, SessionPresentation, FloorPlan, Room, SlideSubmission
-from ietf.name.models import ConstraintName, SessionStatusName, TimeSlotTypeName
+from ietf.name.models import ConstraintName, SessionStatusName
 from ietf.group.factories import GroupFactory
 from ietf.person.factories import PersonFactory
 

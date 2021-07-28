@@ -135,10 +135,10 @@ class SessionForm(forms.Form):
         ).filter(
             constraint__source=group,  # ...but exist for this group...
             constraint__meeting=meeting,  # ... at this meeting.
-        )
+        ).distinct()
+
         for inactive_constraint_name in inactive_cnames:
             field_id = 'delete_{}'.format(inactive_constraint_name.slug)
-            log.assertion('field_id not in self.fields')
             self.fields[field_id] = forms.BooleanField(required=False, label='Delete this conflict', help_text='Delete this inactive conflict?')
             constraints = group.constraint_source_set.filter(meeting=meeting, name=inactive_constraint_name)
             self._inactive_wg_field_data.append(

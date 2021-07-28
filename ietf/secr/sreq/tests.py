@@ -111,7 +111,7 @@ class SessionRequestTestCase(TestCase):
         self.assertEqual(len(sessions), 2)
         session = sessions[0]
 
-        self.assertEqual(session.constraints().get(name='conflict').target.acronym, iabprog.acronym)
+        self.assertEqual(session.constraints().get(name='chair_conflict').target.acronym, iabprog.acronym)
         self.assertEqual(session.constraints().get(name='time_relation').time_relation, 'subsequent-days')
         self.assertEqual(session.constraints().get(name='wg_adjacent').target.acronym, group2.acronym)
         self.assertEqual(
