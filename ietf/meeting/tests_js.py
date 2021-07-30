@@ -1385,7 +1385,6 @@ class AgendaTests(IetfSeleniumTestCase):
         team_checkbox_a = self.driver.find_element_by_css_selector('input[type="checkbox"][name="selected-sessions"][data-filter-item="team-sessa"]')
         team_checkbox_b = self.driver.find_element_by_css_selector('input[type="checkbox"][name="selected-sessions"][data-filter-item="team-sessb"]')
         team_button = self.driver.find_element_by_css_selector('button[data-filter-item="team"]')
-        mars_button = self.driver.find_element_by_css_selector('button[data-filter-item="mars"]')
 
         mars_checkbox.click()  # select mars session
         try:
