@@ -22,7 +22,7 @@ def reverse(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('name', '0023_change_stream_descriptions'),
+        ('name', '0027_add_bofrequest'),
     ]
 
     operations = [

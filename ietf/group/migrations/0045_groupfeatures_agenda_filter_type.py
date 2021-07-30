@@ -28,8 +28,8 @@ def reverse(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('name', '0024_agendafiltertypename'),
-        ('group', '0042_add_liaison_contact_roles_to_used_roles'),
+        ('name', '0028_agendafiltertypename'),
+        ('group', '0044_populate_groupfeatures_parent_type_fields'),
     ]
 
     operations = [

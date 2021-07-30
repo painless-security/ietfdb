@@ -23,7 +23,8 @@ import debug                            # pyflakes:ignore
 
 from ietf.dbtemplate.factories import DBTemplateFactory
 from ietf.dbtemplate.models import DBTemplate
-from ietf.doc.factories import DocEventFactory, WgDocumentAuthorFactory
+from ietf.doc.factories import DocEventFactory, WgDocumentAuthorFactory, \
+                               NewRevisionDocEventFactory, DocumentAuthorFactory
 from ietf.group.factories import GroupFactory, GroupHistoryFactory, RoleFactory, RoleHistoryFactory
 from ietf.group.models import Group, Role
 from ietf.meeting.factories import MeetingFactory
@@ -40,7 +41,8 @@ from ietf.nomcom.factories import NomComFactory, FeedbackFactory, TopicFactory, 
                                   key
 from ietf.nomcom.utils import get_nomcom_by_year, make_nomineeposition, \
                               get_hash_nominee_position, is_eligible, list_eligible, \
-                              get_eligibility_date
+                              get_eligibility_date, suggest_affiliation, \
+                              decorate_volunteers_with_qualifications
 from ietf.person.factories import PersonFactory, EmailFactory
 from ietf.person.models import Email, Person
 from ietf.stats.models import MeetingRegistration
@@ -1819,7 +1821,7 @@ Junk body for testing
     def test_eligible(self):
         def first_meeting_of_year(year):
             assert isinstance(year, int)
-            assert year >= 1991
+            assert year >= 1990
             return (year-1985)*3+2
         # Create meetings to ensure we have the 'last 5'
         meeting_start = first_meeting_of_year(datetime.date.today().year-2)
@@ -1833,11 +1835,42 @@ Junk body for testing
                     continue
                 first_name, last_name = ascii.rsplit(None, 1)
                 MeetingRegistration.objects.create(meeting=meeting, first_name=first_name, last_name=last_name, person=person, country_code='WO', email=email, attended=True)
-        # test the page
-        url = reverse('ietf.nomcom.views.eligible',kwargs={'year':self.nc.year()})
-        login_testing_unauthorized(self,self.chair.user.username,url)
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 200)
+        for view in ('public_eligible','private_eligible'):
+            url = reverse(f'ietf.nomcom.views.{view}',kwargs={'year':self.nc.year()})
+            for username in (self.chair.user.username,'secretary'):
+                login_testing_unauthorized(self,username,url)
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 200)
+                self.client.logout()
+            self.client.login(username='plain',password='plain+password')
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 302)
+
+    def test_volunteers(self):
+        year = self.nc.year()
+        def first_meeting_of_year(year):
+            assert isinstance(year, int)
+            assert year >= 1990
+            return (year-1985)*3+2       
+        people = PersonFactory.create_batch(10)
+        meeting_start = first_meeting_of_year(year-2)
+        for number in range(meeting_start, meeting_start+8):
+            m = MeetingFactory.create(type_id='ietf', number=number)
+            for p in people:
+                m.meetingregistration_set.create(person=p)
+        for p in people:
+            self.nc.volunteer_set.create(person=p,affiliation='something')
+        for view in ('public_volunteers','private_volunteers'):
+            url = reverse(f'ietf.nomcom.views.{view}', kwargs=dict(year=self.nc.year()))
+            for username in (self.chair.user.username,'secretary'):
+                login_testing_unauthorized(self,username,url)
+                response = self.client.get(url)
+                self.assertContains(response,people[-1].email(),status_code=200)
+                self.client.logout()
+            self.client.login(username='plain',password='plain+password')
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 302)
+
 
 
 class NomComIndexTests(TestCase):
@@ -2424,3 +2457,122 @@ class rfc8989EligibilityTests(TestCase):
             self.assertFalse(is_eligible(person,self.nomcom))
 
         self.assertEqual(set(list_eligible(nomcom=self.nomcom)),set(eligible))
+
+class VolunteerTests(TestCase):
+
+    def test_volunteer(self):
+        url = reverse('ietf.nomcom.views.volunteer')
+        
+        person = PersonFactory()
+        login_testing_unauthorized(self, person.user.username, url)
+        r = self.client.get(url)
+        self.assertContains(r, 'NomCom is not accepting volunteers at this time', status_code=200)
+
+        year = datetime.date.today().year
+        nomcom = NomComFactory(group__acronym=f'nomcom{year}', is_accepting_volunteers=False)
+        r = self.client.get(url)
+        self.assertContains(r, 'NomCom is not accepting volunteers at this time', status_code=200)
+        nomcom.is_accepting_volunteers = True
+        nomcom.save()
+        MeetingRegistrationFactory(person=person, affiliation='mtg_affiliation')
+        r = self.client.get(url)
+        self.assertContains(r, 'Volunteer for NomCom', status_code=200)
+        self.assertContains(r, 'mtg_affiliation')
+        r=self.client.post(url, dict(nomcoms=[nomcom.pk], affiliation=''))
+        self.assertEqual(r.status_code, 200)
+        q = PyQuery(r.content)
+        self.assertTrue(q('form div.has-error #id_affiliation'))
+        r=self.client.post(url, dict(nomcoms=[], affiliation='something'))
+        q = PyQuery(r.content)
+        self.assertTrue(q('form div.has-error #id_nomcoms'))
+        r=self.client.post(url, dict(nomcoms=[nomcom.pk], affiliation='something'))
+        self.assertRedirects(r, reverse('ietf.ietfauth.views.profile'))
+        self.assertEqual(person.volunteer_set.get(nomcom=nomcom).affiliation, 'something')
+        r=self.client.get(url)
+        self.assertContains(r, 'already volunteered', status_code=200)
+
+        person.volunteer_set.all().delete()
+        nomcom2 = NomComFactory(group__acronym=f'nomcom{year-1}', is_accepting_volunteers=True)
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        q = PyQuery(r.content)
+        self.assertEqual(len(q('#id_nomcoms div.checkbox')), 2)
+        r = self.client.post(url, dict(nomcoms=[nomcom.pk, nomcom2.pk], affiliation='something'))
+        self.assertRedirects(r, reverse('ietf.ietfauth.views.profile'))
+        self.assertEqual(person.volunteer_set.count(), 2)
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        q = PyQuery(r.content)
+        self.assertFalse(q('form div#id_nomcoms'))
+        self.assertIn(f'{nomcom.year()}/', q('#already-volunteered').text())
+        self.assertIn(f'{nomcom2.year()}/', q('#already-volunteered').text())
+
+        person.volunteer_set.all().delete()
+        r=self.client.post(url, dict(nomcoms=[nomcom2.pk], affiliation='something'))
+        self.assertRedirects(r, reverse('ietf.ietfauth.views.profile'))
+        self.assertEqual(person.volunteer_set.count(), 1)
+        self.assertEqual(person.volunteer_set.first().nomcom, nomcom2)
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        q = PyQuery(r.content)
+        self.assertEqual(len(q('#id_nomcoms div.checkbox')), 1)
+        self.assertNotIn(f'{nomcom.year()}/', q('#already-volunteered').text())
+        self.assertIn(f'{nomcom2.year()}/', q('#already-volunteered').text())
+
+    def test_suggest_affiliation(self):
+        person = PersonFactory()
+        self.assertEqual(suggest_affiliation(person), '')
+        da = DocumentAuthorFactory(person=person,affiliation='auth_affil')
+        NewRevisionDocEventFactory(doc=da.document)
+        self.assertEqual(suggest_affiliation(person), 'auth_affil')
+        nc = NomComFactory()
+        nc.volunteer_set.create(person=person,affiliation='volunteer_affil')
+        self.assertEqual(suggest_affiliation(person), 'volunteer_affil')
+        MeetingRegistrationFactory(person=person, affiliation='meeting_affil')
+        self.assertEqual(suggest_affiliation(person), 'meeting_affil')
+
+class VolunteerDecoratorUnitTests(TestCase):
+    def test_decorate_volunteers_with_qualifications(self):
+        nomcom = NomComFactory(group__acronym='nomcom2021', populate_personnel=False, first_call_for_volunteers=datetime.date(2021,5,15))
+        elig_date = get_eligibility_date(nomcom)
+        Role.objects.filter(name_id__in=('chair','secr')).delete()        
+
+        meeting_person = PersonFactory()
+        meetings = [MeetingFactory(number=number, date=date, type_id='ietf') for number,date in [
+            ('110', datetime.date(2021, 3, 6)),
+            ('109', datetime.date(2020, 11, 14)),
+            ('108', datetime.date(2020, 7, 25)),
+            ('107', datetime.date(2020, 3, 21)),
+            ('106', datetime.date(2019, 11, 16)),
+        ]]
+        for m in meetings:
+            MeetingRegistrationFactory(meeting=m,person=meeting_person)
+        nomcom.volunteer_set.create(person=meeting_person)
+
+        office_person = PersonFactory()
+        RoleHistoryFactory(
+            name_id='chair',
+            group__time= elig_date - datetime.timedelta(days=365),
+            group__group__state_id='conclude',
+            person=office_person,
+        )
+        nomcom.volunteer_set.create(person=office_person)
+
+        author_person = PersonFactory()
+        for i in range(2):
+            da = WgDocumentAuthorFactory(person=author_person)
+            DocEventFactory(type='published_rfc',doc=da.document,time=datetime.date(elig_date.year-3,elig_date.month,elig_date.day))
+        nomcom.volunteer_set.create(person=author_person)
+
+        volunteers = nomcom.volunteer_set.all()
+        decorate_volunteers_with_qualifications(volunteers,nomcom=nomcom)
+
+        self.assertEqual(len(volunteers), 3)
+        for v in volunteers:
+            if v.person == meeting_person:
+                self.assertEqual(v.qualifications,'path_1')
+            if v.person == office_person:
+                self.assertEqual(v.qualifications,'path_2')
+            if v.person == author_person:
+                self.assertEqual(v.qualifications,'path_3')
+

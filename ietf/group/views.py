@@ -942,7 +942,7 @@ def edit(request, group_type=None, acronym=None, action="edit", field=None):
             changed_personnel = set()
             # update roles
             for attr, f in form.fields.items():
-                if not (attr.endswith("_roles") or attr == "ad"):
+                if not attr.endswith("_roles"):
                     continue
 
                 slug = attr
@@ -951,8 +951,6 @@ def edit(request, group_type=None, acronym=None, action="edit", field=None):
                 title = f.label
 
                 new = clean[attr]
-                if attr == 'ad':
-                    new = [ new.role_email('ad') ] if new else []
                 old = Email.objects.filter(role__group=group, role__name=slug).select_related("person")
                 if set(new) != set(old):
                     changes.append((attr, new, desc(title,
@@ -976,18 +974,21 @@ def edit(request, group_type=None, acronym=None, action="edit", field=None):
                         
                         today = datetime.date.today()
                         for deleted_email in deleted:
-                            active_assignments = ReviewAssignment.objects.filter(
-                                reviewer__person=deleted_email.person,
-                                state_id__in=['accepted', 'assigned'],
-                            )
-                            for assignment in active_assignments:
-                                if assignment.review_request.deadline > today:
-                                    assignment.state_id = 'rejected'
-                                else:
-                                    assignment.state_id = 'no-response'
-                                # save() will update review_request state to 'requested'
-                                # if needed, so that the review can be assigned to someone else
-                                assignment.save()
+                            # Verify the person doesn't have a separate reviewer role for the group with a different address
+                            if not group.role_set.filter(name_id='reviewer',person=deleted_email.person).exists():
+                                active_assignments = ReviewAssignment.objects.filter(
+                                    review_request__team=group,
+                                    reviewer__person=deleted_email.person,
+                                    state_id__in=['accepted', 'assigned'],
+                                )
+                                for assignment in active_assignments:
+                                    if assignment.review_request.deadline > today:
+                                        assignment.state_id = 'withdrawn'
+                                    else:
+                                        assignment.state_id = 'no-response'
+                                    # save() will update review_request state to 'requested'
+                                    # if needed, so that the review can be assigned to someone else
+                                    assignment.save()
                                 
                     changed_personnel.update(set(old)^set(new))
 
@@ -1044,7 +1045,6 @@ def edit(request, group_type=None, acronym=None, action="edit", field=None):
             return HttpResponseRedirect(group.about_url())
     else: # Not POST:
         if not new_group:
-            ad_role = group.ad_role()
             closing_note = ""
             e = group.latest_event(type='closing_note')
             if e:
@@ -1055,7 +1055,6 @@ def edit(request, group_type=None, acronym=None, action="edit", field=None):
             init = dict(name=group.name,
                         acronym=group.acronym,
                         state=group.state,
-                        ad=ad_role and ad_role.person and ad_role.person.id,
                         parent=group.parent.id if group.parent else None,
                         list_email=group.list_email if group.list_email else None,
                         list_subscribe=group.list_subscribe if group.list_subscribe else None,
@@ -1065,8 +1064,7 @@ def edit(request, group_type=None, acronym=None, action="edit", field=None):
                         )
 
         else:
-            init = dict(ad=request.user.person.id if group_type == "wg" and has_role(request.user, "Area Director") else None,
-                        )
+            init = dict()
         form = GroupForm(initial=init, group=group, group_type=group_type, field=field)
 
     return render(request, 'group/edit.html',

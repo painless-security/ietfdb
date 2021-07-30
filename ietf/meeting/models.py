@@ -17,7 +17,7 @@ import debug                            # pyflakes:ignore
 
 from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
-from django.db.models import Max, Subquery, OuterRef, TextField, Value
+from django.db.models import Max, Subquery, OuterRef, TextField, Value, Q
 from django.db.models.functions import Coalesce
 from django.conf import settings
 # mostly used by json_dict()
@@ -111,6 +111,9 @@ class Meeting(models.Model):
     show_important_dates = models.BooleanField(default=False)
     attendees = models.IntegerField(blank=True, null=True, default=None,
                                     help_text="Number of Attendees for backfilled meetings, leave it blank for new meetings, and then it is calculated from the registrations")
+    group_conflict_types = models.ManyToManyField(
+        ConstraintName, blank=True, limit_choices_to=dict(is_group_conflict=True),
+        help_text='Types of scheduling conflict between groups to consider')
 
     def __str__(self):
         if self.type_id == "ietf":
@@ -197,6 +200,15 @@ class Meeting(models.Model):
         else:
             return self.date + datetime.timedelta(days=self.submission_correction_day_offset)
 
+    def enabled_constraint_names(self):
+        return ConstraintName.objects.filter(
+            Q(is_group_conflict=False)  # any non-group-conflict constraints
+            | Q(is_group_conflict=True, meeting=self)  # or specifically enabled for this meeting
+        )
+
+    def enabled_constraints(self):
+        return self.constraint_set.filter(name__in=self.enabled_constraint_names())
+
     def get_schedule_by_name(self, name):
         return self.schedule_set.filter(name=name).first()
 
@@ -206,6 +218,26 @@ class Meeting(models.Model):
             return int(self.number)
         else:
             return None
+
+    @property
+    def session_constraintnames(self):
+        """Gets a list of the constraint names that should be used for this meeting
+
+        Anticipated that this will soon become a many-to-many relationship with ConstraintName
+        (see issue #2770). Making this a @property allows use of the .all(), .filter(), etc,
+        so that other code should not need changes when this is replaced.
+        """
+        try:
+            mtg_num = int(self.number)
+        except ValueError:
+            mtg_num = None  # should not come up, but this method should not fail
+        if mtg_num is None or mtg_num >= 106:
+            # These meetings used the old 'conflic?' constraint types labeled as though
+            # they were the new types.
+            slugs = ('chair_conflict', 'tech_overlap', 'key_participant')
+        else:
+            slugs = ('conflict', 'conflic2', 'conflic3')
+        return ConstraintName.objects.filter(slug__in=slugs)
 
     def json_url(self):
         return "/meeting/%s/json" % (self.number, )
@@ -683,6 +715,11 @@ class Schedule(models.Model):
     @property
     def is_official(self):
         return (self.meeting.schedule == self)
+
+    @property
+    def is_official_record(self):
+        return (self.is_official and
+                self.meeting.end_date() <= datetime.date.today() )
 
     # returns a dictionary {group -> [schedtimesessassignment+]}
     # and it has [] if the session is not placed.
@@ -1188,6 +1225,17 @@ class Session(models.Model):
         sess_mtg = Session.objects.filter(meeting=self.meeting, group=self.group).order_by('pk')
         index = list(sess_mtg).index(self)
         return 'sess%s' % (string.ascii_lowercase[index])
+
+    def docname_token_only_for_multiple(self):
+        sess_mtg = Session.objects.filter(meeting=self.meeting, group=self.group).order_by('pk')
+        if len(list(sess_mtg)) > 1:
+            index = list(sess_mtg).index(self)
+            if index < 26:
+                token = 'sess%s' % (string.ascii_lowercase[index])
+            else:
+                token = 'sess%s%s' % (string.ascii_lowercase[index//26],string.ascii_lowercase[index%26])
+            return token
+        return None
         
     def constraints(self):
         return Constraint.objects.filter(source=self.group, meeting=self.meeting).order_by('name__name', 'target__acronym', 'person__name').prefetch_related("source","target","person")

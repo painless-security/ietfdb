@@ -40,6 +40,7 @@ import io
 import json
 import os
 import re
+import markdown
 
 from urllib.parse import quote
 
@@ -54,14 +55,15 @@ import debug                            # pyflakes:ignore
 
 from ietf.doc.models import ( Document, DocAlias, DocHistory, DocEvent, BallotDocEvent, BallotType,
     ConsensusDocEvent, NewRevisionDocEvent, TelechatDocEvent, WriteupDocEvent, IanaExpertDocEvent,
-    IESG_BALLOT_ACTIVE_STATES, STATUSCHANGE_RELATIONS, DocumentActionHolder, DocumentAuthor )
+    IESG_BALLOT_ACTIVE_STATES, STATUSCHANGE_RELATIONS, DocumentActionHolder, DocumentAuthor)
 from ietf.doc.utils import (add_links_in_new_revision_events, augment_events_with_revision,
     can_adopt_draft, can_unadopt_draft, get_chartering_type, get_tags_for_stream_id,
     needed_ballot_positions, nice_consensus, prettify_std_name, update_telechat, has_same_ballot,
     get_initial_notify, make_notify_changed_event, make_rev_history, default_consensus,
     add_events_message_info, get_unicode_document_content, build_doc_meta_block,
     augment_docs_and_user_with_user_info, irsg_needed_ballot_positions, add_action_holder_change_event,
-    build_doc_supermeta_block, build_file_urls, update_documentauthors )
+    build_doc_supermeta_block, build_file_urls, update_documentauthors)
+from ietf.doc.utils_bofreq import bofreq_editors, bofreq_responsible
 from ietf.group.models import Role, Group
 from ietf.group.utils import can_manage_group_type, can_manage_materials, group_features_role_filter
 from ietf.ietfauth.utils import ( has_role, is_authorized_in_doc_stream, user_is_person,
@@ -526,6 +528,26 @@ def document_main(request, name, rev=None):
                                        can_manage=can_manage,
                                        ))
 
+    if doc.type_id == "bofreq":
+        content = markdown.markdown(doc.text_or_error(),extensions=['extra'])
+        editors = bofreq_editors(doc)
+        responsible = bofreq_responsible(doc)
+        can_manage = has_role(request.user,['Secretariat', 'Area Director', 'IAB'])
+        editor_can_manage =  doc.get_state_slug('bofreq')=='proposed' and request.user.is_authenticated and request.user.person in editors
+
+        return render(request, "doc/document_bofreq.html",
+                                  dict(doc=doc,
+                                       top=top,
+                                       revisions=revisions,
+                                       latest_rev=latest_rev,
+                                       content=content,
+                                       snapshot=snapshot,
+                                       can_manage=can_manage,
+                                       editors=editors,
+                                       responsible=responsible,
+                                       editor_can_manage=editor_can_manage,
+                                       ))
+
     if doc.type_id == "conflrev":
         filename = "%s-%s.txt" % (doc.canonical_name(), doc.rev)
         pathname = os.path.join(settings.CONFLICT_REVIEW_PATH,filename)
@@ -602,6 +624,7 @@ def document_main(request, name, rev=None):
         pathname = os.path.join(doc.get_file_path(), basename)
 
         content = None
+        content_is_html = False
         other_types = []
         globs = glob.glob(pathname + ".*")
         url = doc.get_href()
@@ -615,7 +638,8 @@ def document_main(request, name, rev=None):
                 content = doc.text_or_error()
                 t = "plain text"
             elif extension == ".md":
-                content = doc.text_or_error()
+                content = markdown.markdown(doc.text_or_error(), extensions=['extra'])
+                content_is_html = True
                 t = "markdown"
             other_types.append((t, url))
 
@@ -623,6 +647,7 @@ def document_main(request, name, rev=None):
                                   dict(doc=doc,
                                        top=top,
                                        content=content,
+                                       content_is_html=content_is_html,
                                        revisions=revisions,
                                        latest_rev=latest_rev,
                                        snapshot=snapshot,
@@ -670,6 +695,10 @@ def document_html(request, name, rev=None):
     if rev and not name.startswith('charter-') and re.search('[0-9]{1,2}-[0-9]{2}', rev):
         name = "%s-%s" % (name, rev[:-3])
         rev = rev[-2:]
+    if re.match("^[0-9]+$", name):
+        return redirect('ietf.doc.views_doc.document_html',name=f'rfc{name}')
+    if re.match("^[Rr][Ff][Cc] [0-9]+$",name):
+        return redirect('ietf.doc.views_doc.document_html',name=f'rfc{name[4:]}')
     docs = Document.objects.filter(docalias__name=name)
     if rev and not docs.exists():
         # handle some special cases, like draft-ietf-tsvwg-ieee-802-11
@@ -1075,7 +1104,7 @@ def document_ballot_content(request, doc, ballot_id, editable=True):
         summary = needed_ballot_positions(doc, [p for p in positions if not p.is_old_pos])
 
     text_positions = [p for p in positions if p.discuss or p.comment]
-    text_positions.sort(key=lambda p: (p.is_old_pos, p.balloter.plain_name()))
+    text_positions.sort(key=lambda p: (p.is_old_pos, p.balloter.last_name()))
 
     ballot_open = not BallotDocEvent.objects.filter(doc=doc,
                                                     type__in=("closed_ballot", "created_ballot"),

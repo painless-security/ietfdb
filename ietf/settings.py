@@ -31,7 +31,7 @@ sys.path.append(os.path.abspath(BASE_DIR + "/.."))
 from ietf import __version__
 import debug
 
-DEBUG = False
+DEBUG = True
 debug.debug = DEBUG
 
 DEBUG_AGENDA = False
@@ -39,7 +39,7 @@ DEBUG_AGENDA = False
 # Valid values:
 # 'production', 'test', 'development'
 # Override this in settings_local.py if it's not the desired setting:
-SERVER_MODE = 'production'
+SERVER_MODE = 'development'
 
 # Domain name of the IETF
 IETF_DOMAIN = 'ietf.org'
@@ -51,6 +51,7 @@ ADMINS = [
     ('Ryan Cross', 'rcross@amsl.com'),
     ('Glen Barney', 'glen@amsl.com'),
     ('Maddy Conner', 'maddy@amsl.com'),
+    ('Kesara Rathnayaka', 'krathnayake@ietf.org'),
 ]                                       # type: List[Tuple[str, str]]
 
 BUG_REPORT_EMAIL = "datatracker-project@ietf.org"
@@ -152,6 +153,7 @@ IETF_AUDIO_URL = IETF_HOST_URL + 'audio/'
 # Example: "/var/www/example.com/static/"
 
 
+SERVE_CDN_PHOTOS = True
 
 SERVE_CDN_FILES_LOCALLY_IN_DEV_MODE = True
 
@@ -644,6 +646,7 @@ DATETIME_FORMAT = "Y-m-d H:i T"
 # regex can reasonably be expected to be a unique one-off.
 URL_REGEXPS = {
     "acronym": r"(?P<acronym>[-a-z0-9]+)",
+    "bofreq": r"(?P<name>bofreq-[-a-z0-9]+)",
     "charter": r"(?P<name>charter-[-a-z0-9]+)",
     "date": r"(?P<date>\d{4}-\d{2}-\d{2})",
     "name": r"(?P<name>[A-Za-z0-9._+-]+?)",
@@ -662,6 +665,7 @@ INTERNET_DRAFT_PATH = '/a/ietfdata/doc/draft/repository'
 INTERNET_DRAFT_PDF_PATH = '/a/www/ietf-datatracker/pdf/'
 RFC_PATH = '/a/www/ietf-ftp/rfc/'
 CHARTER_PATH = '/a/ietfdata/doc/charter/'
+BOFREQ_PATH = '/a/ietfdata/doc/bofreq/'
 CONFLICT_REVIEW_PATH = '/a/ietfdata/doc/conflict-review'
 STATUS_CHANGE_PATH = '/a/ietfdata/doc/status-change'
 AGENDA_PATH = '/a/www/www6s/proceedings/'
@@ -1150,7 +1154,6 @@ CHECKS_LIBRARY_PATCHES_TO_APPLY = [
     'patch/change-oidc-provider-field-sizes-228.patch',
     'patch/fix-oidc-access-token-post.patch',
     'patch/fix-jwkest-jwt-logging.patch',
-    'patch/fix-oic-logging.patch',
     'patch/fix-django-password-strength-kwargs.patch',
     'patch/add-django-http-cookie-value-none.patch',
     'patch/django-cookie-delete-with-all-settings.patch',

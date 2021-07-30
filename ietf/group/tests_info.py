@@ -273,8 +273,6 @@ class GroupPagesTests(TestCase):
 
     def test_group_about(self):
 
-        RoleFactory(group=Group.objects.get(acronym='iab'),name_id='member',person=PersonFactory(user__username='iab-member'))
-
         interesting_users = [ 'plain','iana','iab-chair','irtf-chair', 'marschairman', 'teamchairman','ad', 'iab-member', 'secretary', ]
 
         can_edit = {
@@ -541,7 +539,7 @@ class GroupEditTests(TestCase):
         self.assertEqual(r.status_code, 200)
         q = PyQuery(r.content)
         self.assertEqual(len(q('form input[name=acronym]')), 1)
-        self.assertEqual(q('form input[name=parent]').attr('value'),'%s'%irtf.pk)
+        self.assertEqual(q('form select[name=parent]')[0].value,'%s'%irtf.pk)
 
         r = self.client.post(url, dict(acronym="testrg", name="Testing RG", state=proposed_state.pk, parent=irtf.pk))
         self.assertEqual(r.status_code, 302)
@@ -563,7 +561,7 @@ class GroupEditTests(TestCase):
         q = PyQuery(r.content)
         self.assertTrue(len(q('form .has-error')) > 0)
 
-        # try elevating BoF to WG
+        # try elevating BOF to WG
         group.state_id = "bof"
         group.save()
 
@@ -632,6 +630,7 @@ class GroupEditTests(TestCase):
                                   parent=area.pk,
                                   ad=ad.pk,
                                   state=state.pk,
+                                  ad_roles=ad.email().address,
                                   chair_roles="aread@example.org, ad1@example.org",
                                   secr_roles="aread@example.org, ad1@example.org, ad2@example.org",
                                   liaison_contact_roles="ad1@example.org",
@@ -761,11 +760,20 @@ class GroupEditTests(TestCase):
 
     def test_edit_reviewers(self):
         group=GroupFactory(type_id='review',parent=GroupFactory(type_id='area'))
+        other_group=GroupFactory(type_id='review',parent=GroupFactory(type_id='area'))
         review_req = ReviewRequestFactory(team=group)
-        ad_email = Email.objects.get(address='ad2@example.org')
+        other_review_req = ReviewRequestFactory(team=other_group)
 
-        url = urlreverse('ietf.group.views.edit', kwargs=dict(group_type=group.type_id, acronym=group.acronym, action="edit"))
-        login_testing_unauthorized(self, "secretary", url)
+        # Set up a reviewer that has two email addresses
+        reviewer = PersonFactory()
+        EmailFactory(person=reviewer)
+        first_email = reviewer.email_set.first()
+        last_email = reviewer.email_set.last()
+
+        RoleFactory(group=other_group, name_id='reviewer', person=reviewer, email=first_email)
+
+        url = urlreverse('ietf.group.views.edit', kwargs=dict(group_type=group.type_id, acronym=group.acronym, action='edit'))
+        login_testing_unauthorized(self, 'secretary', url)
 
         # normal get
         r = self.client.get(url)
@@ -779,33 +787,36 @@ class GroupEditTests(TestCase):
             name=group.name,
             acronym=group.acronym,
             parent=group.parent_id,
-            ad=Person.objects.get(name="Areað Irector").pk,
+            ad=Person.objects.get(name='Areað Irector').pk,
             state=group.state_id,
             list_email=group.list_email,
             list_subscribe=group.list_subscribe,
             list_archive=group.list_archive,
-            urls=""
+            urls=''
         )
-        r = self.client.post(url, dict(post_data, reviewer_roles=ad_email.address))
+        r = self.client.post(url, dict(post_data, reviewer_roles=first_email.address))
         self.assertEqual(r.status_code, 302)
 
-        group = reload_db_objects(group)
-        self.assertEqual(list(group.role_set.filter(name="reviewer").values_list("email", flat=True)), [ad_email.address])
+        self.assertEqual(group.role_set.get(name='reviewer').email.address, first_email.address)
         self.assertTrue('Personnel change' in outbox[0]['Subject'])
         
-        # Assign a review to the reviewer, then remove the reviewer from the group
-        # As the request deadline has not passed, the assignment should be set to rejected
-        review_assignment = ReviewAssignmentFactory(review_request=review_req, state_id='assigned', reviewer=ad_email)
+        # Assign reviews to the reviewer, then remove the reviewer from the group
+        # As the request deadline has not passed, the assignment should be set to withdrawn
+        # Reviews assigned to other groups must not be affected
+        review_assignment = ReviewAssignmentFactory(review_request=review_req, state_id='assigned', reviewer=first_email)
+        other_review_assignment = ReviewAssignmentFactory(review_request=other_review_req, state_id='assigned', reviewer=first_email)
         r = self.client.post(url, post_data)
         self.assertEqual(r.status_code, 302)
 
-        group = reload_db_objects(group)
-        self.assertFalse(group.role_set.filter(name="reviewer"))
-        review_assignment = reload_db_objects(review_assignment)
-        self.assertEqual(review_assignment.state_id, 'rejected')
+        self.assertFalse(group.role_set.filter(name='reviewer').exists())
+        self.assertEqual(other_group.role_set.get(name='reviewer').email.address, first_email.address)
+
+        review_assignment, other_review_assignment = reload_db_objects(review_assignment, other_review_assignment)
+        self.assertEqual(review_assignment.state_id, 'withdrawn')
+        self.assertEqual(other_review_assignment.state_id, 'assigned')
 
         # Repeat after adding reviewer again, but now beyond request deadline
-        r = self.client.post(url, dict(post_data, reviewer_roles=ad_email.address))
+        r = self.client.post(url, dict(post_data, reviewer_roles=first_email.address))
         self.assertEqual(r.status_code, 302)
         review_assignment.state_id = 'accepted'
         review_assignment.save()
@@ -815,8 +826,23 @@ class GroupEditTests(TestCase):
         r = self.client.post(url, post_data)
         self.assertEqual(r.status_code, 302)
 
-        review_assignment = reload_db_objects(review_assignment)
+        review_assignment, other_review_assignment = reload_db_objects(review_assignment, other_review_assignment)
         self.assertEqual(review_assignment.state_id, 'no-response')
+        self.assertEqual(other_review_assignment.state_id, 'assigned')
+
+        # Configure group with two reviewer Roles for the same person with different email addresses
+        # then remove one of the roles. The result should be no change to the review assignments
+        group.role_set.filter(name_id='reviewer').delete()
+        for email in reviewer.email_set.all():
+            group.role_set.create(name_id='reviewer', person=reviewer, email=email)
+        review_assignment.state_id = 'accepted'
+        review_assignment.save()
+        r = self.client.post(url, dict(post_data, reviewer_roles=last_email.address))
+        self.assertEqual(group.role_set.get(name='reviewer').email.address, last_email.address)        
+        review_assignment, other_review_assignment = reload_db_objects(review_assignment, other_review_assignment)
+        self.assertEqual(review_assignment.state_id, 'accepted')
+        self.assertEqual(other_review_assignment.state_id, 'assigned')
+
 
     def test_conclude(self):
         group = GroupFactory(acronym="mars")
@@ -885,6 +911,132 @@ class GroupEditTests(TestCase):
         r=self.client.get(url)
         self.assertEqual(r.status_code,403)
         self.assertEqual(len(outbox),5)
+
+class GroupFormTests(TestCase):
+    """Tests of the GroupForm form"""
+    @staticmethod
+    def _format_resource(r):
+        if r.display_name:
+            return '{} {} ({})'.format(r.name.slug, r.value, r.display_name.strip('()'))
+        else:
+            return '{} {}'.format(r.name.slug, r.value)
+
+    def _group_post_data(self, group):
+        data=dict(
+            name=group.name,
+            acronym=group.acronym,
+            state=group.state_id,
+            parent=group.parent_id or '',
+            list_email=group.list_email if group.list_email else None,
+            list_subscribe=group.list_subscribe if group.list_subscribe else '',
+            list_archive=group.list_archive if group.list_archive else '',
+            resources='\n'.join(self._format_resource(r) for r in group.groupextresource_set.all()),
+            closing_note='',  # not a group attribute, handled specially by the view; ignore in this test
+        )
+        # fill in original values
+        for rslug in group.get_used_roles():
+            data['{}_roles'.format(rslug)] = ','.join(
+                group.role_set.filter(name_id=rslug).values_list('email__address', flat=True),
+            )
+        return data
+
+    def _assert_cleaned_data_equal(self, cleaned_data, post_data):
+        for attr, expected in post_data.items():
+            value = cleaned_data[attr]
+            if attr.endswith('_roles'):
+                actual = ','.join(value.values_list('address', flat=True))
+            elif attr == 'resources':
+                # must handle resources specially
+                actual = '\n'.join(self._format_resource(r) for r in value)
+            elif hasattr(value, 'pk'):
+                actual = value.pk
+            else:
+                actual = '' if value is None else value
+            self.assertEqual(actual, expected, 'unexpected value for {}'.format(attr))
+
+    def do_edit_roles_test(self, group):
+        # get post_data for the group
+        orig_data = self._group_post_data(group)
+
+        # create a user to be assigned roles
+        new_email = EmailFactory()
+
+        # Now check that we can replace each used_role without disturbing the others.
+        # This does not actually update group, so start with orig_data each time.
+        for rslug in group.get_used_roles():
+            data = orig_data.copy()
+            edit_field = '{}_roles'.format(rslug)
+            data[edit_field] = new_email.address  # comma-separated list of addresses with only one
+
+            form = GroupForm(data, group=group, group_type=group.type_id, field=None)
+
+            self.assertTrue(form.is_valid())
+            # Check that all cleaned values match what we passed to the form.
+            self._assert_cleaned_data_equal(form.cleaned_data, data)
+
+    def test_edit_roles(self):
+        """Test that roles can be edited for all group types
+
+        N.B., the combinations of group type and parent group and the used_roles are
+        obtained from the GroupFeatures in the database. The handling of these combinations
+        is validated, but this test cannot check that the rules themselves are correct.
+        As long as names.json is up to date, this will test what we want.
+        """
+        # Test every parent type that is allowed for at least one group type
+        for parent_type in GroupTypeName.objects.filter(child_features__isnull=False).distinct():
+            parent = GroupFactory(type_id=parent_type.pk)
+            for child_features in parent_type.child_features.all():
+                # create a group of each child type for this parent and populate its roles
+                group_type = child_features.type
+                group = GroupFactory(type_id=group_type.pk, parent=parent)
+                for rslug in group.get_used_roles():
+                    RoleFactory(name_id=rslug, group=group, person=PersonFactory())
+                self.do_edit_roles_test(group)
+
+    def test_need_parent(self):
+        """GroupForm should enforce non-null parent when required"""
+        group = GroupFactory()
+        parent = group.parent
+        other_parent = GroupFactory(type_id=parent.type_id)
+
+        for rslug in group.get_used_roles():
+            RoleFactory(name_id=rslug, group=group, person=PersonFactory())
+
+        data = self._group_post_data(group)
+
+        # First, test with parent required
+        group.type.features.need_parent = True
+        group.type.features.save()
+        group = Group.objects.get(pk=group.pk)  # renew object to clear features cache
+
+        # should fail with empty parent
+        data['parent'] = ''
+        form = GroupForm(data, group=group, group_type=group.type_id, field=None)
+        self.assertFalse(form.is_valid())  # cannot update to empty parent
+
+        # should succeed with non-empty parent
+        data['parent'] = other_parent.pk
+        form = GroupForm(data, group=group, group_type=group.type_id, field=None)
+        self.assertTrue(form.is_valid())
+        self._assert_cleaned_data_equal(form.cleaned_data, data)
+
+        # Second, test with parent not required
+        group.type.features.need_parent = False
+        group.type.features.save()
+        group = Group.objects.get(pk=group.pk)  # renew object to clear features cache
+
+        # should succeed with empty parent
+        data['parent'] = ''
+        form = GroupForm(data, group=group, group_type=group.type_id, field=None)
+        self.assertTrue(form.is_valid())
+        self._assert_cleaned_data_equal(form.cleaned_data, data)
+
+        # should succeed with non-empty parent
+        data['parent'] = other_parent.pk
+        form = GroupForm(data, group=group, group_type=group.type_id, field=None)
+        self.assertTrue(form.is_valid())
+        self._assert_cleaned_data_equal(form.cleaned_data, data)
+
 
 class MilestoneTests(TestCase):
     def create_test_milestones(self):
@@ -1166,6 +1318,18 @@ class MilestoneTests(TestCase):
         self.assertEqual(GroupMilestone.objects.filter(due=m1.due, desc=m1.desc, state="charter").count(), 1)
 
         self.assertEqual(group.charter.docevent_set.count(), events_before + 2) # 1 delete, 1 add
+
+    def test_edit_sort(self):
+        group = GroupFactory(uses_milestone_dates=False)
+        DatelessGroupMilestoneFactory(group=group,order=1)
+        DatelessGroupMilestoneFactory(group=group,order=0)
+        DatelessGroupMilestoneFactory(group=group,order=None)
+        url = urlreverse('ietf.group.milestones.edit_milestones;current', kwargs=dict(group_type=group.type_id, acronym=group.acronym))
+        login_testing_unauthorized(self, "secretary", url)
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        q = PyQuery(r.content)
+        self.assertEqual([x.value for x in q('input[id^=id_m][id$=order]')], [None, '0', '1'])
 
 class DatelessMilestoneTests(TestCase):
     def test_switch_to_dateless(self):

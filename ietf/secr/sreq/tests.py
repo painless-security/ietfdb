@@ -12,7 +12,7 @@ from ietf.utils.test_utils import TestCase
 from ietf.group.factories import GroupFactory, RoleFactory
 from ietf.meeting.models import Session, ResourceAssociation, SchedulingEvent, Constraint
 from ietf.meeting.factories import MeetingFactory, SessionFactory
-from ietf.name.models import TimerangeName
+from ietf.name.models import ConstraintName, TimerangeName
 from ietf.person.models import Person
 from ietf.secr.sreq.forms import SessionForm
 from ietf.utils.mail import outbox, empty_outbox, get_payload_text
@@ -82,6 +82,8 @@ class SessionRequestTestCase(TestCase):
         group2 = GroupFactory()
         group3 = GroupFactory()
         group4 = GroupFactory()
+        iabprog = GroupFactory(type_id='program')
+
         SessionFactory(meeting=meeting,group=mars,status_id='sched')
 
         url = reverse('ietf.secr.sreq.views.edit', kwargs={'acronym':'mars'})
@@ -92,7 +94,7 @@ class SessionRequestTestCase(TestCase):
                      'length_session1':'3600',
                      'length_session2':'3600',
                      'attendees':'10',
-                     'conflict1':'',
+                     'constraint_chair_conflict':iabprog.acronym,
                      'comments':'need lights',
                      'session_time_relation': 'subsequent-days',
                      'adjacent_with_wg': group2.acronym,
@@ -108,6 +110,8 @@ class SessionRequestTestCase(TestCase):
         sessions = Session.objects.filter(meeting=meeting, group=mars)
         self.assertEqual(len(sessions), 2)
         session = sessions[0]
+
+        self.assertEqual(session.constraints().get(name='chair_conflict').target.acronym, iabprog.acronym)
         self.assertEqual(session.constraints().get(name='time_relation').time_relation, 'subsequent-days')
         self.assertEqual(session.constraints().get(name='wg_adjacent').target.acronym, group2.acronym)
         self.assertEqual(
@@ -130,7 +134,7 @@ class SessionRequestTestCase(TestCase):
                      'length_session1':'3600',
                      'length_session2':'3600',
                      'attendees':'10',
-                     'conflict1':'',
+                     'constraint_chair_conflict':'',
                      'comments':'need lights',
                      'joint_with_groups': group2.acronym,
                      'joint_for_session': '1',
@@ -152,6 +156,50 @@ class SessionRequestTestCase(TestCase):
         r = self.client.get(redirect_url)
         self.assertContains(r, 'First session with: {}'.format(group2.acronym))
 
+    def test_edit_inactive_conflicts(self):
+        """Inactive conflicts should be displayed and removable"""
+        meeting = MeetingFactory(type_id='ietf', date=datetime.date.today(), group_conflicts=['chair_conflict'])
+        mars = RoleFactory(name_id='chair', person__user__username='marschairman', group__acronym='mars').group
+        SessionFactory(meeting=meeting, group=mars, status_id='sched')
+        other_group = GroupFactory()
+        Constraint.objects.create(
+            meeting=meeting,
+            name_id='conflict',  # not in group_conflicts for the meeting
+            source=mars,
+            target=other_group,
+        )
+
+        url = reverse('ietf.secr.sreq.views.edit', kwargs=dict(acronym='mars'))
+        self.client.login(username='marschairman', password='marschairman+password')
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        q = PyQuery(r.content)
+
+        # check that the inactive session is displayed
+        found = q('input#id_delete_conflict[type="checkbox"]')
+        self.assertEqual(len(found), 1)
+        delete_checkbox = found[0]
+        # check that the label on the checkbox is correct
+        self.assertIn('Delete this conflict', delete_checkbox.tail)
+        # check that the target is displayed correctly in the UI
+        self.assertIn(other_group.acronym, delete_checkbox.find('../input[@type="text"]').value)
+
+        post_data = {
+            'num_session': '1',
+            'length_session1': '3600',
+            'attendees': '10',
+            'constraint_chair_conflict':'',
+            'comments':'',
+            'joint_with_groups': '',
+            'joint_for_session': '',
+            'submit': 'Save',
+            'delete_conflict': 'on',
+        }
+        r = self.client.post(url, post_data, HTTP_HOST='example.com')
+        redirect_url = reverse('ietf.secr.sreq.views.view', kwargs={'acronym': 'mars'})
+        self.assertRedirects(r, redirect_url)
+        self.assertEqual(len(mars.constraint_source_set.filter(name_id='conflict')), 0)
+
     def test_tool_status(self):
         MeetingFactory(type_id='ietf', date=datetime.date.today())
         url = reverse('ietf.secr.sreq.views.tool_status')
@@ -160,8 +208,69 @@ class SessionRequestTestCase(TestCase):
         self.assertEqual(r.status_code, 200)
         r = self.client.post(url, {'message':'locked', 'submit':'Lock'})
         self.assertRedirects(r,reverse('ietf.secr.sreq.views.main'))
-        
+
+    def test_new_req_constraint_types(self):
+        """Configurable constraint types should be handled correctly in a new request
+
+        Relies on SessionForm representing constraint values with element IDs
+        like id_constraint_<ConstraintName slug>
+        """
+        meeting = MeetingFactory(type_id='ietf', date=datetime.date.today())
+        RoleFactory(name_id='chair', person__user__username='marschairman', group__acronym='mars')
+        url = reverse('ietf.secr.sreq.views.new', kwargs=dict(acronym='mars'))
+        self.client.login(username="marschairman", password="marschairman+password")
+
+        for expected in [
+            ['conflict', 'conflic2', 'conflic3'],
+            ['chair_conflict', 'tech_overlap', 'key_participant'],
+        ]:
+            meeting.group_conflict_types.clear()
+            for slug in expected:
+                meeting.group_conflict_types.add(ConstraintName.objects.get(slug=slug))
+
+            r = self.client.get(url)
+            self.assertEqual(r.status_code, 200)
+            q = PyQuery(r.content)
+            self.assertCountEqual(
+                [elt.attr('id') for elt in q.items('*[id^=id_constraint_]')],
+                ['id_constraint_{}'.format(conf_name) for conf_name in expected],
+            )
+
+    def test_edit_req_constraint_types(self):
+        """Editing a request constraint should show the expected constraints"""
+        meeting = MeetingFactory(type_id='ietf', date=datetime.date.today())
+        SessionFactory(group__acronym='mars',
+                       status_id='schedw',
+                       meeting=meeting,
+                       add_to_schedule=False)
+        RoleFactory(name_id='chair', person__user__username='marschairman', group__acronym='mars')
+
+        url = reverse('ietf.secr.sreq.views.edit', kwargs=dict(acronym='mars'))
+        self.client.login(username='marschairman', password='marschairman+password')
+
+        for expected in [
+            ['conflict', 'conflic2', 'conflic3'],
+            ['chair_conflict', 'tech_overlap', 'key_participant'],
+        ]:
+            meeting.group_conflict_types.clear()
+            for slug in expected:
+                meeting.group_conflict_types.add(ConstraintName.objects.get(slug=slug))
+
+            r = self.client.get(url)
+            self.assertEqual(r.status_code, 200)
+            q = PyQuery(r.content)
+            self.assertCountEqual(
+                [elt.attr('id') for elt in q.items('*[id^=id_constraint_]')],
+                ['id_constraint_{}'.format(conf_name) for conf_name in expected],
+            )
+
 class SubmitRequestCase(TestCase):
+    def setUp(self):
+        super(SubmitRequestCase, self).setUp()
+        # Ensure meeting numbers are predictable. Temporarily needed while basing
+        # constraint types on meeting number, expected to go away when #2770 is resolved.
+        MeetingFactory.reset_sequence(0)
+
     def test_submit_request(self):
         meeting = MeetingFactory(type_id='ietf', date=datetime.date.today())
         ad = Person.objects.get(user__username='ad')
@@ -177,7 +286,7 @@ class SubmitRequestCase(TestCase):
         post_data = {'num_session':'1',
                      'length_session1':'3600',
                      'attendees':'10',
-                     'conflict1':'',
+                     'constraint_chair_conflict':'',
                      'comments':'need projector',
                      'adjacent_with_wg': group2.acronym,
                      'timeranges': ['thursday-afternoon-early', 'thursday-afternoon-late'],
@@ -223,7 +332,7 @@ class SubmitRequestCase(TestCase):
         post_data = {'num_session':'2',
                      'length_session1':'3600',
                      'attendees':'10',
-                     'conflict1':'',
+                     'constraint_chair_conflict':'',
                      'comments':'need projector'}
         self.client.login(username="secretary", password="secretary+password")
         r = self.client.post(url,post_data)
@@ -234,7 +343,8 @@ class SubmitRequestCase(TestCase):
 
     def test_submit_request_check_constraints(self):
         m1 = MeetingFactory(type_id='ietf', date=datetime.date.today() - datetime.timedelta(days=100))
-        MeetingFactory(type_id='ietf', date=datetime.date.today())
+        MeetingFactory(type_id='ietf', date=datetime.date.today(),
+                       group_conflicts=['chair_conflict', 'conflic2', 'conflic3'])
         ad = Person.objects.get(user__username='ad')
         area = RoleFactory(name_id='ad', person=ad, group__type_id='area').group
         group = GroupFactory(parent=area)
@@ -243,7 +353,7 @@ class SubmitRequestCase(TestCase):
             meeting=m1,
             source=group,
             target=still_active_group,
-            name_id='conflict',
+            name_id='chair_conflict',
         )
         inactive_group = GroupFactory(parent=area, state_id='conclude')
         inactive_group.save()
@@ -251,7 +361,7 @@ class SubmitRequestCase(TestCase):
             meeting=m1,
             source=group,
             target=inactive_group,
-            name_id='conflict',
+            name_id='chair_conflict',
         )
         SessionFactory(group=group, meeting=m1)
 
@@ -261,14 +371,14 @@ class SubmitRequestCase(TestCase):
         r = self.client.get(url + '?previous')
         self.assertEqual(r.status_code, 200)
         q = PyQuery(r.content)
-        conflict1 = q('[name="conflict1"]').val()
+        conflict1 = q('[name="constraint_chair_conflict"]').val()
         self.assertIn(still_active_group.acronym, conflict1)
         self.assertNotIn(inactive_group.acronym, conflict1)
 
         post_data = {'num_session':'1',
                      'length_session1':'3600',
                      'attendees':'10',
-                     'conflict1': group.acronym,
+                     'constraint_chair_conflict': group.acronym,
                      'comments':'need projector',
                      'submit': 'Continue'}
         r = self.client.post(url,post_data)
@@ -276,7 +386,7 @@ class SubmitRequestCase(TestCase):
         q = PyQuery(r.content)
         self.assertEqual(len(q('#session-request-form')),1)
         self.assertContains(r, "Cannot declare a conflict with the same group")
-        
+
     def test_request_notification(self):
         meeting = MeetingFactory(type_id='ietf', date=datetime.date.today())
         ad = Person.objects.get(user__username='ad')
@@ -299,7 +409,7 @@ class SubmitRequestCase(TestCase):
                      'length_session2':'3600',
                      'attendees':'10',
                      'bethere':str(ad.pk),
-                     'conflict1':'',
+                     'constraint_chair_conflict':'',
                      'comments':'',
                      'resources': resource.pk,
                      'session_time_relation': 'subsequent-days',
@@ -418,6 +528,7 @@ class RetrievePreviousCase(TestCase):
 
 class SessionFormTest(TestCase):
     def setUp(self):
+        self.meeting = MeetingFactory(type_id='ietf')
         self.group1 = GroupFactory()
         self.group2 = GroupFactory()
         self.group3 = GroupFactory()
@@ -432,9 +543,9 @@ class SessionFormTest(TestCase):
             'length_session2': '3600',
             'length_session3': '3600',
             'attendees': '10',
-            'conflict1': self.group2.acronym,
-            'conflict2': self.group3.acronym,
-            'conflict3': self.group4.acronym,
+            'constraint_chair_conflict': self.group2.acronym,
+            'constraint_tech_overlap': self.group3.acronym,
+            'constraint_key_participant': self.group4.acronym,
             'comments': 'need lights',
             'session_time_relation': 'subsequent-days',
             'adjacent_with_wg': self.group5.acronym,
@@ -446,7 +557,7 @@ class SessionFormTest(TestCase):
         
     def test_valid(self):
         # Test with three sessions
-        form = SessionForm(data=self.valid_form_data, group=self.group1)
+        form = SessionForm(data=self.valid_form_data, group=self.group1, meeting=self.meeting)
         self.assertTrue(form.is_valid())
         
         # Test with two sessions
@@ -455,7 +566,7 @@ class SessionFormTest(TestCase):
             'third_session': '',
             'joint_for_session': '2'
         })
-        form = SessionForm(data=self.valid_form_data, group=self.group1)
+        form = SessionForm(data=self.valid_form_data, group=self.group1, meeting=self.meeting)
         self.assertTrue(form.is_valid())
 
         # Test with one session
@@ -465,31 +576,45 @@ class SessionFormTest(TestCase):
             'joint_for_session': '1',
             'session_time_relation': '',
         })
-        form = SessionForm(data=self.valid_form_data, group=self.group1)
+        form = SessionForm(data=self.valid_form_data, group=self.group1, meeting=self.meeting)
         self.assertTrue(form.is_valid())
     
     def test_invalid_groups(self):
         new_form_data = {
-            'conflict1': 'doesnotexist',
-            'conflict2': 'doesnotexist',
-            'conflict3': 'doesnotexist',
+            'constraint_chair_conflict': 'doesnotexist',
+            'constraint_tech_overlap': 'doesnotexist',
+            'constraint_key_participant': 'doesnotexist',
             'adjacent_with_wg': 'doesnotexist',
             'joint_with_groups': 'doesnotexist',
         }
         form = self._invalid_test_helper(new_form_data)
         self.assertEqual(set(form.errors.keys()), set(new_form_data.keys()))
 
-    def test_invalid_group_appears_in_multiple_conflicts(self):
+    def test_valid_group_appears_in_multiple_conflicts(self):
+        """Some conflict types allow overlapping groups"""
         new_form_data = {
-            'conflict1': self.group2.acronym,
-            'conflict2': self.group2.acronym,
+            'constraint_chair_conflict': self.group2.acronym,
+            'constraint_tech_overlap': self.group2.acronym,
+        }
+        self.valid_form_data.update(new_form_data)
+        form = SessionForm(data=self.valid_form_data, group=self.group1, meeting=self.meeting)
+        self.assertTrue(form.is_valid())
+
+    def test_invalid_group_appears_in_multiple_conflicts(self):
+        """Some conflict types do not allow overlapping groups"""
+        self.meeting.group_conflict_types.clear()
+        self.meeting.group_conflict_types.add(ConstraintName.objects.get(slug='conflict'))
+        self.meeting.group_conflict_types.add(ConstraintName.objects.get(slug='conflic2'))
+        new_form_data = {
+            'constraint_conflict': self.group2.acronym,
+            'constraint_conflic2': self.group2.acronym,
         }
         form = self._invalid_test_helper(new_form_data)
         self.assertEqual(form.non_field_errors(), ['%s appears in conflicts more than once' % self.group2.acronym])
 
     def test_invalid_conflict_with_self(self):
         new_form_data = {
-            'conflict1': self.group1.acronym,
+            'constraint_chair_conflict': self.group1.acronym,
         }
         self._invalid_test_helper(new_form_data)
 
@@ -500,8 +625,11 @@ class SessionFormTest(TestCase):
             'num_session': 1,
             'joint_for_session': '1',
         })
-        self.assertEqual(form.non_field_errors(), ['Time between sessions can only be used when two '
-                                                   'sessions are requested.'])
+        self.assertEqual(form.errors,
+                         {
+                             'session_time_relation': ['Time between sessions can only be used when two '
+                                                       'sessions are requested.']
+                         })
 
     def test_invalid_joint_for_session(self):
         form = self._invalid_test_helper({
@@ -509,8 +637,11 @@ class SessionFormTest(TestCase):
             'num_session': 2,
             'joint_for_session': '3',
         })
-        self.assertEqual(form.non_field_errors(), ['The third session can not be the joint session, '
-                                                   'because you have not requested a third session.'])
+        self.assertEqual(form.errors,
+                         {
+                             'joint_for_session': ['The third session can not be the joint session, '
+                                                   'because you have not requested a third session.']
+                         })
 
         form = self._invalid_test_helper({
             'third_session': '',
@@ -519,24 +650,45 @@ class SessionFormTest(TestCase):
             'joint_for_session': '2',
             'session_time_relation': '',
         })
-        self.assertEqual(form.non_field_errors(), ['The second session can not be the joint session, '
-                                                   'because you have not requested a second session.'])
+        self.assertEqual(form.errors,
+                         {
+                             'joint_for_session': ['The second session can not be the joint session, '
+                                                   'because you have not requested a second session.']
+                         })
     
     def test_invalid_missing_session_length(self):
         form = self._invalid_test_helper({
             'length_session2': '',
-            'third_session': 'true',
+            'third_session': 'false',
+            'joint_for_session': None,
         })
-        self.assertEqual(form.non_field_errors(), ['You must enter a length for all sessions'])
+        self.assertEqual(form.errors,
+                         {
+                             'length_session2': ['You must enter a length for all sessions'],
+                         })
 
-        form = self._invalid_test_helper({'length_session2': ''})
-        self.assertEqual(form.non_field_errors(), ['You must enter a length for all sessions'])
+        form = self._invalid_test_helper({
+            'length_session2': '',
+            'length_session3': '',
+            'joint_for_session': None,
+        })
+        self.assertEqual(form.errors,
+                         {
+                             'length_session2': ['You must enter a length for all sessions'],
+                             'length_session3': ['You must enter a length for all sessions'],
+                         })
 
-        form = self._invalid_test_helper({'length_session3': ''})
-        self.assertEqual(form.non_field_errors(), ['You must enter a length for all sessions'])
+        form = self._invalid_test_helper({
+            'length_session3': '',
+            'joint_for_session': None,
+        })
+        self.assertEqual(form.errors,
+                         {
+                             'length_session3': ['You must enter a length for all sessions'],
+                         })
 
     def _invalid_test_helper(self, new_form_data):
         form_data = dict(self.valid_form_data, **new_form_data)
-        form = SessionForm(data=form_data, group=self.group1)
+        form = SessionForm(data=form_data, group=self.group1, meeting=self.meeting)
         self.assertFalse(form.is_valid())
         return form

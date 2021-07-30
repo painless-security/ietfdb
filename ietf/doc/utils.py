@@ -29,7 +29,7 @@ from ietf.doc.models import DocEvent, ConsensusDocEvent, BallotDocEvent, IRSGBal
 from ietf.doc.models import TelechatDocEvent, DocumentActionHolder, EditedAuthorsDocEvent
 from ietf.name.models import DocReminderTypeName, DocRelationshipName
 from ietf.group.models import Role, Group
-from ietf.ietfauth.utils import has_role, is_authorized_in_doc_stream, is_individual_draft_author
+from ietf.ietfauth.utils import has_role, is_authorized_in_doc_stream, is_individual_draft_author, is_bofreq_editor
 from ietf.person.models import Person
 from ietf.review.models import ReviewWish
 from ietf.utils import draft, text
@@ -152,7 +152,8 @@ def can_unadopt_draft(user, doc):
 def can_edit_docextresources(user, doc):
     return (has_role(user, ("Secretariat", "Area Director"))
             or is_authorized_in_doc_stream(user, doc)
-            or is_individual_draft_author(user, doc))
+            or is_individual_draft_author(user, doc)
+            or is_bofreq_editor(user, doc))
 
 def two_thirds_rule( recused=0 ):
     # For standards-track, need positions from 2/3 of the non-recused current IESG.
@@ -535,7 +536,7 @@ def update_documentauthors(doc, new_docauthors, by=None, basis=None):
         setattr(auth, field, newval)
         
         was_empty = oldval is None or len(str(oldval)) == 0
-        now_empty = newval is None or len(str(oldval)) == 0
+        now_empty = newval is None or len(str(newval)) == 0
         
         # describe the change
         if oldval == newval:
@@ -566,8 +567,8 @@ def update_documentauthors(doc, new_docauthors, by=None, basis=None):
         author_changes = []
         # Now fill in other author details
         author_changes.append(_change_field_and_describe(auth, 'email', docauthor.email))
-        author_changes.append(_change_field_and_describe(auth, 'affiliation', docauthor.affiliation))
-        author_changes.append(_change_field_and_describe(auth, 'country', docauthor.country))
+        author_changes.append(_change_field_and_describe(auth, 'affiliation', docauthor.affiliation or ''))
+        author_changes.append(_change_field_and_describe(auth, 'country', docauthor.country or ''))
         author_changes.append(_change_field_and_describe(auth, 'order', order + 1))
         auth.save()
         log.assertion('auth.email_id != "none"')
@@ -1038,7 +1039,7 @@ def build_file_urls(doc):
                 file_urls.append(("with errata", settings.RFC_EDITOR_INLINE_ERRATA_URL.format(rfc_number=doc.rfc_number())))
         file_urls.append(("bibtex", urlreverse('ietf.doc.views_doc.document_main',kwargs=dict(name=name))+"bibtex"))
     else:
-        base_path = os.path.join(settings.INTERNET_DRAFT_PATH, doc.name + "-" + doc.rev + ".")
+        base_path = os.path.join(settings.INTERNET_ALL_DRAFTS_ARCHIVE_DIR, doc.name + "-" + doc.rev + ".")
         possible_types = settings.IDSUBMIT_FILE_TYPES
         found_types = [t for t in possible_types if os.path.exists(base_path + t)]
         base = settings.IETF_ID_ARCHIVE_URL
@@ -1219,13 +1220,15 @@ def update_doc_extresources(doc, new_resources, by):
     if old_res_strs == new_res_strs:
         return False  # no change
 
+    old_res_strs = f'\n\n{old_res_strs}\n\n' if old_res_strs else ' None '
+    new_res_strs = f'\n\n{new_res_strs}' if new_res_strs else ' None'
+
     doc.docextresource_set.all().delete()
     for new_res in new_resources:
         new_res.doc = doc
         new_res.save()
     e = DocEvent(doc=doc, rev=doc.rev, by=by, type='changed_document')
-    e.desc = "Changed document external resources from:\n\n%s\n\nto:\n\n%s" % (
-        old_res_strs, new_res_strs)
+    e.desc = f"Changed document external resources from:{old_res_strs}to:{new_res_strs}"
     e.save()
     doc.save_with_history([e])
     return True

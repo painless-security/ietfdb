@@ -167,6 +167,16 @@ def get_schedule_by_name(meeting, owner, name):
         return meeting.schedule_set.filter(name = name).first()
 
 def preprocess_assignments_for_agenda(assignments_queryset, meeting, extra_prefetches=()):
+    """Add computed properties to assignments
+
+    For each assignment a, adds
+      a.start_timestamp
+      a.end_timestamp
+      a.session.historic_group
+      a.session.historic_parent
+      a.session.rescheduled_to (if rescheduled)
+      a.session.prefetched_active_materials
+    """
     assignments_queryset = assignments_queryset.prefetch_related(
             'timeslot', 'timeslot__type', 'timeslot__meeting',
             'timeslot__location', 'timeslot__location__floorplan', 'timeslot__location__urlresource_set',
@@ -341,12 +351,13 @@ class AgendaFilterOrganizer:
         heading group.
         """
         # groups in the schedule that have a historic_parent group
-        groups = set(self._get_group(s) for s in self.sessions
+        groups = set(_get_group_from_session(s) for s in self.sessions
                      if s
-                     and self._get_group(s))
+                     and _get_group_from_session(s))
         log.assertion('len(groups) == len(set(g.acronym for g in groups))')  # no repeated acros
 
-        group_parents = set(self._get_parent(g) for g in groups if self._get_parent(g))
+        group_parents = set(_get_parent_of_group_or_session(g)
+                            for g in groups if _get_parent_of_group_or_session(g))
         log.assertion('len(group_parents) == len(set(gp.acronym for gp in group_parents))')  # no repeated acros
 
         all_groups = groups.union(group_parents)
@@ -360,7 +371,7 @@ class AgendaFilterOrganizer:
         for g in groups:
             if g.features.agenda_filter_type_id == 'normal':
                 # normal filter group with a heading parent goes in that column
-                p = self._get_parent(g)
+                p = _get_parent_of_group_or_session(g)
                 if p in headings:
                     headings[p].add(g)
                 else:
@@ -532,6 +543,9 @@ def filter_keywords_for_session(session):
         if group.state_id == 'bof':
             keywords.add('bof')
         keywords.add(group.acronym.lower())
+        specific_kw = filter_keyword_for_specific_session(session)
+        if specific_kw is not None:
+            keywords.add(specific_kw)
 
         # Only sessions belonging to "regular" groups should respond to the
         # parent group filter keyword (often the 'area'). This must match
@@ -545,6 +559,18 @@ def filter_keywords_for_session(session):
     if office_hours_match is not None:
         keywords.update(['officehours', session.name.lower().replace(' ', '')])
     return sorted(list(keywords))
+
+def filter_keyword_for_specific_session(session):
+    """Get keyword that identifies a specific session
+
+    Returns None if the session cannot be selected individually.
+    """
+    group = getattr(session, 'historic_group', session.group)
+    if group is None:
+        return None
+    kw = group.acronym.lower()  # start with this
+    token = session.docname_token_only_for_multiple()
+    return kw if token is None else '{}-{}'.format(kw, token)
 
 def read_session_file(type, num, doc):
     # XXXX FIXME: the path fragment in the code below should be moved to
@@ -627,7 +653,7 @@ def schedule_permissions(meeting, schedule, user):
 
     if user_is_person(user, schedule.owner):
         cansee = True
-        canedit = True
+        canedit = not schedule.is_official_record
 
     return cansee, canedit, secretariat
 
