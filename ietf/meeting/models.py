@@ -30,7 +30,10 @@ from ietf.dbtemplate.models import DBTemplate
 from ietf.doc.models import Document
 from ietf.group.models import Group
 from ietf.group.utils import can_manage_materials
-from ietf.name.models import MeetingTypeName, TimeSlotTypeName, SessionStatusName, ConstraintName, RoomResourceName, ImportantDateName, TimerangeName, SlideSubmissionStatusName
+from ietf.name.models import (
+    MeetingTypeName, TimeSlotTypeName, SessionStatusName, ConstraintName, RoomResourceName,
+    ImportantDateName, TimerangeName, SlideSubmissionStatusName, ProceedingsMaterialTypeName,
+)
 from ietf.person.models import Person
 from ietf.utils.decorators import memoize
 from ietf.utils.storage import NoLocationMigrationFileSystemStorage
@@ -218,6 +221,13 @@ class Meeting(models.Model):
             return int(self.number)
         else:
             return None
+
+    def get_proceedings_materials(self):
+        """Get proceedings materials"""
+        return {
+            mat.type.slug: mat
+            for mat in self.proceedings_materials.filter(document__states__slug='active')
+        }
 
     @property
     def session_constraintnames(self):
@@ -1407,3 +1417,25 @@ class SlideSubmission(models.Model):
 
     def staged_url(self):
         return "".join([settings.SLIDE_STAGING_URL, self.filename])
+
+
+class ProceedingsMaterial(models.Model):
+    meeting = ForeignKey(Meeting, related_name='proceedings_materials')
+    document = ForeignKey(
+        Document,
+        limit_choices_to=dict(type_id='procmaterials'),
+        unique=True,
+    )
+    type = ForeignKey(ProceedingsMaterialTypeName)
+
+    class Meta:
+        unique_together = (('meeting', 'type'),)
+
+    def __str__(self):
+        return self.document.title
+
+    def get_href(self):
+        return f'{self.document.get_href(self.meeting)}.{self.document.file_extension()}'
+
+    def active(self):
+        return self.document.get_state().slug == 'active'

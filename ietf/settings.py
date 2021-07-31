@@ -702,6 +702,7 @@ DOC_HREFS = {
     "draft":    "https://www.ietf.org/archive/id/{doc.name}-{doc.rev}.txt",
     "rfc":      "https://www.rfc-editor.org/rfc/rfc{doc.rfcnum}.txt",
     "slides": "https://www.ietf.org/slides/{doc.name}-{doc.rev}",
+    "procmaterials": "https://www.ietf.org/procmaterials/{doc.name}-{doc.rev}",
     "conflrev": "https://www.ietf.org/cr/{doc.name}-{doc.rev}.txt",
     "statchg": "https://www.ietf.org/sc/{doc.name}-{doc.rev}.txt",
     "liaison": "%s{doc.uploaded_filename}" % LIAISON_ATTACH_URL,
@@ -885,6 +886,7 @@ MEETING_DOC_LOCAL_HREFS = {
     "slides": "/meeting/{meeting.number}/materials/{doc.name}-{doc.rev}",
     "recording": "{doc.external_url}",
     "bluesheets": "https://www.ietf.org/proceedings/{meeting.number}/bluesheets/{doc.uploaded_filename}",
+    "procmaterials": "/meeting/{meeting.number}/materials/{doc.name}-{doc.rev}",
 }
 
 MEETING_DOC_CDN_HREFS = {
@@ -893,6 +895,7 @@ MEETING_DOC_CDN_HREFS = {
     "slides": "https://www.ietf.org/proceedings/{meeting.number}/slides/{doc.name}-{doc.rev}",
     "recording": "{doc.external_url}",
     "bluesheets": "https://www.ietf.org/proceedings/{meeting.number}/bluesheets/{doc.uploaded_filename}",
+    "procmaterials": "https://www.ietf.org/proceedings/{meeting.number}/procmaterials/{doc.name}-{doc.rev}",
 }
 
 MEETING_DOC_HREFS = MEETING_DOC_LOCAL_HREFS if MEETING_MATERIALS_SERVE_LOCALLY else MEETING_DOC_CDN_HREFS
@@ -912,6 +915,7 @@ MEETING_DOC_GREFS = {
     "slides": "/meeting/{meeting.number}/materials/{doc.name}",
     "recording": "{doc.external_url}",
     "bluesheets": "https://www.ietf.org/proceedings/{meeting.number}/bluesheets/{doc.uploaded_filename}",
+    "procmaterials": "/meeting/{meeting.number}/materials/{doc.name}",
 }
 
 MEETING_MATERIALS_DEFAULT_SUBMISSION_START_DAYS = 90
@@ -923,6 +927,7 @@ MEETING_VALID_UPLOAD_EXTENSIONS = {
     'minutes':      ['.txt','.html','.htm', '.md', '.pdf', ],
     'slides':       ['.doc','.docx','.pdf','.ppt','.pptx','.txt', ], # Note the removal of .zip
     'bluesheets':   ['.pdf', '.txt', ],
+    'procmaterials':['.pdf', ],
 }
     
 MEETING_VALID_UPLOAD_MIME_TYPES = {
@@ -930,6 +935,7 @@ MEETING_VALID_UPLOAD_MIME_TYPES = {
     'minutes':      ['text/plain', 'text/html', 'application/pdf', 'text/markdown', 'text/x-markdown', ],
     'slides':       [],
     'bluesheets':   ['application/pdf', 'text/plain', ],
+    'procmaterials':['application/pdf', ],
 }
 
 MEETING_VALID_MIME_TYPE_EXTENSIONS = {
