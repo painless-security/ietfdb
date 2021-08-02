@@ -87,7 +87,7 @@ from ietf.meeting.utils import diff_meeting_schedules, prefetch_schedule_diff_ob
 from ietf.meeting.utils import swap_meeting_schedule_timeslot_assignments
 from ietf.meeting.utils import preprocess_meeting_important_dates
 from ietf.message.utils import infer_message
-from ietf.name.models import SlideSubmissionStatusName
+from ietf.name.models import SlideSubmissionStatusName, ProceedingsMaterialTypeName
 from ietf.secr.proceedings.utils import handle_upload_file
 from ietf.secr.proceedings.proc_utils import (get_progress_stats, post_process, import_audio_files,
     create_recording)
@@ -173,9 +173,15 @@ def materials(request, num=None):
     for session_list in [plenaries, ietf, training, irtf, iab, other]:
         for session in session_list:
             session.past_cutoff_date = past_cutoff_date
-            
+
+    proceedings_materials = [
+        (type_slug, ProceedingsMaterialTypeName.objects.get(pk=type_slug), meeting.proceedings_materials.filter(type=type_slug).first())
+        for type_slug in ['acknowledgements', 'social_event', 'host_speaker_series', 'additional_information']
+    ]
+
     return render(request, "meeting/materials.html", {
         'meeting': meeting,
+        'proceedings_materials': proceedings_materials,
         'plenaries': plenaries,
         'ietf': ietf,
         'training': training,
@@ -221,7 +227,7 @@ def materials_document(request, document, num=None, ext=None):
 
     if not doc.meeting_related():
         raise Http404("Not a meeting related document")
-    if not doc.session_set.filter(meeting__number=num).exists():
+    if doc.get_related_meeting() != meeting:
         raise Http404("No such document for meeting %s" % num)
     if not rev:
         filename = doc.get_file_name()
