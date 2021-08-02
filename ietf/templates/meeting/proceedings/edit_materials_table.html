@@ -1,0 +1,61 @@
+{# Copyright The IETF Trust 2021, All Rights Reserved #}
+{% load ietf_filters %}
+{% load tz %}
+
+<!-- Proceedings materials not tied to groups -->
+<h2 class="anchor-target" id="proceedings-materials">Proceedings Materials</h2>
+<table class="table table-condensed table-striped">
+  <thead>
+  <tr>
+    {% if user|has_role:'Secretariat' %}
+      <th class="col-md-2">Type</th>
+      <th class="col-md-8">Title</th>
+      <th class="col-md-1">Updated</th>
+      <th class="col-md-1">&nbsp;</th>
+    {% else %}
+      <th class="col-md-2">Type</th>
+      <th class="col-md-9">Title</th>
+      <th class="col-md-1">Updated</th>
+    {% endif %}
+  </tr>
+  </thead>
+
+  <tbody>
+  {% for type_slug, type_name, material in proceedings_materials %}
+    {% if user|has_role:'Secretariat' or meeting and material.active %}{# secretariat sees empty slots, others do not #}
+      <tr>
+        <td>{{ type_name }}</td>
+        {% if material and material.active %}
+          <td>
+            <a
+              href="{% url 'ietf.meeting.views.materials_document' document=material.document.name num=meeting.number %}">
+              {{ material.document.title }}
+            </a>
+          </td>
+          <td>
+            {% with timestamp=material.document.time|utc %}
+              {{ timestamp|date:"Y-m-d" }}<br><small>{{ timestamp|date:"H:i:s" }}&nbsp;UTC</small>
+            {% endwith %}
+            {% else %}
+          <td colspan="2"></td>
+        {% endif %}
+        {% if user|has_role:'Secretariat' %}
+          <td>
+            {% if material %}
+              <a
+                href="{% url 'ietf.meeting.views_proceedings.edit_material' num=meeting.number material_type=type_slug %}">
+                {% if material.active %}Edit material{% else %}Add material{% endif %}
+              </a>
+            {% else %}
+              <a
+                href="{% url 'ietf.meeting.views_proceedings.upload_material' num=meeting.number material_type=type_slug %}">
+                Add material
+              </a>
+            {% endif %}
+          </td>
+        {% endif %}
+      </tr>
+    {% endif %}
+  {% endfor %}
+  </tbody>
+</table>

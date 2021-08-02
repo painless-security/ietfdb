@@ -76,11 +76,23 @@ def validate_mime_type(file, valid):
                                     (mime_type, ', '.join(valid) ))
     return mime_type, encoding
 
+def mime_type_validator(valid):
+    """Factory for mime type validators"""
+    def validator(file):
+        validate_mime_type(file, valid)
+    return validator
+
 def validate_file_extension(file, valid):
     name, ext = os.path.splitext(file.name)
     if ext.lower() not in valid:
         raise ValidationError('Found an unexpected extension: %s.  Expected one of %s' % (ext, ','.join(valid)))
     return ext
+
+def file_extention_validator(valid):
+    """Factory for file extension validators"""
+    def validator(file):
+        validate_file_extension(file, valid)
+    return validator
 
 def validate_no_html_frame(file):
     file.open()
