@@ -10,24 +10,19 @@ import debug                            # pyflakes:ignore
 from ietf.doc.utils import add_state_change_event
 from ietf.doc.models import DocAlias, DocEvent, Document, NewRevisionDocEvent, State
 from ietf.ietfauth.utils import role_required
+from ietf.meeting.forms import FileUploadForm
 from ietf.meeting.helpers import get_meeting
 from ietf.name.models import ProceedingsMaterialTypeName
 from ietf.utils.text import xslugify
-from ietf.utils.validators import file_extention_validator, mime_type_validator, validate_file_size
 
 
-class UploadProceedingsMaterialForm(forms.Form):
-    """Form to upload a new or replacement proceedings material"""
-    material = forms.FileField(
-        help_text='File to include in the proceedings (must be PDF)',
-        label='File to upload',
-        required=True,
-        validators=[
-            file_extention_validator(['.pdf']),
-            validate_file_size,
-            mime_type_validator(['application/pdf']),
-        ],
-    )
+class UploadProceedingsMaterialForm(FileUploadForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(doc_type='procmaterials', *args, **kwargs)
+        self.fields['file'].label = 'Select a file to upload. Allowed format{}: {}'.format(
+            '' if len(self.mime_types) == 1 else 's',
+            ', '.join(self.mime_types),
+        )
 
 
 class EditProceedingsMaterialForm(forms.Form):
@@ -145,8 +140,8 @@ def upload_material(request, num, material_type):
             doc = save_proceedings_material_doc(
                 meeting,
                 material_type,
-                file=form.cleaned_data.get('material', None),
-                title=None,
+                file=form.cleaned_data.get('file', None),
+                title=str(material if material is not None else material_type),
                 by=request.user.person,
             )
             if material is None:
@@ -177,7 +172,7 @@ def edit_material(request, num, material_type):
                 meeting,
                 material_type,
                 title=form.cleaned_data['title'],
-                file=form.cleaned_data.get('material', None),
+                file=form.cleaned_data.get('file', None),
                 state=form.cleaned_data['state'],
                 by=request.user.person,
             )
