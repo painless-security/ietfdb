@@ -3,6 +3,7 @@
 
 from django import template
 
+import debug                            # pyflakes:ignore
 
 register = template.Library()
 
@@ -27,3 +28,20 @@ def merge_media(forms, arg=None):
     if arg is None:
         return str(combined)
     return str(combined[arg])
+
+
+@register.filter
+def keep_only(items, arg):
+    """Filter list of items based on an attribute
+
+    Usage: {{ item_list|keep_only:'attribute' }}
+      Returns the list, keeping only those whose where item[attribute] or item.attribute is
+      present and truthy. The attribute can be an int or a string.
+    """
+    def _test(item):
+        try:
+            return item[arg]
+        except TypeError:
+            return getattr(item, arg, False)
+
+    return [item for item in items if _test(item)]

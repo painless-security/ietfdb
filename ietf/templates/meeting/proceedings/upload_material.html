@@ -14,16 +14,17 @@
   </small>
 {% endblock %}
 
-{% block help_block %}
+{% block intro %}
+  <p>
   {% if material is None %}
-    Select a PDF file to upload. This document will be linked from the
-    {{ meeting }} proceedings under the &ldquo;{{ material_type.name }}&rdquo; label.
+    This document will be linked from the {{ meeting }} proceedings under the "{{ material_type.name }}" label.
     You can change the label by setting the title after uploading the document.
   {% else %}
-    Select a PDF file to replace the existing document. This document will be linked from the
-    {{ meeting }} proceedings under the &ldquo;{{ material.document.title }}&rdquo; label.
+    Select a file to replace the existing document. This document will be linked from the
+    {{ meeting }} proceedings under the "{{ material.document.title }}" label.
     You can change the label by changing the title after uploading the document.
   {% endif %}
+  </p>
 {% endblock %}
 
 {% block edit_form %}
