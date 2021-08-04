@@ -108,6 +108,8 @@ type_ietf_only_patterns_id_optional = [
     url(r'^proceedings/materials/(?P<material_type>[a-z_]+)/new/$', views_proceedings.upload_material),
     url(r'^important-dates/$', views.important_dates),
     url(r'^important-dates.(?P<output_format>ics)$', views.important_dates),
+    url(r'^proceedings/sponsors/edit/', views_proceedings.edit_sponsors),
+    url(r'^proceedings/sponsors/(?P<sponsor_id>\d+)/logo/$', views_proceedings.sponsor_logo),
 ]
 
 urlpatterns = [

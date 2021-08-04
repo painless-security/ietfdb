@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from django import forms
-from django.http import Http404
+from django.http import Http404, FileResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse as urlreverse
 
@@ -11,10 +11,10 @@ from ietf.doc.utils import add_state_change_event
 from ietf.doc.models import DocAlias, DocEvent, Document, NewRevisionDocEvent, State
 from ietf.ietfauth.utils import role_required
 from ietf.meeting.forms import FileUploadForm
+from ietf.meeting.models import Meeting, Sponsor
 from ietf.meeting.helpers import get_meeting
 from ietf.name.models import ProceedingsMaterialTypeName
 from ietf.utils.text import xslugify
-
 
 class UploadProceedingsMaterialForm(FileUploadForm):
     def __init__(self, *args, **kwargs):
@@ -193,3 +193,38 @@ def edit_material(request, num, material_type):
         'material_type': material.type,
         'meeting': meeting,
     })
+
+# todo - remove widget, validate file type / size !!
+
+@role_required('Secretariat')
+def edit_sponsors(request, num):
+    meeting = get_meeting(num)
+
+    SponsorFormSet = forms.inlineformset_factory(
+        Meeting,
+        Sponsor,
+        fields=('name', 'logo',),
+        extra=2,
+        # widgets=dict(logo=ClearableImageFileInput),
+    )
+
+    if request.method == 'POST':
+        formset = SponsorFormSet(request.POST, request.FILES, instance=meeting)
+        if formset.is_valid():
+            formset.save()
+            return redirect('ietf.meeting.views.materials', num=meeting.number)
+    else:
+        formset = SponsorFormSet(instance=meeting)
+
+    return render(request, 'meeting/proceedings/edit_sponsors.html', {
+        'formset': formset,
+        'meeting': meeting,
+    })
+
+
+def sponsor_logo(request, num, sponsor_id):
+    sponsor = get_object_or_404(Sponsor, pk=sponsor_id)
+    if sponsor.meeting.number != num:
+        raise Http404()
+
+    return FileResponse(sponsor.logo.open())

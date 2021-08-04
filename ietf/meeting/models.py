@@ -11,6 +11,7 @@ import pytz
 import re
 import string
 
+from pathlib import Path
 from urllib.parse import urljoin
 
 import debug                            # pyflakes:ignore
@@ -40,6 +41,7 @@ from ietf.utils.storage import NoLocationMigrationFileSystemStorage
 from ietf.utils.text import xslugify
 from ietf.utils.timezone import date2datetime
 from ietf.utils.models import ForeignKey
+from ietf.utils.validators import MaxImageSizeValidator
 
 countries = list(pytz.country_names.items())
 countries.sort(key=lambda x: x[1])
@@ -1431,3 +1433,43 @@ class ProceedingsMaterial(models.Model):
 
     def active(self):
         return self.document.get_state().slug == 'active'
+
+
+def _sponsor_upload_path(instance, filename):
+    """Compute filename relative to the storage location"""
+    num = instance.meeting.number
+    path = (
+            Path(num) / 'sponsors' / f'logo-{xslugify(instance.name)}'
+    ).with_suffix(
+        Path(filename).suffix
+    )
+    return str(path)
+
+
+class ProceedingsMaterialFileSystemStorage(NoLocationMigrationFileSystemStorage):
+    """Storage class that generates URLs for proceedings material files"""
+    def url(self, name):
+        name = Path(name)
+        meeting_number = name.parts[0]
+        return f'/meeting/{meeting_number}/{"/".join(name.parts[1:])}'
+
+class Sponsor(models.Model):
+    """Meeting sponsor"""
+    meeting = ForeignKey(Meeting, related_name='sponsors')
+    name = models.CharField(max_length=255, blank=False)
+    logo = models.ImageField(
+        storage=ProceedingsMaterialFileSystemStorage(
+            location=settings.SPONSOR_LOGO_PATH,
+        ),
+        upload_to=_sponsor_upload_path,
+        blank=False,
+        validators=[
+            MaxImageSizeValidator(
+                settings.SPONSOR_LOGO_MAX_WIDTH,
+                settings.SPONSOR_LOGO_MAX_HEIGHT,
+            ),
+        ],
+    )
+
+    class Meta:
+        unique_together = (('meeting', 'name'),)

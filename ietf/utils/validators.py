@@ -10,7 +10,7 @@ from urllib.parse import urlparse, urlsplit, urlunsplit
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import RegexValidator, URLValidator, EmailValidator, _lazy_re_compile
+from django.core.validators import RegexValidator, URLValidator, EmailValidator, _lazy_re_compile, BaseValidator
 from django.template.defaultfilters import filesizeformat
 from django.utils.deconstruct import deconstructible
 from django.utils.ipv6 import is_valid_ipv6_address
@@ -206,3 +206,18 @@ def validate_external_resource_value(name, value):
     else:
         raise ValidationError('Unknown resource type '+name.type.name)
 
+
+@deconstructible
+class MaxImageSizeValidator(BaseValidator):
+    """Validate that an image is no longer than a given size"""
+    message = 'Ensure this image is smaller than %(limit_value)s (it is %(show_value)s)'
+    code = 'max_image_size'
+
+    def __init__(self, max_width, max_height):
+        super().__init__(limit_value=(max_width, max_height))
+
+    def compare(self, a, b):
+        return (a[0] > b[0]) or (a[1] > b[1])
+
+    def clean(self, x):
+        return x.width, x.height
