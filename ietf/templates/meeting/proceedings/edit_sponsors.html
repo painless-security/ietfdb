@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{# Copyright The IETF Trust 2021, All Rights Reserved #}
+{% load origin %}
+
+{% load bootstrap3 %}
+
+{% block title %}
+  Edit Sponsors for {{ meeting }} Proceedings
+{% endblock %}
+
+{% block content %}
+  {% origin %}
+
+  <h1>
+    {% block content_header %}
+      Edit Meeting Sponsors<br>
+      <small>
+        {{ meeting }}
+      </small>
+    {% endblock %}
+  </h1>
+
+  <p class="help-block">
+    The sponsors listed below will appear on the meeting proceedings.
+    If you need to add more sponsors than there are slots, fill out the form below, save, and
+    reopen this page.
+  </p>
+
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {#    {% bootstrap_formset formset %}#}
+    {{ formset.management_form }}
+    {{ formset.non_form_errors }}
+    <table class="table table-striped container-fluid">
+      {% for form in formset %}
+        <tr class="row">
+          <td class="col-md-3">
+            {% if form.logo.value %}
+              <img src="{% url 'ietf.meeting.views_proceedings.sponsor_logo' num=meeting.number sponsor_id=form.instance.pk %} ">
+            {% endif %}
+          </td>
+          <td class="col-md-9">
+            {% bootstrap_form form %}
+          </td>
+        </tr>
+    {% endfor %}
+    </table>
+    {% buttons %}
+      <a class="btn btn-default pull-right" href="{% url 'ietf.meeting.views.materials' num=meeting.number %}">Back</a>
+      <button class="btn btn-primary" type="submit">Save</button>
+    {% endbuttons %}
+  </form>
+{% endblock content %}

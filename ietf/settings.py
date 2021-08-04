@@ -669,6 +669,7 @@ BOFREQ_PATH = '/a/ietfdata/doc/bofreq/'
 CONFLICT_REVIEW_PATH = '/a/ietfdata/doc/conflict-review'
 STATUS_CHANGE_PATH = '/a/ietfdata/doc/status-change'
 AGENDA_PATH = '/a/www/www6s/proceedings/'
+SPONSOR_LOGO_PATH = '/a/www/www6s/proceedings/'
 IPR_DOCUMENT_PATH = '/a/www/ietf-ftp/ietf/IPR/'
 IESG_TASK_FILE = '/a/www/www6/iesg/internal/task.txt'
 IESG_ROLL_CALL_FILE = '/a/www/www6/iesg/internal/rollcall.txt'
@@ -928,6 +929,7 @@ MEETING_VALID_UPLOAD_EXTENSIONS = {
     'slides':       ['.doc','.docx','.pdf','.ppt','.pptx','.txt', ], # Note the removal of .zip
     'bluesheets':   ['.pdf', '.txt', ],
     'procmaterials':['.pdf', ],
+    'sponsorlogo':  ['.png', '.jpg', ],
 }
     
 MEETING_VALID_UPLOAD_MIME_TYPES = {
@@ -936,6 +938,7 @@ MEETING_VALID_UPLOAD_MIME_TYPES = {
     'slides':       [],
     'bluesheets':   ['application/pdf', 'text/plain', ],
     'procmaterials':['application/pdf', ],
+    'sponsorlogo':  ['image/jpeg', 'image/png', ],
 }
 
 MEETING_VALID_MIME_TYPE_EXTENSIONS = {
@@ -958,6 +961,9 @@ FLOORPLAN_MEDIA_DIR = 'floor'
 FLOORPLAN_DIR = os.path.join(MEDIA_ROOT, FLOORPLAN_MEDIA_DIR)
 
 MEETING_USES_CODIMD_DATE = datetime.date(2020,7,6)
+
+SPONSOR_LOGO_MAX_WIDTH = 600
+SPONSOR_LOGO_MAX_HEIGHT = 600
 
 # Session assignments on the official schedule lock this long before the timeslot starts
 MEETING_SESSION_LOCK_TIME = datetime.timedelta(minutes=10)
