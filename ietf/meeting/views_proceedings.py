@@ -194,7 +194,6 @@ def edit_material(request, num, material_type):
         'meeting': meeting,
     })
 
-# todo - remove widget, validate file type / size !!
 
 @role_required('Secretariat')
 def edit_sponsors(request, num):
@@ -205,7 +204,6 @@ def edit_sponsors(request, num):
         Sponsor,
         fields=('name', 'logo',),
         extra=2,
-        # widgets=dict(logo=ClearableImageFileInput),
     )
 
     if request.method == 'POST':

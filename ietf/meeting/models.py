@@ -41,7 +41,10 @@ from ietf.utils.storage import NoLocationMigrationFileSystemStorage
 from ietf.utils.text import xslugify
 from ietf.utils.timezone import date2datetime
 from ietf.utils.models import ForeignKey
-from ietf.utils.validators import MaxImageSizeValidator
+from ietf.utils.validators import (
+    MaxImageSizeValidator, validate_file_size, mime_type_validator,
+    file_extention_validator
+)
 
 countries = list(pytz.country_names.items())
 countries.sort(key=lambda x: x[1])
@@ -1461,6 +1464,7 @@ class ProceedingsMaterialFileSystemStorage(NoLocationMigrationFileSystemStorage)
         meeting_number = name.parts[0]
         return f'/meeting/{meeting_number}/{"/".join(name.parts[1:])}'
 
+
 class Sponsor(models.Model):
     """Meeting sponsor"""
     meeting = ForeignKey(Meeting, related_name='sponsors')
@@ -1476,6 +1480,9 @@ class Sponsor(models.Model):
                 settings.SPONSOR_LOGO_MAX_WIDTH,
                 settings.SPONSOR_LOGO_MAX_HEIGHT,
             ),
+            validate_file_size,
+            file_extention_validator(settings.MEETING_VALID_UPLOAD_EXTENSIONS['sponsorlogo']),
+            mime_type_validator(settings.MEETING_VALID_UPLOAD_MIME_TYPES['sponsorlogo']),
         ],
     )
 
