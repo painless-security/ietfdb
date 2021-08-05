@@ -1,0 +1,49 @@
+{% comment %} Copyright The IETF Trust 2021, All Rights Reserved
+
+This renders the title block for the meeting proceedings page.
+{% endcomment %}
+{% load ietf_filters %}
+
+<div class="proceedings-title">
+  <h1>
+    IETF {{ meeting.number }} {% if not meeting.proceedings_final %}Draft{% endif %}
+    Proceedings
+  </h1>
+
+  <div class="proceedings-date">
+    {{ meeting.date|date:"d F Y" }} - {{ meeting.end_date|date:"d F Y" }}
+  </div>
+
+  <div class="proceedings-info">
+    X onsite participants, Y remote participants
+  </div>
+</div>
+
+<div class="proceedings-intro with-divider">
+  <div class="proceedings-column">
+    <div class="proceedings-row">
+      Location: {{ meeting.city|default:"TBD" }}
+    </div>
+    {% if meeting.venue_name %}
+      <div class="proceedings-row">
+        Venue: {{ meeting.venue_name }}
+      </div>
+    {% endif %}
+  </div>
+  {% with sponsors=meeting.sponsors.all %}
+    {% if sponsors.exists %}
+      <div class="proceedings-column">
+        <div class="proceedings-row">
+          Hosted by:
+          {% for sponsor in sponsors %}
+            {# some ad blockers hide images with classes like 'sponsor-logo', hence the odd abbreviation #}
+            <img class="spons-logo"
+                 src="{% url 'ietf.meeting.views_proceedings.sponsor_logo' num=meeting.number sponsor_id=sponsor.pk %}"
+                 height="{{ sponsor.logo_height }}"
+                 width="{{ sponsor.logo_width }}"
+                 title="{{ sponsor.name }}"> {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+  {% endwith %}
+</div>
