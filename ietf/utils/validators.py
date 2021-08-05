@@ -76,23 +76,33 @@ def validate_mime_type(file, valid):
                                     (mime_type, ', '.join(valid) ))
     return mime_type, encoding
 
-def mime_type_validator(valid):
-    """Factory for mime type validators"""
-    def validator(file):
-        validate_mime_type(file, valid)
-    return validator
+@deconstructible
+class WrappedValidator:
+    """Helper for attaching a validate function with parameters to a model
+
+    This captures extra arguments to migration functions in a way that is compatible
+    with Django's migrations. E.g., WrappedValidator(validate_mime_type, valid_type_list)
+    will arrange to call validate_mime_type.
+    """
+    def __init__(self, validate_method, *args):
+        self.validate_method = validate_method
+        self.args = args
+
+    def __call__(self, inst):
+        return self.validate_method(inst, *self.args)
+
+    def __eq__(self, other):
+        return all([
+            isinstance(other, WrappedValidator),
+            (self.validate_method == other.validate_method),
+            (self.kwargs == other.kwargs)
+        ])
 
 def validate_file_extension(file, valid):
     name, ext = os.path.splitext(file.name)
     if ext.lower() not in valid:
         raise ValidationError('Found an unexpected extension: %s.  Expected one of %s' % (ext, ','.join(valid)))
     return ext
-
-def file_extention_validator(valid):
-    """Factory for file extension validators"""
-    def validator(file):
-        validate_file_extension(file, valid)
-    return validator
 
 def validate_no_html_frame(file):
     file.open()

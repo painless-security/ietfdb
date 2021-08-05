@@ -3845,6 +3845,10 @@ def proceedings(request, num=None):
         'cor_cut_off_date': cor_cut_off_date,
         'submission_started': now > begin_date,
         'cache_version': cache_version,
+        'sponsor_logo': {
+            'max_height': settings.SPONSOR_LOGO_MAX_DISPLAY_HEIGHT,
+            'max_width': settings.SPONSOR_LOGO_MAX_DISPLAY_WIDTH,
+        }
     })
 
 @role_required('Secretariat')

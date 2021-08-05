@@ -42,8 +42,8 @@ from ietf.utils.text import xslugify
 from ietf.utils.timezone import date2datetime
 from ietf.utils.models import ForeignKey
 from ietf.utils.validators import (
-    MaxImageSizeValidator, validate_file_size, mime_type_validator,
-    file_extention_validator
+    MaxImageSizeValidator, WrappedValidator, validate_file_size, validate_mime_type,
+    validate_file_extension,
 )
 
 countries = list(pytz.country_names.items())
@@ -1457,34 +1457,36 @@ def _sponsor_upload_path(instance, filename):
     return str(path)
 
 
-class ProceedingsMaterialFileSystemStorage(NoLocationMigrationFileSystemStorage):
-    """Storage class that generates URLs for proceedings material files"""
-    def url(self, name):
-        name = Path(name)
-        meeting_number = name.parts[0]
-        return f'/meeting/{meeting_number}/{"/".join(name.parts[1:])}'
-
-
 class Sponsor(models.Model):
     """Meeting sponsor"""
     meeting = ForeignKey(Meeting, related_name='sponsors')
     name = models.CharField(max_length=255, blank=False)
     logo = models.ImageField(
-        storage=ProceedingsMaterialFileSystemStorage(
-            location=settings.SPONSOR_LOGO_PATH,
-        ),
+        storage=NoLocationMigrationFileSystemStorage(location=settings.SPONSOR_LOGO_PATH),
         upload_to=_sponsor_upload_path,
+        width_field='logo_width',
+        height_field='logo_height',
         blank=False,
         validators=[
             MaxImageSizeValidator(
-                settings.SPONSOR_LOGO_MAX_WIDTH,
-                settings.SPONSOR_LOGO_MAX_HEIGHT,
+                settings.SPONSOR_LOGO_MAX_UPLOAD_WIDTH,
+                settings.SPONSOR_LOGO_MAX_UPLOAD_HEIGHT,
             ),
             validate_file_size,
-            file_extention_validator(settings.MEETING_VALID_UPLOAD_EXTENSIONS['sponsorlogo']),
-            mime_type_validator(settings.MEETING_VALID_UPLOAD_MIME_TYPES['sponsorlogo']),
+            WrappedValidator(
+                validate_file_extension,
+                settings.MEETING_VALID_UPLOAD_EXTENSIONS['sponsorlogo'],
+            ),
+            WrappedValidator(
+                validate_mime_type,
+                settings.MEETING_VALID_UPLOAD_MIME_TYPES['sponsorlogo'],
+            ),
         ],
     )
+    # These are filled in by the ImageField allow retrieval of image dimensions
+    # without processing the image each time it's loaded.
+    logo_width = models.PositiveIntegerField()
+    logo_height = models.PositiveIntegerField()
 
     class Meta:
         unique_together = (('meeting', 'name'),)
