@@ -208,6 +208,12 @@ def edit_sponsors(request, num):
         formset = SponsorFormSet(request.POST, request.FILES, instance=meeting)
         if formset.is_valid():
             formset.save()
+            # remove any logos from deleted sponsors
+            for form in formset.deleted_forms:
+                try:
+                    Path(form.instance.logo.path).unlink()
+                except FileNotFoundError:
+                    pass  # After python 3.8, can use missing_ok param to unlink instead
             return redirect('ietf.meeting.views.materials', num=meeting.number)
     else:
         formset = SponsorFormSet(instance=meeting)
