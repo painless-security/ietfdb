@@ -14,6 +14,7 @@ from ietf.meeting.forms import FileUploadForm
 from ietf.meeting.models import Meeting, Sponsor
 from ietf.meeting.helpers import get_meeting
 from ietf.name.models import ProceedingsMaterialTypeName
+from ietf.secr.proceedings.utils import handle_upload_file
 from ietf.utils.text import xslugify
 
 class UploadProceedingsMaterialForm(FileUploadForm):
@@ -45,8 +46,9 @@ class EditProceedingsMaterialForm(forms.Form):
     )
 
 
-def save_proceedings_material_doc(meeting, material_type, title, by, file=None, state=None):
+def save_proceedings_material_doc(meeting, material_type, title, request, file=None, state=None):
     events = []
+    by = request.user.person
 
     doc_name = '-'.join([
         'proceedings',
@@ -75,16 +77,12 @@ def save_proceedings_material_doc(meeting, material_type, title, by, file=None, 
     if file:
         if not created:
             doc.rev = '{:02}'.format(int(doc.rev) + 1)
-        file_path = (
-                Path(doc.get_file_path()) / f'{doc.name}-{doc.rev}'
-        ).with_suffix(
-            Path(file.name).suffix
-        )
-        with file_path.open('wb+') as dest:
-            for chunk in file.chunks():
-                dest.write(chunk)
+        filename = f'{doc.name}-{doc.rev}{Path(file.name).suffix}'
+        save_error = handle_upload_file(file, filename, meeting, 'procmaterials', )
+        if save_error is not None:
+            raise RuntimeError(save_error)
 
-        doc.uploaded_filename = file_path.name
+        doc.uploaded_filename = filename
         e = NewRevisionDocEvent.objects.create(
             type="new_revision",
             doc=doc,
@@ -140,9 +138,9 @@ def upload_material(request, num, material_type):
             doc = save_proceedings_material_doc(
                 meeting,
                 material_type,
+                request=request,
                 file=form.cleaned_data.get('file', None),
                 title=str(material if material is not None else material_type),
-                by=request.user.person,
             )
             if material is None:
                 meeting.proceedings_materials.create(type=material_type, document=doc)
@@ -171,10 +169,10 @@ def edit_material(request, num, material_type):
             save_proceedings_material_doc(
                 meeting,
                 material_type,
+                request=request,
                 title=form.cleaned_data['title'],
                 file=form.cleaned_data.get('file', None),
                 state=form.cleaned_data['state'],
-                by=request.user.person,
             )
             return redirect("ietf.meeting.views.materials", num=meeting.number)
     else:
