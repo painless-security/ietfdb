@@ -58,12 +58,26 @@ class RegexStringValidator(object):
 
 validate_regular_expression_string = RegexStringValidator()
 
-def validate_file_size(file):
-    if file.size > settings.SECR_MAX_UPLOAD_SIZE:
+def validate_file_size(file, missing_ok=False):
+    try:
+        size = file.size
+    except FileNotFoundError:
+        if missing_ok:
+            return
+        else:
+            raise
+
+    if size > settings.SECR_MAX_UPLOAD_SIZE:
         raise ValidationError('Please keep filesize under %s. Requested upload size was %s' % (filesizeformat(settings.SECR_MAX_UPLOAD_SIZE), filesizeformat(file.size)))
 
-def validate_mime_type(file, valid):
-    file.open()
+def validate_mime_type(file, valid, missing_ok=False):
+    try:
+        file.open()
+    except FileNotFoundError:
+        if missing_ok:
+            return None, None
+        else:
+            raise
     raw = file.read()
     mime_type, encoding = get_mime_type(raw)
     # work around mis-identification of text where a line has 'virtual' as
@@ -230,4 +244,7 @@ class MaxImageSizeValidator(BaseValidator):
         return (a[0] > b[0]) or (a[1] > b[1])
 
     def clean(self, x):
-        return x.width, x.height
+        try:
+            return x.width, x.height
+        except FileNotFoundError:
+            return 0, 0  # don't fail if the image is missing

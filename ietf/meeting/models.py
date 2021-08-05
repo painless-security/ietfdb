@@ -45,6 +45,7 @@ from ietf.utils.validators import (
     MaxImageSizeValidator, WrappedValidator, validate_file_size, validate_mime_type,
     validate_file_extension,
 )
+from ietf.utils.fields import MissingOkImageField
 
 countries = list(pytz.country_names.items())
 countries.sort(key=lambda x: x[1])
@@ -1461,7 +1462,7 @@ class Sponsor(models.Model):
     """Meeting sponsor"""
     meeting = ForeignKey(Meeting, related_name='sponsors')
     name = models.CharField(max_length=255, blank=False)
-    logo = models.ImageField(
+    logo = MissingOkImageField(
         storage=NoLocationMigrationFileSystemStorage(location=settings.SPONSOR_LOGO_PATH),
         upload_to=_sponsor_upload_path,
         width_field='logo_width',
@@ -1472,7 +1473,7 @@ class Sponsor(models.Model):
                 settings.SPONSOR_LOGO_MAX_UPLOAD_WIDTH,
                 settings.SPONSOR_LOGO_MAX_UPLOAD_HEIGHT,
             ),
-            validate_file_size,
+            WrappedValidator(validate_file_size, True),
             WrappedValidator(
                 validate_file_extension,
                 settings.MEETING_VALID_UPLOAD_EXTENSIONS['sponsorlogo'],
@@ -1480,13 +1481,14 @@ class Sponsor(models.Model):
             WrappedValidator(
                 validate_mime_type,
                 settings.MEETING_VALID_UPLOAD_MIME_TYPES['sponsorlogo'],
+                True,
             ),
         ],
     )
     # These are filled in by the ImageField allow retrieval of image dimensions
     # without processing the image each time it's loaded.
-    logo_width = models.PositiveIntegerField()
-    logo_height = models.PositiveIntegerField()
+    logo_width = models.PositiveIntegerField(null=True)
+    logo_height = models.PositiveIntegerField(null=True)
 
     class Meta:
         unique_together = (('meeting', 'name'),)
