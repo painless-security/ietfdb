@@ -311,6 +311,10 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
                             duration=datetime.timedelta(hours=1), location=room)
             for n in range(1,4)
         ]
+        now_timeslots = [
+            TimeSlotFactory(meeting=meeting, time=right_now - datetime.timedelta(seconds=1),
+                            duration=datetime.timedelta(hours=1), location=room)
+        ]
 
         past_sessions = [
             SchedTimeSessAssignment.objects.create(
@@ -328,6 +332,14 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
             ).session
             for ts in future_timeslots
         ]
+        now_sessions = [
+            SchedTimeSessAssignment.objects.create(
+                schedule=meeting.schedule,
+                timeslot=ts,
+                session=SessionFactory(meeting=meeting, add_to_schedule=False),
+            ).session
+            for ts in now_timeslots
+        ]
 
         url = self.absreverse('ietf.meeting.views.edit_meeting_schedule', kwargs=dict(num=meeting.number))
         self.login(username=meeting.schedule.owner.user.username)
@@ -338,6 +350,12 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
         )
         self.assertGreaterEqual(len(past_flags), len(past_timeslots) + len(past_sessions),
                                 'Expected at least one flag for each past timeslot and session')
+
+        now_flags = self.driver.find_elements_by_css_selector(
+            ','.join('#timeslot{} .past-flag'.format(ts.pk) for ts in now_timeslots)
+        )
+        self.assertGreaterEqual(len(now_flags), len(now_timeslots) + len(now_sessions),
+                                'Expected at least one flag for each "now" timeslot and session')
 
         future_flags = self.driver.find_elements_by_css_selector(
             ','.join('#timeslot{} .past-flag'.format(ts.pk) for ts in future_timeslots)
@@ -350,6 +368,9 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
         ))
         for flag in past_flags:
             self.assertTrue(flag.is_displayed(), 'Past timeslot or session not flagged as past')
+
+        for flag in now_flags:
+            self.assertTrue(flag.is_displayed(), '"Now" timeslot or session not flagged as past')
 
         for flag in future_flags:
             self.assertFalse(flag.is_displayed(), 'Future timeslot or session is flagged as past')

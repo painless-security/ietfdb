@@ -800,7 +800,7 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
             existing_assignments = SchedTimeSessAssignment.objects.filter(session=session, schedule=schedule)
             assertion('len(existing_assignments) <= 1',
                       note='Multiple assignments for {} in schedule {}'.format(session, schedule))
-            if not all(timeslot_locked(ea.timeslot) for ea in existing_assignments):
+            if not any(timeslot_locked(ea.timeslot) for ea in existing_assignments):
                 existing_assignments.delete()
             else:
                 return _json_response(False, error="Can't unassign this session.")

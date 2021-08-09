@@ -2,7 +2,7 @@
 jQuery(document).ready(function () {
     let content = jQuery(".edit-meeting-schedule");
     /* Drag data stored via the drag event dataTransfer interface is only accessible on
-     * dragstart and dragend events. Other drag events can see only the MIME types with
+     * dragstart and dragend events. Other drag events can see only the MIME types that have
      * data. Use a non-registered type to identify our session drags. Unregistered MIME
      * types are strongly discouraged by RFC6838, but we are not actually attempting to
      * exchange data with anything outside this script so that really does not apply. */
