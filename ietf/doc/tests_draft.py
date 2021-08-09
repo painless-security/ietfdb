@@ -13,6 +13,7 @@ from pyquery import PyQuery
 
 from django.urls import reverse as urlreverse
 from django.conf import settings
+from django.utils.html import escape
 
 import debug                            # pyflakes:ignore
 
@@ -644,6 +645,9 @@ class ResurrectTests(DraftFileMixin, TestCase):
 class ExpireIDsTests(DraftFileMixin, TestCase):
     def test_in_draft_expire_freeze(self):
         from ietf.doc.expire import in_draft_expire_freeze
+
+        # If there is no "next" meeting, we musn't be in a freeze
+        self.assertTrue(not in_draft_expire_freeze())
 
         meeting = Meeting.objects.create(number="123",
                                type=MeetingTypeName.objects.get(slug="ietf"),
@@ -1317,7 +1321,7 @@ class IndividualInfoFormsTests(TestCase):
         self.assertEqual(len(q('form textarea[id=id_note]')), 1)
         self.assertEqual(len(q('button:contains("Send")')), 1)
         for ah in doc.action_holders.all():
-            self.assertContains(r, ah.plain_name())
+            self.assertContains(r, escape(ah.plain_name()))
 
         empty_outbox()
         r = self.client.post(url, dict(note='this is my note'))  # note should be < 78 chars to avoid wrapping
