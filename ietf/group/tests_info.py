@@ -72,7 +72,7 @@ class GroupPagesTests(TestCase):
         self.assertContains(r, group.parent.name)
         self.assertContains(r, group.acronym)
         self.assertContains(r, group.name)
-        self.assertContains(r, group.ad_role().person.plain_name())
+        self.assertContains(r, escape(group.ad_role().person.plain_name()))
 
         for t in ('rg','area','ag', 'rag', 'dir','review','team','program'):
             g = GroupFactory.create(type_id=t,state_id='active') 
@@ -143,7 +143,7 @@ class GroupPagesTests(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, group.acronym)
         self.assertContains(r, group.name)
-        self.assertContains(r, group.ad_role().person.plain_name())
+        self.assertContains(r, escape(group.ad_role().person.plain_name()))
         self.assertContains(r, chair.address)
         self.assertContains(r, "This is a charter.")
 
@@ -152,7 +152,7 @@ class GroupPagesTests(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, group.acronym)
         self.assertContains(r, group.name)
-        self.assertContains(r, group.ad_role().person.plain_name())
+        self.assertContains(r, escape(group.ad_role().person.plain_name()))
         self.assertContains(r, chair.address)
         self.assertContains(r, "This is a charter.")
 
@@ -232,7 +232,7 @@ class GroupPagesTests(TestCase):
             self.assertContains(r, draft2.name)
             self.assertContains(r, draft3.name)
             for ah in draft3.action_holders.all():
-                self.assertContains(r, ah.plain_name())
+                self.assertContains(r, escape(ah.plain_name()))
             self.assertContains(r, 'for 173 days', count=1)  # the old_dah should be tagged
 
         # Make sure that a logged in user is presented with an opportunity to add results to their community list
@@ -272,8 +272,6 @@ class GroupPagesTests(TestCase):
             self.assertContains(r, milestone.docs.all()[0].name)
 
     def test_group_about(self):
-
-        RoleFactory(group=Group.objects.get(acronym='iab'),name_id='member',person=PersonFactory(user__username='iab-member'))
 
         interesting_users = [ 'plain','iana','iab-chair','irtf-chair', 'marschairman', 'teamchairman','ad', 'iab-member', 'secretary', ]
 
@@ -350,7 +348,7 @@ class GroupPagesTests(TestCase):
             self.assertEqual(r.status_code, 200)
             
             for role in group.role_set.all():
-                self.assertContains(r, role.person.plain_name())
+                self.assertContains(r, escape(role.person.plain_name()))
 
     def test_materials(self):
         group = GroupFactory(type_id="team", acronym="testteam", name="Test Team", state_id="active")
@@ -563,7 +561,7 @@ class GroupEditTests(TestCase):
         q = PyQuery(r.content)
         self.assertTrue(len(q('form .has-error')) > 0)
 
-        # try elevating BoF to WG
+        # try elevating BOF to WG
         group.state_id = "bof"
         group.save()
 
@@ -1320,6 +1318,18 @@ class MilestoneTests(TestCase):
         self.assertEqual(GroupMilestone.objects.filter(due=m1.due, desc=m1.desc, state="charter").count(), 1)
 
         self.assertEqual(group.charter.docevent_set.count(), events_before + 2) # 1 delete, 1 add
+
+    def test_edit_sort(self):
+        group = GroupFactory(uses_milestone_dates=False)
+        DatelessGroupMilestoneFactory(group=group,order=1)
+        DatelessGroupMilestoneFactory(group=group,order=0)
+        DatelessGroupMilestoneFactory(group=group,order=None)
+        url = urlreverse('ietf.group.milestones.edit_milestones;current', kwargs=dict(group_type=group.type_id, acronym=group.acronym))
+        login_testing_unauthorized(self, "secretary", url)
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        q = PyQuery(r.content)
+        self.assertEqual([x.value for x in q('input[id^=id_m][id$=order]')], [None, '0', '1'])
 
 class DatelessMilestoneTests(TestCase):
     def test_switch_to_dateless(self):

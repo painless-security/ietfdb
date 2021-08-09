@@ -9,11 +9,11 @@ import datetime
 from django.core.files.base import ContentFile
 
 from ietf.meeting.models import Meeting, Session, SchedulingEvent, Schedule, TimeSlot, SessionPresentation, FloorPlan, Room, SlideSubmission
-from ietf.name.models import SessionStatusName
+from ietf.name.models import ConstraintName, SessionStatusName
 from ietf.group.factories import GroupFactory
 from ietf.person.factories import PersonFactory
 
-class MeetingFactory(factory.DjangoModelFactory):
+class MeetingFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = Meeting
 
@@ -75,7 +75,25 @@ class MeetingFactory(factory.DjangoModelFactory):
             obj.schedule = ScheduleFactory(meeting=obj)
             obj.save()
 
-class SessionFactory(factory.DjangoModelFactory):
+    @factory.post_generation
+    def group_conflicts(obj, create, extracted, **kwargs):  # pulint: disable=no-self-argument
+        """Add conflict types
+
+        Pass a list of ConflictNames as group_conflicts to specify which are enabled.
+        """
+        if extracted is None:
+            extracted = [
+                ConstraintName.objects.get(slug=s) for s in [
+                'chair_conflict', 'tech_overlap', 'key_participant'
+                ]]
+        if create:
+            for cn in extracted:
+                obj.group_conflict_types.add(
+                    cn if isinstance(cn, ConstraintName) else ConstraintName.objects.get(slug=cn)
+                )
+
+
+class SessionFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = Session
 
@@ -116,7 +134,7 @@ class SessionFactory(factory.DjangoModelFactory):
             ts = obj.meeting.timeslot_set.all()
             obj.timeslotassignments.create(timeslot=ts[random.randrange(len(ts))],schedule=obj.meeting.schedule)
 
-class ScheduleFactory(factory.DjangoModelFactory):
+class ScheduleFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = Schedule
 
@@ -124,7 +142,7 @@ class ScheduleFactory(factory.DjangoModelFactory):
     name = factory.Sequence(lambda n: 'schedule_%d'%n)
     owner = factory.SubFactory(PersonFactory)
 
-class RoomFactory(factory.DjangoModelFactory):
+class RoomFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = Room
 
@@ -140,7 +158,7 @@ class RoomFactory(factory.DjangoModelFactory):
                 obj.session_types.add(st)
 
 
-class TimeSlotFactory(factory.DjangoModelFactory):
+class TimeSlotFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = TimeSlot
 
@@ -164,7 +182,7 @@ class TimeSlotFactory(factory.DjangoModelFactory):
     def duration(self):
         return datetime.timedelta(minutes=30+random.randrange(9)*15)
 
-class SessionPresentationFactory(factory.DjangoModelFactory):
+class SessionPresentationFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = SessionPresentation
 
@@ -174,7 +192,7 @@ class SessionPresentationFactory(factory.DjangoModelFactory):
     def rev(self):
         return self.document.rev
 
-class FloorPlanFactory(factory.DjangoModelFactory):
+class FloorPlanFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = FloorPlan
 
@@ -190,7 +208,7 @@ class FloorPlanFactory(factory.DjangoModelFactory):
             )
         )
 
-class SlideSubmissionFactory(factory.DjangoModelFactory):
+class SlideSubmissionFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = SlideSubmission
 
