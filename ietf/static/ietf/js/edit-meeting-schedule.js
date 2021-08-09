@@ -249,7 +249,7 @@ jQuery(document).ready(function () {
         }
 
         const timeslot = jQuery(session).closest('div.timeslot');
-        if (!timeslot) {
+        if (timeslot.length === 0) {
             return true;
         }
 
@@ -282,6 +282,10 @@ jQuery(document).ready(function () {
      * not marked as 'past'.
      */
     function sessionDropAllowed(elt) {
+        if (!officialSchedule) {
+            return true;
+        }
+
         const relevant_parent = elt.closest('.timeslot, .unassigned-sessions');
         return relevant_parent && !(relevant_parent.classList.contains('past'));
     }

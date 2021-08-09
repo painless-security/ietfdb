@@ -46,6 +46,7 @@ import debug                            # pyflakes:ignore
 
 import socket
 import datetime
+import pytz
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -69,6 +70,8 @@ class Command(BaseCommand):
             type=lambda s: datetime.datetime.strptime(s, '%Y-%m-%d').date(),
             default='2019-11-16',
         )
+        parser.add_argument('--tz', default='UTC',
+                            help='Time zone for created meeting. Defaults to UTC. Use "" to disable.')
 
     def _meeting_datetime(self, day, *time_args):
         """Generate a datetime on a meeting day"""
@@ -84,6 +87,9 @@ class Command(BaseCommand):
         opt_delete = options.get('delete', False)
         opt_use_old_conflicts = options.get('old_conflicts', False)
         self.start_date = options['start_date']
+        meeting_tz = options['tz']
+        if not opt_delete and (meeting_tz not in pytz.common_timezones):
+            self.stderr.write("Warning: {} is not a recognized time zone.".format(meeting_tz))
 
         if opt_delete:
             if Meeting.objects.filter(number='999').exists():
@@ -105,6 +111,7 @@ class Command(BaseCommand):
                     type_id='IETF',
                     date=self._meeting_datetime(0).date(),
                     days=7,
+                    time_zone=meeting_tz,
                 )
 
                 # Set enabled constraints
