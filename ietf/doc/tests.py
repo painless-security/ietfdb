@@ -247,7 +247,7 @@ class SearchTests(TestCase):
         r = self.client.get(urlreverse('ietf.doc.views_search.docs_for_ad', kwargs=dict(name=ad.full_name_as_key())))
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, draft.name)
-        self.assertContains(r, draft.action_holders.first().plain_name())
+        self.assertContains(r, escape(draft.action_holders.first().plain_name()))
         self.assertContains(r, rfc.canonical_name())
         self.assertContains(r, conflrev.name)
         self.assertContains(r, statchg.name)
@@ -275,7 +275,7 @@ class SearchTests(TestCase):
         r = self.client.get(urlreverse('ietf.doc.views_search.drafts_in_last_call'))
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, draft.title)
-        self.assertContains(r, draft.action_holders.first().plain_name())
+        self.assertContains(r, escape(draft.action_holders.first().plain_name()))
 
     def test_in_iesg_process(self):
         doc_in_process = IndividualDraftFactory()
@@ -285,7 +285,7 @@ class SearchTests(TestCase):
         r = self.client.get(urlreverse('ietf.doc.views_search.drafts_in_iesg_process'))
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, doc_in_process.title)
-        self.assertContains(r, doc_in_process.action_holders.first().plain_name())
+        self.assertContains(r, escape(doc_in_process.action_holders.first().plain_name()))
         self.assertNotContains(r, doc_not_in_process.title)
         
     def test_indexes(self):
@@ -347,7 +347,7 @@ class SearchTests(TestCase):
         self.assertEqual(q('td.status span.label-warning').text(),"for 15 days")
         self.assertEqual(q('td.status span.label-danger').text(),"for 29 days")
         for ah in [draft.action_holders.first() for draft in drafts]:
-            self.assertContains(r, ah.plain_name())
+            self.assertContains(r, escape(ah.plain_name()))
 
 class DocDraftTestCase(TestCase):
     draft_text = """
@@ -2377,3 +2377,61 @@ class MaterialsTests(TestCase):
         self.assertEqual(r.status_code,200)
         q = PyQuery(r.content)
         self.assertEqual(q('#materials-content .panel-body a').attr['href'],'https://unusual.example')
+
+class Idnits2SupportTests(TestCase):
+
+    def setUp(self):
+        self.derived_dir = self.tempdir('derived')
+        self.saved_derived_dir = settings.DERIVED_DIR
+        settings.DERIVED_DIR = self.derived_dir
+
+    def tearDown(self):
+        settings.DERIVED_DIR = self.saved_derived_dir
+        shutil.rmtree(self.derived_dir)
+
+    def test_obsoleted(self):
+        rfc = WgRfcFactory(alias2__name='rfc1001')
+        WgRfcFactory(alias2__name='rfc1003',relations=[('obs',rfc)])
+        rfc = WgRfcFactory(alias2__name='rfc1005')
+        WgRfcFactory(alias2__name='rfc1007',relations=[('obs',rfc)])
+
+        url = urlreverse('ietf.doc.views_doc.idnits2_rfcs_obsoleted')
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 404)
+        call_command('generate_idnits2_rfcs_obsoleted')
+        url = urlreverse('ietf.doc.views_doc.idnits2_rfcs_obsoleted')
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.content, b'1001 1003\n1005 1007\n')
+
+    def test_rfc_status(self):
+        for slug in ('bcp', 'ds', 'exp', 'hist', 'inf', 'std', 'ps', 'unkn'):
+            WgRfcFactory(std_level_id=slug)
+        url = urlreverse('ietf.doc.views_doc.idnits2_rfc_status')
+        r = self.client.get(url)
+        self.assertEqual(r.status_code,404)
+        call_command('generate_idnits2_rfc_status')
+        r = self.client.get(url)
+        self.assertEqual(r.status_code,200)
+        blob = unicontent(r).replace('\n','')
+        self.assertEqual(blob[6312-1],'O')
+
+    def test_idnits2_state(self):
+        rfc = WgRfcFactory()
+        url = urlreverse('ietf.doc.views_doc.idnits2_state', kwargs=dict(name=rfc.canonical_name()))
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r,'rfcnum')
+
+        draft = WgDraftFactory()
+        url = urlreverse('ietf.doc.views_doc.idnits2_state', kwargs=dict(name=draft.canonical_name()))
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        self.assertNotContains(r,'rfcnum')
+        self.assertContains(r,'Unknown')
+
+        draft = WgDraftFactory(intended_std_level_id='ps')
+        url = urlreverse('ietf.doc.views_doc.idnits2_state', kwargs=dict(name=draft.canonical_name()))
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r,'Proposed')
