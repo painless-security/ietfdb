@@ -952,6 +952,7 @@ class MeetingTests(TestCase):
             self.assertFalse(q('ul li a:contains("%s")' % slide.title))
 
 
+@override_settings(MEETING_SESSION_LOCK_TIME=datetime.timedelta(minutes=10))
 class EditMeetingScheduleTests(TestCase):
     """Tests of the meeting editor view
 
@@ -1207,8 +1208,27 @@ class EditMeetingScheduleTests(TestCase):
         r = self.client.post(unofficial_url, post_data)
         self.assertEqual(r.status_code, 302)
 
+        # now with the "past" timeslot less than MEETING_SESSION_LOCK_TIME in the future
+        for room in room_groups[0]:
+            ts = room.timeslot_set.last()
+            ts.time = right_now + datetime.timedelta(minutes=9)  # must be < MEETING_SESSION_LOCK_TIME
+            ts.save()
+        self.assertTrue(room_groups[0][0].timeslot_set.last().time < right_now + settings.MEETING_SESSION_LOCK_TIME)
+        self.assertTrue(room_groups[0][0].timeslot_set.first().time > right_now + settings.MEETING_SESSION_LOCK_TIME)
+        post_data = dict(
+            action='swaptimeslots',
+            origin_timeslot=str(room_groups[0][0].timeslot_set.first().pk),
+            target_timeslot=str(room_groups[0][0].timeslot_set.last().pk),
+            rooms=','.join([str(room.pk) for room in room_groups[0]]),
+        )
+        r = self.client.post(official_url, post_data)
+        self.assertContains(r, "Can't swap these timeslots.", status_code=400)
+
         # now with both in the past
         for room in room_groups[0]:
+            ts = room.timeslot_set.last()
+            ts.time = right_now - datetime.timedelta(minutes=5)
+            ts.save()
             ts = room.timeslot_set.first()
             ts.time = right_now - datetime.timedelta(hours=1)
             ts.save()
@@ -1480,8 +1500,15 @@ class EditMeetingScheduleTests(TestCase):
         timeslots = dict(
             past=TimeSlotFactory(meeting=meeting, time=right_now - datetime.timedelta(hours=1)),
             other_past=TimeSlotFactory(meeting=meeting, time=right_now - datetime.timedelta(hours=2)),
+            barely_future=TimeSlotFactory(meeting=meeting, time=right_now + datetime.timedelta(minutes=9)),
             future=TimeSlotFactory(meeting=meeting, time=right_now + datetime.timedelta(hours=1)),
             other_future=TimeSlotFactory(meeting=meeting, time=right_now + datetime.timedelta(hours=2)),
+        )
+
+        self.assertLess(
+            timeslots['barely_future'].time - right_now,
+            settings.MEETING_SESSION_LOCK_TIME,
+            '"barely_future" timeslot is too far in the future. Check MEETING_SESSION_LOCK_TIME settings',
         )
 
         url_for = lambda sched: urlreverse(
@@ -1539,9 +1566,26 @@ class EditMeetingScheduleTests(TestCase):
         )
         session.delete()  # takes the SchedTimeSessAssignment with it
 
-        # future session to future timeslot, official: allowed
-        session = _new_session_in(timeslots['future'], schedules['official'])
+        # future session to future timeslot, unofficial: allowed
+        session = _new_session_in(timeslots['future'], schedules['unofficial'])
         r = self.client.post(url_for(schedules['unofficial']), post_data(session, timeslots['other_future']))
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(self._decode_json_response(r)['success'])
+        session.delete()  # takes the SchedTimeSessAssignment with it
+
+        # future session to barely future timeslot, official: not allowed
+        session = _new_session_in(timeslots['future'], schedules['official'])
+        r = self.client.post(url_for(schedules['official']), post_data(session, timeslots['barely_future']))
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(
+            self._decode_json_response(r),
+            dict(success=False, error="Can't assign to this timeslot."),
+        )
+        session.delete()  # takes the SchedTimeSessAssignment with it
+
+        # future session to future timeslot, unofficial: allowed
+        session = _new_session_in(timeslots['future'], schedules['unofficial'])
+        r = self.client.post(url_for(schedules['unofficial']), post_data(session, timeslots['barely_future']))
         self.assertEqual(r.status_code, 200)
         self.assertTrue(self._decode_json_response(r)['success'])
         session.delete()  # takes the SchedTimeSessAssignment with it
@@ -1591,6 +1635,13 @@ class EditMeetingScheduleTests(TestCase):
         timeslots = dict(
             past=TimeSlotFactory(meeting=meeting, time=right_now - datetime.timedelta(hours=1)),
             future=TimeSlotFactory(meeting=meeting, time=right_now + datetime.timedelta(hours=1)),
+            barely_future=TimeSlotFactory(meeting=meeting, time=right_now + datetime.timedelta(minutes=9)),
+        )
+
+        self.assertLess(
+            timeslots['barely_future'].time - right_now,
+            settings.MEETING_SESSION_LOCK_TIME,
+            '"barely_future" timeslot is too far in the future. Check MEETING_SESSION_LOCK_TIME settings',
         )
 
         url_for = lambda sched: urlreverse(
@@ -1626,6 +1677,19 @@ class EditMeetingScheduleTests(TestCase):
 
         # past timeslot, unofficial schedule: allow
         r = self.client.post(url_for(schedules['unofficial']), post_data(timeslots['past'], schedules['unofficial']))
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(self._decode_json_response(r)['success'])
+
+        # barely future session, official schedule: reject
+        r = self.client.post(url_for(schedules['official']), post_data(timeslots['barely_future'], schedules['official']))
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(
+            self._decode_json_response(r),
+            dict(success=False, error="Can't unassign this session."),
+        )
+
+        # barely future timeslot, unofficial schedule: allow
+        r = self.client.post(url_for(schedules['unofficial']), post_data(timeslots['barely_future'], schedules['unofficial']))
         self.assertEqual(r.status_code, 200)
         self.assertTrue(self._decode_json_response(r)['success'])
 

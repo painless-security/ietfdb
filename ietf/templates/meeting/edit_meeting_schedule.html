@@ -30,7 +30,8 @@
 {% block content %}
   {% origin %}
   <div class="edit-meeting-schedule {% if schedule.is_official %}official-schedule{% endif %}"
-       data-timezone="{{ meeting.time_zone }}">
+       data-timezone="{{ meeting.time_zone }}"
+       data-lock-seconds="{{ lock_time.total_seconds }}">
 
     <p class="pull-right">
       {% if can_edit_properties %}

@@ -8,12 +8,21 @@ jQuery(document).ready(function () {
      * exchange data with anything outside this script so that really does not apply. */
     const dnd_mime_type = 'text/x.session-drag';
     const meetingTimeZone = content.data('timezone');
+    const lockSeconds = Number(content.data('lock-seconds') || 0);
 
     function reportServerError(xhr, textStatus, error) {
         let errorText = error || textStatus;
         if (xhr && xhr.responseText)
             errorText += "\n\n" + xhr.responseText;
         alert("Error: " + errorText);
+    }
+
+    /**
+     * Time to treat as current time for computing whether to lock timeslots
+     * @returns {*} Moment object equal to lockSeconds in the future
+     */
+    function effectiveNow() {
+        return moment().add(lockSeconds, 'seconds');
     }
 
     let sessions = content.find(".session").not(".readonly");
@@ -192,11 +201,17 @@ jQuery(document).ready(function () {
         }
     }
 
-    // uses current time if now is not passed in
+    /**
+     * Should this timeslot be treated as a future timeslot?
+     *
+     * @param timeslot timeslot to test
+     * @param now (optional) threshold time (defaults to effectiveNow())
+     * @returns Boolean true if the timeslot is in the future
+     */
     function isFutureTimeslot(timeslot, now) {
         // resist the temptation to use native JS Date parsing, it is hopelessly broken
         const timeslot_time = startMoment(timeslot);
-        return timeslot_time.isAfter(now || moment());
+        return timeslot_time.isAfter(now || effectiveNow());
     }
 
     function hidePastTimeslotHints() {
@@ -208,7 +223,7 @@ jQuery(document).ready(function () {
     }
 
     function updatePastTimeslots() {
-        const now = moment();
+        const now = effectiveNow();
 
         // mark timeslots
         timeslots.filter(
@@ -420,7 +435,7 @@ jQuery(document).ready(function () {
             }
             if (officialSchedule) {
                 // disable any that have passed
-                const now=moment();
+                const now=effectiveNow();
                 const past_radios = radios.filter(
                   (_, radio) => parseISOTimestamp(radio.dataset.start).isSameOrBefore(now, datePrecision)
                 );

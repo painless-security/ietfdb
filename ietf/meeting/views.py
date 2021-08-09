@@ -469,11 +469,12 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
 
     can_see, can_edit, secretariat = schedule_permissions(meeting, schedule, request.user)
 
+    lock_time = settings.MEETING_SESSION_LOCK_TIME
     def timeslot_locked(ts):
         meeting_now = now().astimezone(pytz.timezone(meeting.time_zone))
         if not settings.USE_TZ:
             meeting_now = meeting_now.replace(tzinfo=None)
-        return schedule.is_official and (ts.time < meeting_now)
+        return schedule.is_official and (ts.time - meeting_now < lock_time)
 
     if not can_see:
         if request.method == 'POST':
@@ -946,6 +947,7 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
         'unassigned_sessions': unassigned_sessions,
         'session_parents': session_parents,
         'hide_menu': True,
+        'lock_time': lock_time,
     })
 
 
