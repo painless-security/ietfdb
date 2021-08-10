@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from django import forms
-from django.http import Http404, FileResponse
+from django.http import Http404, FileResponse, HttpResponseBadRequest
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse as urlreverse
 
@@ -35,13 +35,6 @@ class EditProceedingsMaterialForm(forms.Form):
     title = forms.CharField(
         help_text='Label that will appear on the proceedings page',
         max_length=Document._meta.get_field("title").max_length,
-        required=True,
-    )
-    state = forms.ModelChoiceField(
-        queryset=State.objects.filter(type='procmaterials', used=True),
-        label='State',
-        help_text='Material only appears if state is "active"',
-        empty_label=None,
         required=True,
     )
 
@@ -123,13 +116,6 @@ def upload_material(request, num, material_type):
     # turn the material_type slug into the actual instance
     material_type = get_object_or_404(ProceedingsMaterialTypeName, slug=material_type)
     material = meeting.proceedings_materials.filter(type=material_type).first()
-    if material is not None:
-        # uploading a replacement, so return to the edit page when done
-        next_page = urlreverse('ietf.meeting.views_proceedings.edit_material',
-                               kwargs=dict(num=num, material_type=material_type.pk))
-    else:
-        # for a new item, return to the materials page instead
-        next_page = urlreverse('ietf.meeting.views.materials', kwargs=dict(num=num))
 
     if request.method == 'POST':
         form = UploadProceedingsMaterialForm(request.POST, request.FILES)
@@ -144,18 +130,33 @@ def upload_material(request, num, material_type):
             )
             if material is None:
                 meeting.proceedings_materials.create(type=material_type, document=doc)
-            return redirect(next_page)
+            return redirect('ietf.meeting.views_proceedings.material_details')
     else:
         form = UploadProceedingsMaterialForm()
 
     return render(request, 'meeting/proceedings/upload_material.html', {
-        'back_href': next_page,
         'form': form,
         'material': material,
         'material_type': material_type,
         'meeting': meeting,
+        'submit_button_label': 'Upload',
     })
 
+@role_required('Secretariat')
+def material_details(request, num):
+    meeting = get_meeting(num)
+    proceedings_materials = [
+        (type_slug, ProceedingsMaterialTypeName.objects.get(pk=type_slug), meeting.proceedings_materials.filter(type=type_slug).first())
+        for type_slug in ['acknowledgements', 'social_event', 'host_speaker_series', 'additional_information']
+    ]
+    return render(
+        request,
+        'meeting/proceedings/material_details.html',
+        dict(
+            meeting=meeting,
+            proceedings_materials=proceedings_materials,
+        )
+    )
 
 @role_required('Secretariat')
 def edit_material(request, num, material_type):
@@ -172,14 +173,12 @@ def edit_material(request, num, material_type):
                 request=request,
                 title=form.cleaned_data['title'],
                 file=form.cleaned_data.get('file', None),
-                state=form.cleaned_data['state'],
             )
-            return redirect("ietf.meeting.views.materials", num=meeting.number)
+            return redirect("ietf.meeting.views_proceedings.material_details", num=meeting.number)
     else:
         form = EditProceedingsMaterialForm(
             initial=dict(
                 title=material.document.title,
-                state=material.document.get_state(),
             ),
         )
 
@@ -192,6 +191,28 @@ def edit_material(request, num, material_type):
         'meeting': meeting,
     })
 
+@role_required('Secretariat')
+def remove_restore_material(request, num, material_type, action):
+    if action not in ['remove', 'restore']:
+        return HttpResponseBadRequest('Unsupported action')
+    meeting = get_meeting(num)
+    material = meeting.proceedings_materials.filter(type_id=material_type).first()
+    if material is None:
+        raise Http404('No such material for this meeting')
+    if request.method == 'POST':
+        material.document.set_state(
+            State.objects.get(
+                type_id='procmaterials',
+                slug='active' if action == 'restore' else 'removed',
+            )
+        )
+        return redirect('ietf.meeting.views_proceedings.material_details', num=num)
+
+    return render(
+        request,
+        'meeting/proceedings/remove_restore_material.html',
+        dict(material=material, action=action)
+    )
 
 @role_required('Secretariat')
 def edit_sponsors(request, num):

@@ -30,14 +30,8 @@
 {% block edit_form %}
   <form class="upload-material" method="post" enctype="multipart/form-data">
     {% csrf_token %}
-
     {% bootstrap_form form %}
 
-    {% block form_buttons %}
-      {% buttons %}
-        <a class="btn btn-default pull-right" href="{{ back_href }}">Back</a>
-        <button class="btn btn-primary" type="submit">Upload</button>
-      {% endbuttons %}
-    {% endblock %}
+    {% block form_buttons %}{{ block.super }}{% endblock %}
   </form>
 {% endblock %}

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {# Copyright The IETF Trust 2021, All Rights Reserved #}
-{% load origin %}
+{% load origin tz %}
 
 {% load bootstrap3 %}
 
@@ -20,6 +20,12 @@
     {% endblock %}
   </h1>
 
+{% if material is not None %}
+  <p>
+    A file for this material type was uploaded at {% with tm=material.document.time|utc %}
+    {{ tm|date:"H:i:s" }} on {{ tm|date:"Y-m-d" }}.{% endwith %}
+  </p>
+{% endif %}
   {% block intro %}{% endblock %}
 
   {% block edit_form %}
@@ -31,8 +37,8 @@
       {# To replace the form but keep default buttons, use block.super in the edit_form block #}
       {% block form_buttons %}
         {% buttons %}
-          <a class="btn btn-default pull-right" href="{{ back_href }}">Back</a>
-          <button class="btn btn-primary" type="submit">Save</button>
+          <a class="btn btn-default pull-right" href="{% url 'ietf.meeting.views_proceedings.material_details' num=meeting.number %}">Back</a>
+          <button class="btn btn-primary" type="submit">{% firstof submit_button_label 'Save' %}</button>
         {% endbuttons %}
       {% endblock %}
     </form>

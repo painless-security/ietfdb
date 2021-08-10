@@ -3,25 +3,11 @@
 {% load tz %}
 
 {% block intro %}
-  A file for this material type was uploaded at {% with tm=material.document.time|utc %}
-  {{ tm|date:"H:i:s" }} on {{ tm|date:"Y-m-d" }}.
-{% endwith %}
-  <a
-    href="{% url 'ietf.meeting.views_proceedings.upload_material' num=meeting.number material_type=material_type.pk %}">
-    Replace the file?
-  </a>
-
   <p class="help-block">
     {% if material.active %}
       This item will be listed on the proceedings as "{{ material }}". To change this, set the title below.<br>
-      To remove this document from the proceedings, set its state to "Removed".
     {% else %}
       This item currently will not appear on the proceedings.<br>
-      To restore this item to the proceedings, set its state to "Active" below.
     {% endif %}
   </p>
 {% endblock %}
-
-<h2>
-  {% if action == "new" %} Upload {% elif action == "revise" %} Upload New Revision {% endif %}
-</h2>
