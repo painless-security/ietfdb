@@ -22,7 +22,8 @@
 
     <tbody>
     {% for type_slug, type_name, material in proceedings_materials %}
-      {% if user|has_role:'Secretariat' or meeting and material.active %}{# secretariat sees empty slots, others do not #}
+      {# secretariat sees empty slots, others do not #}
+      {% if user|has_role:'Secretariat' or meeting and material.active %}
         <tr>
           <td>{{ type_name }}</td>
           {% if material and material.active %}
@@ -40,19 +41,13 @@
             <td colspan="2"></td>
           {% endif %}
           {% if user|has_role:'Secretariat' %}
-            <td>
-              {% if material %}
-                <a
-                  href="{% url 'ietf.meeting.views_proceedings.edit_material' num=meeting.number material_type=type_slug %}">
-                  {% if material.active %}Edit material{% else %}Add material{% endif %}
+            {% if forloop.first and material %}
+              <td rowspan="{{ proceedings_materials|length }}">
+                <a href="{% url 'ietf.meeting.views_proceedings.material_details' num=meeting.number %}">
+                  Edit materials
                 </a>
-              {% else %}
-                <a
-                  href="{% url 'ietf.meeting.views_proceedings.upload_material' num=meeting.number material_type=type_slug %}">
-                  Add material
-                </a>
-              {% endif %}
-            </td>
+              </td>
+            {% endif %}
           {% endif %}
         </tr>
       {% endif %}
