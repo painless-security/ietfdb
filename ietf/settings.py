@@ -962,6 +962,9 @@ FLOORPLAN_DIR = os.path.join(MEDIA_ROOT, FLOORPLAN_MEDIA_DIR)
 
 MEETING_USES_CODIMD_DATE = datetime.date(2020,7,6)
 
+# Session assignments on the official schedule lock this long before the timeslot starts
+MEETING_SESSION_LOCK_TIME = datetime.timedelta(minutes=10)
+
 # Maximum dimensions to accept at all
 SPONSOR_LOGO_MAX_UPLOAD_WIDTH = 1600
 SPONSOR_LOGO_MAX_UPLOAD_HEIGHT = 1600
