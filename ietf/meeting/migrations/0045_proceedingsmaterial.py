@@ -11,7 +11,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('name', '0031_populate_proceedingsmaterialtypename'),
-        ('meeting', '0043_populate_meeting_group_conflict_types'),
+        ('meeting', '0044_again_assign_correct_constraintnames'),
     ]
 
     operations = [

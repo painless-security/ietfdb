@@ -12,7 +12,7 @@ import ietf.utils.validators
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('meeting', '0044_proceedingsmaterial'),
+        ('meeting', '0045_proceedingsmaterial'),
     ]
 
     operations = [
