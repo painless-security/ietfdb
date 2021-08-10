@@ -3870,7 +3870,7 @@ def proceedings_acknowledgements(request, num=None):
     if not (num and num.isdigit()):
         raise Http404
     meeting = get_meeting(num)
-    if int(meeting.number) < settings.NEW_PROCEEDINGS_START:
+    if meeting.proceedings_format_version == 1:
         return HttpResponseRedirect( 'https://www.ietf.org/proceedings/%s/acknowledgement.html' % num )
     return render(request, "meeting/proceedings_acknowledgements.html", {
         'meeting': meeting,
@@ -3881,7 +3881,7 @@ def proceedings_attendees(request, num=None):
     if not (num and num.isdigit()):
         raise Http404
     meeting = get_meeting(num)
-    if int(meeting.number) < settings.NEW_PROCEEDINGS_START:
+    if meeting.proceedings_format_version == 1:
         return HttpResponseRedirect( 'https://www.ietf.org/proceedings/%s/attendees.html' % num )
     overview_template = '/meeting/proceedings/%s/attendees.html' % meeting.number
     try:
@@ -3898,7 +3898,7 @@ def proceedings_overview(request, num=None):
     if not (num and num.isdigit()):
         raise Http404
     meeting = get_meeting(num)
-    if int(meeting.number) < settings.NEW_PROCEEDINGS_START:
+    if meeting.proceedings_format_version == 1:
         return HttpResponseRedirect( 'https://www.ietf.org/proceedings/%s/overview.html' % num )
     overview_template = '/meeting/proceedings/%s/overview.rst' % meeting.number
     try:
@@ -3916,7 +3916,7 @@ def proceedings_progress_report(request, num=None):
     if not (num and num.isdigit()):
         raise Http404
     meeting = get_meeting(num)
-    if int(meeting.number) < settings.NEW_PROCEEDINGS_START:
+    if meeting.proceedings_format_version == 1:
         return HttpResponseRedirect( 'https://www.ietf.org/proceedings/%s/progress-report.html' % num )
     sdate = meeting.previous_meeting().date
     edate = meeting.date
