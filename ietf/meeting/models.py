@@ -760,11 +760,11 @@ class Schedule(models.Model):
 
     def qs_timeslots_in_use(self):
         """Get QuerySet containing timeslots used by the schedule"""
-        return self.meeting.timeslot_set.filter(sessionassignments__schedule=self)
+        return TimeSlot.objects.filter(sessionassignments__schedule=self)
 
     def qs_sessions_scheduled(self):
         """Get QuerySet containing sessions assigned to timeslots by this schedule"""
-        return self.meeting.session_set.filter(timeslotassignments__schedule=self)
+        return Session.objects.filter(timeslotassignments__schedule=self)
 
     def delete_schedule(self):
         self.assignments.all().delete()
