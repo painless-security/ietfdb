@@ -37,7 +37,7 @@ from django.conf.urls import include
 from django.views.generic import RedirectView
 from django.conf import settings
 
-from ietf.doc import views_search, views_draft, views_ballot, views_status_change, views_doc, views_downref, views_stats, views_help
+from ietf.doc import views_search, views_draft, views_ballot, views_status_change, views_doc, views_downref, views_stats, views_help, views_bofreq
 from ietf.utils.urls import url
 
 session_patterns = [
@@ -54,6 +54,8 @@ urlpatterns = [
     url(r'^ad2/(?P<name>[\w.-]+)/$', RedirectView.as_view(url='/doc/ad/%(name)s/', permanent=True)),
     url(r'^rfc-status-changes/?$', views_status_change.rfc_status_changes),
     url(r'^start-rfc-status-change/(?:%(name)s/)?$' % settings.URL_REGEXPS, views_status_change.start_rfc_status_change),
+    url(r'^bof-requests/?$', views_bofreq.bof_requests),
+    url(r'^bof-requests/new/$', views_bofreq.new_bof_request),
     url(r'^iesg/?$', views_search.drafts_in_iesg_process),
     url(r'^email-aliases/?$', views_doc.email_aliases),
     url(r'^downref/?$', views_downref.downref_registry),
@@ -67,6 +69,8 @@ urlpatterns = [
     url(r'^html/(?P<name>std[0-9]+?)(\.txt|\.html)?/?$', RedirectView.as_view(url=settings.RFC_EDITOR_INFO_BASE_URL+"%(name)s", permanent=False)), 
     url(r'^html/%(name)s(?:-%(rev)s)?(\.txt|\.html)?/?$' % settings.URL_REGEXPS, views_doc.document_html),
     url(r'^html/(?P<name>[Rr][Ff][Cc] [0-9]+?)(\.txt|\.html)?/?$', views_doc.document_html),
+    url(r'^idnits2-rfcs-obsoleted/?$', views_doc.idnits2_rfcs_obsoleted),
+    url(r'^idnits2-rfc-status/?$', views_doc.idnits2_rfc_status),
 
     url(r'^all/?$', views_search.index_all_drafts),
     url(r'^active/?$', views_search.index_active_drafts),
@@ -76,6 +80,7 @@ urlpatterns = [
 
     url(r'^%(name)s(?:/%(rev)s)?/$' % settings.URL_REGEXPS, views_doc.document_main),
     url(r'^%(name)s(?:/%(rev)s)?/bibtex/$' % settings.URL_REGEXPS, views_doc.document_bibtex),
+    url(r'^%(name)s(?:/%(rev)s)?/idnits2-state/$' % settings.URL_REGEXPS, views_doc.idnits2_state),
     url(r'^bibxml3/reference.I-D.%(name)s(?:-%(rev)s)?.xml$' % settings.URL_REGEXPS, views_doc.document_bibxml_ref),
     url(r'^bibxml3/%(name)s(?:-%(rev)s)?.xml$' % settings.URL_REGEXPS, views_doc.document_bibxml),
     url(r'^%(name)s/history/$' % settings.URL_REGEXPS, views_doc.document_history),
@@ -145,6 +150,7 @@ urlpatterns = [
     url(r'^%(name)s/meetings/?$' % settings.URL_REGEXPS, views_doc.all_presentations),
 
     url(r'^%(charter)s/' % settings.URL_REGEXPS, include('ietf.doc.urls_charter')),
+    url(r'^%(bofreq)s/' % settings.URL_REGEXPS, include('ietf.doc.urls_bofreq')),
     url(r'^%(name)s/conflict-review/' % settings.URL_REGEXPS, include('ietf.doc.urls_conflict_review')),
     url(r'^%(name)s/status-change/' % settings.URL_REGEXPS, include('ietf.doc.urls_status_change')),
     url(r'^%(name)s/material/' % settings.URL_REGEXPS, include('ietf.doc.urls_material')),

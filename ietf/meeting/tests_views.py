@@ -9,10 +9,12 @@ import os
 import random
 import re
 import shutil
+import pytz
 
 from unittest import skipIf
 from mock import patch
 from pyquery import PyQuery
+from lxml.etree import tostring
 from io import StringIO, BytesIO
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urlsplit
@@ -24,6 +26,7 @@ from django.test import Client, override_settings
 from django.db.models import F
 from django.http import QueryDict
 from django.template import Context, Template
+from django.utils.timezone import now
 
 import debug           # pyflakes:ignore
 
@@ -752,7 +755,7 @@ class MeetingTests(TestCase):
 
         # Should be a 'non-area events' link showing appropriate types        
         non_area_labels = [
-            'BoF', 'EDU', 'Hackathon', 'IEPG', 'IESG', 'IETF', 'Plenary', 'Secretariat', 'Tools',
+            'BOF', 'EDU', 'Hackathon', 'IEPG', 'IESG', 'IETF', 'Plenary', 'Secretariat', 'Tools',
         ]
         self.assertIn('%s?show=%s' % (ical_url, ','.join(non_area_labels).lower()), content)
 
@@ -949,6 +952,7 @@ class MeetingTests(TestCase):
             self.assertFalse(q('ul li a:contains("%s")' % slide.title))
 
 
+@override_settings(MEETING_SESSION_LOCK_TIME=datetime.timedelta(minutes=10))
 class EditMeetingScheduleTests(TestCase):
     """Tests of the meeting editor view
 
@@ -1025,11 +1029,11 @@ class EditMeetingScheduleTests(TestCase):
             time_header_labels = rg_div.find('div.time-header div.time-label').text()
             timeslot_rows = rg_div.find('div.timeslots')
             for row in timeslot_rows.items():
-                time_labels = row.find('div.time-label').text()
+                time_labels = row.find('div.time-label div:not(.past-flag)').text()
                 self.assertEqual(time_labels, time_header_labels)
 
     def test_bof_session_tag(self):
-        """Sessions for BoF groups should be marked as such"""
+        """Sessions for BOF groups should be marked as such"""
         meeting = MeetingFactory(type_id='ietf')
 
         non_bof_session = SessionFactory(meeting=meeting)
@@ -1044,13 +1048,13 @@ class EditMeetingScheduleTests(TestCase):
 
         q = PyQuery(r.content)
         self.assertEqual(len(q('#session{} .bof-tag'.format(non_bof_session.pk))), 0,
-                         'Non-BoF session should not be tagged as a BoF session')
+                         'Non-BOF session should not be tagged as a BOF session')
 
         bof_tags = q('#session{} .bof-tag'.format(bof_session.pk))
         self.assertEqual(len(bof_tags), 1,
-                         'BoF session should have one BoF session tag')
-        self.assertIn('BoF', bof_tags.eq(0).text(),
-                      'BoF tag should contain text "BoF"')
+                         'BOF session should have one BOF session tag')
+        self.assertIn('BOF', bof_tags.eq(0).text(),
+                      'BOF tag should contain text "BOF"')
 
     def _setup_for_swap_timeslots(self):
         """Create a meeting, rooms, and schedule for swap_timeslots testing
@@ -1147,6 +1151,102 @@ class EditMeetingScheduleTests(TestCase):
                 "Sessions in other room group's timeslots should be unchanged"
             )
 
+    def test_swap_timeslots_denies_past(self):
+        """Swapping past timeslots is not allowed for an official schedule"""
+        meeting, room_groups = self._setup_for_swap_timeslots()
+        # clone official schedule as an unofficial schedule
+        Schedule.objects.create(
+            name='unofficial',
+            owner=meeting.schedule.owner,
+            meeting=meeting,
+            base=meeting.schedule.base,
+            origin=meeting.schedule,
+        )
+
+
+        official_url = urlreverse('ietf.meeting.views.edit_meeting_schedule', kwargs=dict(num=meeting.number))
+        unofficial_url = urlreverse('ietf.meeting.views.edit_meeting_schedule',
+                                    kwargs=dict(num=meeting.number,
+                                                owner=str(meeting.schedule.owner.email()),
+                                                name='unofficial'))
+        username = meeting.schedule.owner.user.username
+        self.client.login(username=username, password=username + '+password')
+
+        # Swap group 0's first and last sessions, first in the past
+        right_now = self._right_now_in(meeting.time_zone)
+        for room in room_groups[0]:
+            ts = room.timeslot_set.last()
+            ts.time = right_now - datetime.timedelta(minutes=5)
+            ts.save()
+        # timeslot_set is ordered by -time, so check that we know which is past/future
+        self.assertTrue(room_groups[0][0].timeslot_set.last().time < right_now)
+        self.assertTrue(room_groups[0][0].timeslot_set.first().time > right_now)
+        post_data = dict(
+            action='swaptimeslots',
+            origin_timeslot=str(room_groups[0][0].timeslot_set.first().pk),
+            target_timeslot=str(room_groups[0][0].timeslot_set.last().pk),
+            rooms=','.join([str(room.pk) for room in room_groups[0]]),
+        )
+        r = self.client.post(official_url, post_data)
+        self.assertContains(r, "Can't swap these timeslots.", status_code=400)
+
+        # same request should succeed for an unofficial schedule
+        r = self.client.post(unofficial_url, post_data)
+        self.assertEqual(r.status_code, 302)
+
+        # now with origin/target reversed
+        post_data = dict(
+            action='swaptimeslots',
+            origin_timeslot=str(room_groups[0][0].timeslot_set.last().pk),
+            target_timeslot=str(room_groups[0][0].timeslot_set.first().pk),
+            rooms=','.join([str(room.pk) for room in room_groups[0]]),
+        )
+        r = self.client.post(official_url, post_data)
+        self.assertContains(r, "Can't swap these timeslots.", status_code=400)
+
+        # same request should succeed for an unofficial schedule
+        r = self.client.post(unofficial_url, post_data)
+        self.assertEqual(r.status_code, 302)
+
+        # now with the "past" timeslot less than MEETING_SESSION_LOCK_TIME in the future
+        for room in room_groups[0]:
+            ts = room.timeslot_set.last()
+            ts.time = right_now + datetime.timedelta(minutes=9)  # must be < MEETING_SESSION_LOCK_TIME
+            ts.save()
+        self.assertTrue(room_groups[0][0].timeslot_set.last().time < right_now + settings.MEETING_SESSION_LOCK_TIME)
+        self.assertTrue(room_groups[0][0].timeslot_set.first().time > right_now + settings.MEETING_SESSION_LOCK_TIME)
+        post_data = dict(
+            action='swaptimeslots',
+            origin_timeslot=str(room_groups[0][0].timeslot_set.first().pk),
+            target_timeslot=str(room_groups[0][0].timeslot_set.last().pk),
+            rooms=','.join([str(room.pk) for room in room_groups[0]]),
+        )
+        r = self.client.post(official_url, post_data)
+        self.assertContains(r, "Can't swap these timeslots.", status_code=400)
+
+        # now with both in the past
+        for room in room_groups[0]:
+            ts = room.timeslot_set.last()
+            ts.time = right_now - datetime.timedelta(minutes=5)
+            ts.save()
+            ts = room.timeslot_set.first()
+            ts.time = right_now - datetime.timedelta(hours=1)
+            ts.save()
+        past_slots = room_groups[0][0].timeslot_set.filter(time__lt=right_now)
+        self.assertEqual(len(past_slots), 2, 'Need two timeslots in the past!')
+        post_data = dict(
+            action='swaptimeslots',
+            origin_timeslot=str(past_slots[0].pk),
+            target_timeslot=str(past_slots[1].pk),
+            rooms=','.join([str(room.pk) for room in room_groups[0]]),
+        )
+        r = self.client.post(official_url, post_data)
+        self.assertContains(r, "Can't swap these timeslots.", status_code=400)
+
+        # same request should succeed for an unofficial schedule
+        r = self.client.post(unofficial_url, post_data)
+        self.assertEqual(r.status_code, 302)
+
     def test_swap_timeslots_handles_unmatched(self):
         """Sessions in unmatched timeslots should be unassigned when swapped
 
@@ -1232,6 +1332,377 @@ class EditMeetingScheduleTests(TestCase):
                 [str(ts.pk) for ts in timeslots],
                 "Sessions in other room group's timeslots should be unchanged"
             )
+
+    def test_swap_days_denies_past(self):
+        """Swapping past days is not allowed for an official schedule"""
+        meeting, room_groups = self._setup_for_swap_timeslots()
+        # clone official schedule as an unofficial schedule
+        Schedule.objects.create(
+            name='unofficial',
+            owner=meeting.schedule.owner,
+            meeting=meeting,
+            base=meeting.schedule.base,
+            origin=meeting.schedule,
+        )
+
+
+        official_url = urlreverse('ietf.meeting.views.edit_meeting_schedule', kwargs=dict(num=meeting.number))
+        unofficial_url = urlreverse('ietf.meeting.views.edit_meeting_schedule',
+                                    kwargs=dict(num=meeting.number,
+                                                owner=str(meeting.schedule.owner.email()),
+                                                name='unofficial'))
+        username = meeting.schedule.owner.user.username
+        self.client.login(username=username, password=username + '+password')
+
+        # Swap group 0's first and last sessions, first in the past
+        right_now = self._right_now_in(meeting.time_zone)
+        yesterday = (right_now - datetime.timedelta(days=1)).date()
+        day_before = (right_now - datetime.timedelta(days=2)).date()
+        for room in room_groups[0]:
+            ts = room.timeslot_set.last()
+            ts.time = datetime.datetime.combine(yesterday, ts.time.time())
+            ts.save()
+        # timeslot_set is ordered by -time, so check that we know which is past/future
+        self.assertTrue(room_groups[0][0].timeslot_set.last().time < right_now)
+        self.assertTrue(room_groups[0][0].timeslot_set.first().time > right_now)
+        post_data = dict(
+            action='swapdays',
+            source_day=yesterday.isoformat(),
+            target_day=room_groups[0][0].timeslot_set.first().time.date().isoformat(),
+        )
+        r = self.client.post(official_url, post_data)
+        self.assertContains(r, "Can't swap these days.", status_code=400)
+
+        # same request should succeed for an unofficial schedule
+        r = self.client.post(unofficial_url, post_data)
+        self.assertEqual(r.status_code, 302)
+
+        # now with origin/target reversed
+        post_data = dict(
+            action='swapdays',
+            source_day=room_groups[0][0].timeslot_set.first().time.date().isoformat(),
+            target_day=yesterday.isoformat(),
+            rooms=','.join([str(room.pk) for room in room_groups[0]]),
+        )
+        r = self.client.post(official_url, post_data)
+        self.assertContains(r, "Can't swap these days.", status_code=400)
+
+        # same request should succeed for an unofficial schedule
+        r = self.client.post(unofficial_url, post_data)
+        self.assertEqual(r.status_code, 302)
+
+        # now with both in the past
+        for room in room_groups[0]:
+            ts = room.timeslot_set.first()
+            ts.time = datetime.datetime.combine(day_before, ts.time.time())
+            ts.save()
+        past_slots = room_groups[0][0].timeslot_set.filter(time__lt=right_now)
+        self.assertEqual(len(past_slots), 2, 'Need two timeslots in the past!')
+        post_data = dict(
+            action='swapdays',
+            source_day=yesterday.isoformat(),
+            target_day=day_before.isoformat(),
+        )
+        r = self.client.post(official_url, post_data)
+        self.assertContains(r, "Can't swap these days.", status_code=400)
+
+        # same request should succeed for an unofficial schedule
+        r = self.client.post(unofficial_url, post_data)
+        self.assertEqual(r.status_code, 302)
+
+    def _decode_json_response(self, r):
+        try:
+            return json.loads(r.content.decode())
+        except json.JSONDecodeError as err:
+            self.fail('Response was not valid JSON: {}'.format(err))
+
+    @staticmethod
+    def _right_now_in(tzname):
+        right_now = now().astimezone(pytz.timezone(tzname))
+        if not settings.USE_TZ:
+            right_now = right_now.replace(tzinfo=None)
+        return right_now
+
+    def test_assign_session(self):
+        """Allow assignment to future timeslots only for official schedule"""
+        meeting = MeetingFactory(
+            type_id='ietf',
+            date=(datetime.datetime.today() - datetime.timedelta(days=1)).date(),
+            days=3,
+        )
+        right_now = self._right_now_in(meeting.time_zone)
+
+        schedules = dict(
+            official=meeting.schedule,
+            unofficial=ScheduleFactory(meeting=meeting, owner=meeting.schedule.owner),
+        )
+
+        timeslots = dict(
+            past=TimeSlotFactory(meeting=meeting, time=right_now - datetime.timedelta(hours=1)),
+            future=TimeSlotFactory(meeting=meeting, time=right_now + datetime.timedelta(hours=1)),
+        )
+
+        url_for = lambda sched: urlreverse(
+            'ietf.meeting.views.edit_meeting_schedule',
+            kwargs=dict(
+                num=meeting.number,
+                owner=str(sched.owner.email()),
+                name=sched.name,
+            )
+        )
+
+        post_data = lambda ts: dict(
+            action='assign',
+            session=str(SessionFactory(meeting=meeting, add_to_schedule=False).pk),
+            timeslot=str(ts.pk),
+        )
+
+        username = meeting.schedule.owner.user.username
+        self.assertTrue(self.client.login(username=username, password=username + '+password'))
+
+        # past timeslot, official schedule: reject
+        r = self.client.post(url_for(schedules['official']), post_data(timeslots['past']))
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(
+            self._decode_json_response(r),
+            dict(success=False, error="Can't assign to this timeslot."),
+        )
+
+        # past timeslot, unofficial schedule: allow
+        r = self.client.post(url_for(schedules['unofficial']), post_data(timeslots['past']))
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(self._decode_json_response(r)['success'])
+
+        # future timeslot, official schedule: allow
+        r = self.client.post(url_for(schedules['official']), post_data(timeslots['future']))
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(self._decode_json_response(r)['success'])
+
+        # future timeslot, unofficial schedule: allow
+        r = self.client.post(url_for(schedules['unofficial']), post_data(timeslots['future']))
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(self._decode_json_response(r)['success'])
+
+    def test_reassign_session(self):
+        """Do not allow assignment of past sessions for official schedule"""
+        meeting = MeetingFactory(
+            type_id='ietf',
+            date=(datetime.datetime.today() - datetime.timedelta(days=1)).date(),
+            days=3,
+        )
+        right_now = self._right_now_in(meeting.time_zone)
+
+        schedules = dict(
+            official=meeting.schedule,
+            unofficial=ScheduleFactory(meeting=meeting, owner=meeting.schedule.owner),
+        )
+
+        timeslots = dict(
+            past=TimeSlotFactory(meeting=meeting, time=right_now - datetime.timedelta(hours=1)),
+            other_past=TimeSlotFactory(meeting=meeting, time=right_now - datetime.timedelta(hours=2)),
+            barely_future=TimeSlotFactory(meeting=meeting, time=right_now + datetime.timedelta(minutes=9)),
+            future=TimeSlotFactory(meeting=meeting, time=right_now + datetime.timedelta(hours=1)),
+            other_future=TimeSlotFactory(meeting=meeting, time=right_now + datetime.timedelta(hours=2)),
+        )
+
+        self.assertLess(
+            timeslots['barely_future'].time - right_now,
+            settings.MEETING_SESSION_LOCK_TIME,
+            '"barely_future" timeslot is too far in the future. Check MEETING_SESSION_LOCK_TIME settings',
+        )
+
+        url_for = lambda sched: urlreverse(
+            'ietf.meeting.views.edit_meeting_schedule',
+            kwargs=dict(
+                num=meeting.number,
+                owner=str(sched.owner.email()),
+                name=sched.name,
+            )
+        )
+
+        def _new_session_in(timeslot, schedule):
+            return SchedTimeSessAssignment.objects.create(
+                schedule=schedule,
+                session=SessionFactory(meeting=meeting, add_to_schedule=False),
+                timeslot=timeslot,
+            ).session
+
+        post_data = lambda session, new_ts: dict(
+            action='assign',
+            session=str(session.pk),
+            timeslot=str(new_ts.pk),
+        )
+
+        username = meeting.schedule.owner.user.username
+        self.assertTrue(self.client.login(username=username, password=username + '+password'))
+
+        # past session to past timeslot, official: not allowed
+        session = _new_session_in(timeslots['past'], schedules['official'])
+        r = self.client.post(url_for(schedules['official']), post_data(session, timeslots['other_past']))
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(
+            self._decode_json_response(r),
+            dict(success=False, error="Can't assign to this timeslot."),
+        )
+        session.delete()  # takes the SchedTimeSessAssignment with it
+
+        # past session to future timeslot, official: not allowed
+        session = _new_session_in(timeslots['past'], schedules['official'])
+        r = self.client.post(url_for(schedules['official']), post_data(session, timeslots['future']))
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(
+            self._decode_json_response(r),
+            dict(success=False, error="Can't reassign this session."),
+        )
+        session.delete()  # takes the SchedTimeSessAssignment with it
+
+        # future session to past, timeslot, official: not allowed
+        session = _new_session_in(timeslots['future'], schedules['official'])
+        r = self.client.post(url_for(schedules['official']), post_data(session, timeslots['past']))
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(
+            self._decode_json_response(r),
+            dict(success=False, error="Can't assign to this timeslot."),
+        )
+        session.delete()  # takes the SchedTimeSessAssignment with it
+
+        # future session to future timeslot, unofficial: allowed
+        session = _new_session_in(timeslots['future'], schedules['unofficial'])
+        r = self.client.post(url_for(schedules['unofficial']), post_data(session, timeslots['other_future']))
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(self._decode_json_response(r)['success'])
+        session.delete()  # takes the SchedTimeSessAssignment with it
+
+        # future session to barely future timeslot, official: not allowed
+        session = _new_session_in(timeslots['future'], schedules['official'])
+        r = self.client.post(url_for(schedules['official']), post_data(session, timeslots['barely_future']))
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(
+            self._decode_json_response(r),
+            dict(success=False, error="Can't assign to this timeslot."),
+        )
+        session.delete()  # takes the SchedTimeSessAssignment with it
+
+        # future session to future timeslot, unofficial: allowed
+        session = _new_session_in(timeslots['future'], schedules['unofficial'])
+        r = self.client.post(url_for(schedules['unofficial']), post_data(session, timeslots['barely_future']))
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(self._decode_json_response(r)['success'])
+        session.delete()  # takes the SchedTimeSessAssignment with it
+
+        # past session to past timeslot, unofficial: allowed
+        session = _new_session_in(timeslots['past'], schedules['unofficial'])
+        r = self.client.post(url_for(schedules['unofficial']), post_data(session, timeslots['other_past']))
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(self._decode_json_response(r)['success'])
+        session.delete()  # takes the SchedTimeSessAssignment with it
+
+        # past session to future timeslot, unofficial: allowed
+        session = _new_session_in(timeslots['past'], schedules['unofficial'])
+        r = self.client.post(url_for(schedules['unofficial']), post_data(session, timeslots['future']))
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(self._decode_json_response(r)['success'])
+        session.delete()  # takes the SchedTimeSessAssignment with it
+
+        # future session to past timeslot, unofficial: allowed
+        session = _new_session_in(timeslots['future'], schedules['unofficial'])
+        r = self.client.post(url_for(schedules['unofficial']), post_data(session, timeslots['past']))
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(self._decode_json_response(r)['success'])
+        session.delete()  # takes the SchedTimeSessAssignment with it
+
+        # future session to future timeslot, unofficial: allowed
+        session = _new_session_in(timeslots['future'], schedules['unofficial'])
+        r = self.client.post(url_for(schedules['unofficial']), post_data(session, timeslots['other_future']))
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(self._decode_json_response(r)['success'])
+        session.delete()  # takes the SchedTimeSessAssignment with it
+
+    def test_unassign_session(self):
+        """Allow unassignment only of future timeslots for official schedule"""
+        meeting = MeetingFactory(
+            type_id='ietf',
+            date=(datetime.datetime.today() - datetime.timedelta(days=1)).date(),
+            days=3,
+        )
+        right_now = self._right_now_in(meeting.time_zone)
+
+        schedules = dict(
+            official=meeting.schedule,
+            unofficial=ScheduleFactory(meeting=meeting, owner=meeting.schedule.owner),
+        )
+
+        timeslots = dict(
+            past=TimeSlotFactory(meeting=meeting, time=right_now - datetime.timedelta(hours=1)),
+            future=TimeSlotFactory(meeting=meeting, time=right_now + datetime.timedelta(hours=1)),
+            barely_future=TimeSlotFactory(meeting=meeting, time=right_now + datetime.timedelta(minutes=9)),
+        )
+
+        self.assertLess(
+            timeslots['barely_future'].time - right_now,
+            settings.MEETING_SESSION_LOCK_TIME,
+            '"barely_future" timeslot is too far in the future. Check MEETING_SESSION_LOCK_TIME settings',
+        )
+
+        url_for = lambda sched: urlreverse(
+            'ietf.meeting.views.edit_meeting_schedule',
+            kwargs=dict(
+                num=meeting.number,
+                owner=str(sched.owner.email()),
+                name=sched.name,
+            )
+        )
+
+        post_data = lambda ts, sched: dict(
+            action='unassign',
+            session=str(
+                SchedTimeSessAssignment.objects.create(
+                    schedule=sched,
+                    timeslot=ts,
+                    session=SessionFactory(meeting=meeting, add_to_schedule=False),
+                ).session.pk
+            ),
+        )
+
+        username = meeting.schedule.owner.user.username
+        self.assertTrue(self.client.login(username=username, password=username + '+password'))
+
+        # past session, official schedule: reject
+        r = self.client.post(url_for(schedules['official']), post_data(timeslots['past'], schedules['official']))
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(
+            self._decode_json_response(r),
+            dict(success=False, error="Can't unassign this session."),
+        )
+
+        # past timeslot, unofficial schedule: allow
+        r = self.client.post(url_for(schedules['unofficial']), post_data(timeslots['past'], schedules['unofficial']))
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(self._decode_json_response(r)['success'])
+
+        # barely future session, official schedule: reject
+        r = self.client.post(url_for(schedules['official']), post_data(timeslots['barely_future'], schedules['official']))
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(
+            self._decode_json_response(r),
+            dict(success=False, error="Can't unassign this session."),
+        )
+
+        # barely future timeslot, unofficial schedule: allow
+        r = self.client.post(url_for(schedules['unofficial']), post_data(timeslots['barely_future'], schedules['unofficial']))
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(self._decode_json_response(r)['success'])
+
+        # future timeslot, official schedule: allow
+        r = self.client.post(url_for(schedules['official']), post_data(timeslots['future'], schedules['official']))
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(self._decode_json_response(r)['success'])
+
+        # future timeslot, unofficial schedule: allow
+        r = self.client.post(url_for(schedules['unofficial']), post_data(timeslots['future'], schedules['unofficial']))
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(self._decode_json_response(r)['success'])
+
 
 
 class ReorderSlidesTests(TestCase):
@@ -1984,6 +2455,121 @@ class EditTests(TestCase):
         assignment.session.refresh_from_db()
         self.assertEqual(assignment.session.agenda_note, "New Test Note")
 
+    def test_edit_meeting_schedule_conflict_types(self):
+        """The meeting schedule editor should show the constraint types enabled for the meeting"""
+        meeting = MeetingFactory(
+            type_id='ietf',
+            group_conflicts=[],  # show none to start with
+        )
+        s1 = SessionFactory(
+            meeting=meeting,
+            type_id='regular',
+            attendees=12,
+            comments='chair conflict',
+        )
+
+        s2 = SessionFactory(
+            meeting=meeting,
+            type_id='regular',
+            attendees=34,
+            comments='old-fashioned conflict',
+        )
+
+        Constraint.objects.create(
+            meeting=meeting,
+            source=s1.group,
+            target=s2.group,
+            name=ConstraintName.objects.get(slug="chair_conflict"),
+        )
+
+        Constraint.objects.create(
+            meeting=meeting,
+            source=s2.group,
+            target=s1.group,
+            name=ConstraintName.objects.get(slug="conflict"),
+        )
+
+
+        # log in as secretary so we have access
+        self.client.login(username="secretary", password="secretary+password")
+
+        url = urlreverse("ietf.meeting.views.edit_meeting_schedule", kwargs=dict(num=meeting.number))
+
+        # Should have no conflict constraints listed because the meeting has all disabled
+        r = self.client.get(url)
+        q = PyQuery(r.content)
+
+        self.assertEqual(len(q('#session{} span.constraints > span'.format(s1.pk))), 0)
+        self.assertEqual(len(q('#session{} span.constraints > span'.format(s2.pk))), 0)
+
+        # Now enable the 'chair_conflict' constraint only
+        chair_conflict = ConstraintName.objects.get(slug='chair_conflict')
+        chair_conf_label = b'<i class="fa fa-gavel"/>'  # result of etree.tostring(etree.fromstring(editor_label))
+        meeting.group_conflict_types.add(chair_conflict)
+        r = self.client.get(url)
+        q = PyQuery(r.content)
+
+        # verify that there is a constraint pointing from 1 to 2
+        #
+        # The constraint is represented in the HTML as
+        # <div id="session<pk>">
+        #   [...]
+        #   <span class="constraints">
+        #     <span data-sessions="<other pk>">[constraint label]</span>
+        #   </span>
+        # </div>
+        #
+        # Where the constraint label is the editor_label for the ConstraintName.
+        # If this pk is the constraint target, the editor_label includes a
+        # '-' prefix, which may be before the editor_label or inserted inside
+        # it.
+        #
+        # For simplicity, this test is tied to the current values of editor_label.
+        # It also assumes the order of constraints will be constant.
+        # If those change, the test will need to be updated.
+        s1_constraints = q('#session{} span.constraints > span'.format(s1.pk))
+        s2_constraints = q('#session{} span.constraints > span'.format(s2.pk))
+
+        # Check the forward constraint
+        self.assertEqual(len(s1_constraints), 1)
+        self.assertEqual(s1_constraints[0].attrib['data-sessions'], str(s2.pk))
+        self.assertEqual(s1_constraints[0].text, None)  # no '-' prefix on the source
+        self.assertEqual(tostring(s1_constraints[0][0]), chair_conf_label)  # [0][0] is the innermost <span>
+
+        # And the reverse constraint
+        self.assertEqual(len(s2_constraints), 1)
+        self.assertEqual(s2_constraints[0].attrib['data-sessions'], str(s1.pk))
+        self.assertEqual(s2_constraints[0].text, '-')  # '-' prefix on the target
+        self.assertEqual(tostring(s2_constraints[0][0]), chair_conf_label)  # [0][0] is the innermost <span>
+
+        # Now also enable the 'conflict' constraint
+        conflict = ConstraintName.objects.get(slug='conflict')
+        conf_label = b'<span class="encircled">1</span>'
+        conf_label_reversed = b'<span class="encircled">-1</span>'  # the '-' is inside the span!
+        meeting.group_conflict_types.add(conflict)
+        r = self.client.get(url)
+        q = PyQuery(r.content)
+
+        s1_constraints = q('#session{} span.constraints > span'.format(s1.pk))
+        s2_constraints = q('#session{} span.constraints > span'.format(s2.pk))
+
+        # Check the forward constraint
+        self.assertEqual(len(s1_constraints), 2)
+        self.assertEqual(s1_constraints[0].attrib['data-sessions'], str(s2.pk))
+        self.assertEqual(s1_constraints[0].text, None)  # no '-' prefix on the source
+        self.assertEqual(tostring(s1_constraints[0][0]), chair_conf_label)  # [0][0] is the innermost <span>
+
+        self.assertEqual(s1_constraints[1].attrib['data-sessions'], str(s2.pk))
+        self.assertEqual(tostring(s1_constraints[1][0]), conf_label_reversed)  # [0][0] is the innermost <span>
+
+        # And the reverse constraint
+        self.assertEqual(len(s2_constraints), 2)
+        self.assertEqual(s2_constraints[0].attrib['data-sessions'], str(s1.pk))
+        self.assertEqual(s2_constraints[0].text, '-')  # '-' prefix on the target
+        self.assertEqual(tostring(s2_constraints[0][0]), chair_conf_label)  # [0][0] is the innermost <span>
+
+        self.assertEqual(s2_constraints[1].attrib['data-sessions'], str(s1.pk))
+        self.assertEqual(tostring(s2_constraints[1][0]), conf_label)  # [0][0] is the innermost <span>
 
     def test_new_meeting_schedule(self):
         meeting = make_meeting_test_data()

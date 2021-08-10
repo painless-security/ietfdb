@@ -40,6 +40,7 @@ import io
 import json
 import os
 import re
+import markdown
 
 from urllib.parse import quote
 
@@ -50,20 +51,22 @@ from django.urls import reverse as urlreverse
 from django.conf import settings
 from django import forms
 
+
 import debug                            # pyflakes:ignore
 
 from ietf.doc.models import ( Document, DocAlias, DocHistory, DocEvent, BallotDocEvent, BallotType,
     ConsensusDocEvent, NewRevisionDocEvent, TelechatDocEvent, WriteupDocEvent, IanaExpertDocEvent,
-    IESG_BALLOT_ACTIVE_STATES, STATUSCHANGE_RELATIONS, DocumentActionHolder, DocumentAuthor )
+    IESG_BALLOT_ACTIVE_STATES, STATUSCHANGE_RELATIONS, DocumentActionHolder, DocumentAuthor)
 from ietf.doc.utils import (add_links_in_new_revision_events, augment_events_with_revision,
     can_adopt_draft, can_unadopt_draft, get_chartering_type, get_tags_for_stream_id,
     needed_ballot_positions, nice_consensus, prettify_std_name, update_telechat, has_same_ballot,
     get_initial_notify, make_notify_changed_event, make_rev_history, default_consensus,
     add_events_message_info, get_unicode_document_content, build_doc_meta_block,
     augment_docs_and_user_with_user_info, irsg_needed_ballot_positions, add_action_holder_change_event,
-    build_doc_supermeta_block, build_file_urls, update_documentauthors )
+    build_doc_supermeta_block, build_file_urls, update_documentauthors)
+from ietf.doc.utils_bofreq import bofreq_editors, bofreq_responsible
 from ietf.group.models import Role, Group
-from ietf.group.utils import can_manage_group_type, can_manage_materials, group_features_role_filter
+from ietf.group.utils import can_manage_all_groups_of_type, can_manage_materials, group_features_role_filter
 from ietf.ietfauth.utils import ( has_role, is_authorized_in_doc_stream, user_is_person,
     role_required, is_individual_draft_author)
 from ietf.name.models import StreamName, BallotPositionName
@@ -77,6 +80,7 @@ from ietf.review.models import ReviewAssignment
 from ietf.review.utils import can_request_review_of_doc, review_assignments_to_list_for_docs
 from ietf.review.utils import no_review_from_teams_on_doc
 from ietf.utils import markup_txt, log
+from ietf.utils.draft import Draft
 from ietf.utils.response import permission_denied
 from ietf.utils.text import maybe_split
 
@@ -508,7 +512,7 @@ def document_main(request, name, rev=None):
         if chartering and not snapshot:
             milestones = doc.group.groupmilestone_set.filter(state="charter")
 
-        can_manage = can_manage_group_type(request.user, doc.group)
+        can_manage = can_manage_all_groups_of_type(request.user, doc.group.type_id)
 
         return render(request, "doc/document_charter.html",
                                   dict(doc=doc,
@@ -524,6 +528,26 @@ def document_main(request, name, rev=None):
                                        group=group,
                                        milestones=milestones,
                                        can_manage=can_manage,
+                                       ))
+
+    if doc.type_id == "bofreq":
+        content = markdown.markdown(doc.text_or_error(),extensions=['extra'])
+        editors = bofreq_editors(doc)
+        responsible = bofreq_responsible(doc)
+        can_manage = has_role(request.user,['Secretariat', 'Area Director', 'IAB'])
+        editor_can_manage =  doc.get_state_slug('bofreq')=='proposed' and request.user.is_authenticated and request.user.person in editors
+
+        return render(request, "doc/document_bofreq.html",
+                                  dict(doc=doc,
+                                       top=top,
+                                       revisions=revisions,
+                                       latest_rev=latest_rev,
+                                       content=content,
+                                       snapshot=snapshot,
+                                       can_manage=can_manage,
+                                       editors=editors,
+                                       responsible=responsible,
+                                       editor_can_manage=editor_can_manage,
                                        ))
 
     if doc.type_id == "conflrev":
@@ -602,6 +626,7 @@ def document_main(request, name, rev=None):
         pathname = os.path.join(doc.get_file_path(), basename)
 
         content = None
+        content_is_html = False
         other_types = []
         globs = glob.glob(pathname + ".*")
         url = doc.get_href()
@@ -615,7 +640,8 @@ def document_main(request, name, rev=None):
                 content = doc.text_or_error()
                 t = "plain text"
             elif extension == ".md":
-                content = doc.text_or_error()
+                content = markdown.markdown(doc.text_or_error(), extensions=['extra'])
+                content_is_html = True
                 t = "markdown"
             other_types.append((t, url))
 
@@ -623,6 +649,7 @@ def document_main(request, name, rev=None):
                                   dict(doc=doc,
                                        top=top,
                                        content=content,
+                                       content_is_html=content_is_html,
                                        revisions=revisions,
                                        latest_rev=latest_rev,
                                        snapshot=snapshot,
@@ -1079,7 +1106,7 @@ def document_ballot_content(request, doc, ballot_id, editable=True):
         summary = needed_ballot_positions(doc, [p for p in positions if not p.is_old_pos])
 
     text_positions = [p for p in positions if p.discuss or p.comment]
-    text_positions.sort(key=lambda p: (p.is_old_pos, p.balloter.plain_name()))
+    text_positions.sort(key=lambda p: (p.is_old_pos, p.balloter.last_name()))
 
     ballot_open = not BallotDocEvent.objects.filter(doc=doc,
                                                     type__in=("closed_ballot", "created_ballot"),
@@ -1689,3 +1716,54 @@ def all_presentations(request, name):
         'in_progress': in_progress,
         'past' : past+recent,
         })
+
+
+def idnits2_rfcs_obsoleted(request):
+    filename = os.path.join(settings.DERIVED_DIR,'idnits2-rfcs-obsoleted')
+    try:
+        with open(filename,'rb') as f:
+            blob = f.read()
+            return HttpResponse(blob,content_type='text/plain;charset=utf-8')
+    except Exception as e:
+        log.log('Failed to read idnits2-rfcs-obsoleted:'+str(e))
+        raise Http404
+
+
+def idnits2_rfc_status(request):
+    filename = os.path.join(settings.DERIVED_DIR,'idnits2-rfc-status')
+    try:
+        with open(filename,'rb') as f:
+            blob = f.read()
+            return HttpResponse(blob,content_type='text/plain;charset=utf-8')
+    except Exception as e:
+        log.log('Failed to read idnits2-rfc-status:'+str(e))
+        raise Http404
+
+
+def idnits2_state(request, name, rev=None):
+    doc = get_object_or_404(Document, docalias__name=name)
+    if doc.type_id!='draft':
+        raise Http404
+    zero_revision = NewRevisionDocEvent.objects.filter(doc=doc,rev='00').first()
+    if zero_revision:
+        doc.created = zero_revision.time
+    else:
+        doc.created = doc.docevent_set.order_by('-time').first().time
+    if doc.std_level:
+        doc.deststatus = doc.std_level.name
+    elif doc.intended_std_level:
+        doc.deststatus = doc.intended_std_level.name
+    else:
+        text = doc.text()
+        if text:
+            parsed_draft = Draft(text=doc.text(), source=name, name_from_source=False)
+            doc.deststatus = parsed_draft.get_status()
+        else:
+            doc.deststatus="Unknown"
+    return render(request, 'doc/idnits2-state.txt', context={'doc':doc}, content_type='text/plain;charset=utf-8')    
+
+
+
+
+
+

@@ -33,14 +33,15 @@ from ietf.doc.models import ( Document, DocAlias, DocRelationshipName, RelatedDo
 from ietf.doc.factories import ( DocumentFactory, DocEventFactory, CharterFactory, 
     ConflictReviewFactory, WgDraftFactory, IndividualDraftFactory, WgRfcFactory, 
     IndividualRfcFactory, StateDocEventFactory, BallotPositionDocEventFactory, 
-    BallotDocEventFactory, DocumentAuthorFactory )
+    BallotDocEventFactory, DocumentAuthorFactory, NewRevisionDocEventFactory)
 from ietf.doc.fields import SearchableDocumentsField
 from ietf.doc.utils import create_ballot_if_not_open, uppercase_std_abbreviated_name
 from ietf.group.models import Group
 from ietf.group.factories import GroupFactory, RoleFactory
 from ietf.ipr.factories import HolderIprDisclosureFactory
 from ietf.meeting.models import Meeting, Session, SessionPresentation, SchedulingEvent
-from ietf.meeting.factories import MeetingFactory, SessionFactory
+from ietf.meeting.factories import MeetingFactory, SessionFactory, SessionPresentationFactory
+
 from ietf.name.models import SessionStatusName, BallotPositionName
 from ietf.person.models import Person
 from ietf.person.factories import PersonFactory, EmailFactory
@@ -246,7 +247,7 @@ class SearchTests(TestCase):
         r = self.client.get(urlreverse('ietf.doc.views_search.docs_for_ad', kwargs=dict(name=ad.full_name_as_key())))
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, draft.name)
-        self.assertContains(r, draft.action_holders.first().plain_name())
+        self.assertContains(r, escape(draft.action_holders.first().plain_name()))
         self.assertContains(r, rfc.canonical_name())
         self.assertContains(r, conflrev.name)
         self.assertContains(r, statchg.name)
@@ -274,7 +275,7 @@ class SearchTests(TestCase):
         r = self.client.get(urlreverse('ietf.doc.views_search.drafts_in_last_call'))
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, draft.title)
-        self.assertContains(r, draft.action_holders.first().plain_name())
+        self.assertContains(r, escape(draft.action_holders.first().plain_name()))
 
     def test_in_iesg_process(self):
         doc_in_process = IndividualDraftFactory()
@@ -284,7 +285,7 @@ class SearchTests(TestCase):
         r = self.client.get(urlreverse('ietf.doc.views_search.drafts_in_iesg_process'))
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, doc_in_process.title)
-        self.assertContains(r, doc_in_process.action_holders.first().plain_name())
+        self.assertContains(r, escape(doc_in_process.action_holders.first().plain_name()))
         self.assertNotContains(r, doc_not_in_process.title)
         
     def test_indexes(self):
@@ -346,7 +347,7 @@ class SearchTests(TestCase):
         self.assertEqual(q('td.status span.label-warning').text(),"for 15 days")
         self.assertEqual(q('td.status span.label-danger').text(),"for 29 days")
         for ah in [draft.action_holders.first() for draft in drafts]:
-            self.assertContains(r, ah.plain_name())
+            self.assertContains(r, escape(ah.plain_name()))
 
 class DocDraftTestCase(TestCase):
     draft_text = """
@@ -1529,7 +1530,24 @@ class DocTestCase(TestCase):
         r = self.client.get(urlreverse("ietf.doc.views_doc.document_ballot", kwargs=dict(name=doc.name)))
         self.assertEqual(r.status_code, 200)
         self.assertContains(r,  '(%s for -%s)' % (pos.comment_time.strftime('%Y-%m-%d'), oldrev))
-        
+
+        # Now simulate a new ballot against the new revision and make sure the "was" position is included
+        pos2 = BallotPositionDocEvent.objects.create(
+            doc=doc,
+            rev=doc.rev,
+            ballot=ballot,
+            type="changed_ballot_position",
+            pos_id="noobj",
+            comment="Still looks okay to me",
+            comment_time=datetime.datetime.now(),
+            balloter=Person.objects.get(user__username="ad"),
+            by=Person.objects.get(name="(System)"))
+
+        r = self.client.get(urlreverse("ietf.doc.views_doc.document_ballot", kwargs=dict(name=doc.name)))
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, pos2.comment)
+        self.assertContains(r,  '(was %s)' % pos.pos)
+
     def test_document_ballot_needed_positions(self):
         # draft
         doc = IndividualDraftFactory(intended_std_level_id='ps')
@@ -2297,3 +2315,123 @@ class FieldTests(TestCase):
                 dict(id=doc.pk, text=escape(uppercase_std_abbreviated_name(doc.name))),
                 decoded[str(doc.pk)],
             )
+
+class MaterialsTests(TestCase):
+
+    def setUp(self):
+        self.id_dir = self.tempdir('id')
+        self.saved_agenda_path = settings.AGENDA_PATH
+        settings.AGENDA_PATH = self.id_dir
+
+        meeting_number='111'
+        meeting_dir = os.path.join(f'{settings.AGENDA_PATH}',f'{meeting_number}')
+        os.mkdir(meeting_dir)
+        agenda_dir = os.path.join(meeting_dir,'agenda')
+        os.mkdir(agenda_dir)
+
+        group_acronym='bogons'
+
+        # This is too much work - the factory should 
+        # * build the DocumentHistory correctly 
+        # * maybe do something by default with uploaded_filename
+        # and there should be a more usable unit to save bits to disk (handle_file_upload isn't quite right) that tests can leverage
+        try:
+            uploaded_filename_00 = f'agenda-{meeting_number}-{group_acronym}-00.txt'
+            uploaded_filename_01 = f'agenda-{meeting_number}-{group_acronym}-01.md'
+            f = io.open(os.path.join(agenda_dir, uploaded_filename_00), 'w')
+            f.write('This is some unremarkable text')
+            f.close()
+            f = io.open(os.path.join(agenda_dir, uploaded_filename_01), 'w')
+            f.write('This links to [an unusual place](https://unusual.example).')
+            f.close()
+
+            self.doc = DocumentFactory(type_id='agenda',rev='00',group__acronym=group_acronym, newrevisiondocevent=None, name=f'agenda-{meeting_number}-{group_acronym}', uploaded_filename=uploaded_filename_00)
+            e = NewRevisionDocEventFactory(doc=self.doc,rev='00')
+            self.doc.save_with_history([e])
+            self.doc.rev = '01'
+            self.doc.uploaded_filename = uploaded_filename_01
+            e = NewRevisionDocEventFactory(doc=self.doc, rev='01')
+            self.doc.save_with_history([e])
+
+            # This is necessary for the view to be able to find the document
+            # which hints that the view has an issue : if a materials document is taken out of all SessionPresentations, it is no longer accessable by this view
+            SessionPresentationFactory(session__meeting__number=meeting_number, session__group=self.doc.group, document=self.doc)
+
+        except: 
+            shutil.rmtree(self.id_dir)
+            raise
+
+    def tearDown(self):
+        settings.AGENDA_PATH = self.saved_agenda_path
+        shutil.rmtree(self.id_dir)
+
+    def test_markdown_and_text(self):
+        url = urlreverse("ietf.doc.views_doc.document_main", kwargs=dict(name=self.doc.name,rev='00'))
+        r = self.client.get(url)
+        self.assertEqual(r.status_code,200)
+        q = PyQuery(r.content)
+        self.assertTrue(q('#materials-content > pre'))
+
+        url = urlreverse("ietf.doc.views_doc.document_main", kwargs=dict(name=self.doc.name,rev='01'))
+        r = self.client.get(url)
+        self.assertEqual(r.status_code,200)
+        q = PyQuery(r.content)
+        self.assertEqual(q('#materials-content .panel-body a').attr['href'],'https://unusual.example')
+
+class Idnits2SupportTests(TestCase):
+
+    def setUp(self):
+        self.derived_dir = self.tempdir('derived')
+        self.saved_derived_dir = settings.DERIVED_DIR
+        settings.DERIVED_DIR = self.derived_dir
+
+    def tearDown(self):
+        settings.DERIVED_DIR = self.saved_derived_dir
+        shutil.rmtree(self.derived_dir)
+
+    def test_obsoleted(self):
+        rfc = WgRfcFactory(alias2__name='rfc1001')
+        WgRfcFactory(alias2__name='rfc1003',relations=[('obs',rfc)])
+        rfc = WgRfcFactory(alias2__name='rfc1005')
+        WgRfcFactory(alias2__name='rfc1007',relations=[('obs',rfc)])
+
+        url = urlreverse('ietf.doc.views_doc.idnits2_rfcs_obsoleted')
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 404)
+        call_command('generate_idnits2_rfcs_obsoleted')
+        url = urlreverse('ietf.doc.views_doc.idnits2_rfcs_obsoleted')
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.content, b'1001 1003\n1005 1007\n')
+
+    def test_rfc_status(self):
+        for slug in ('bcp', 'ds', 'exp', 'hist', 'inf', 'std', 'ps', 'unkn'):
+            WgRfcFactory(std_level_id=slug)
+        url = urlreverse('ietf.doc.views_doc.idnits2_rfc_status')
+        r = self.client.get(url)
+        self.assertEqual(r.status_code,404)
+        call_command('generate_idnits2_rfc_status')
+        r = self.client.get(url)
+        self.assertEqual(r.status_code,200)
+        blob = unicontent(r).replace('\n','')
+        self.assertEqual(blob[6312-1],'O')
+
+    def test_idnits2_state(self):
+        rfc = WgRfcFactory()
+        url = urlreverse('ietf.doc.views_doc.idnits2_state', kwargs=dict(name=rfc.canonical_name()))
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r,'rfcnum')
+
+        draft = WgDraftFactory()
+        url = urlreverse('ietf.doc.views_doc.idnits2_state', kwargs=dict(name=draft.canonical_name()))
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        self.assertNotContains(r,'rfcnum')
+        self.assertContains(r,'Unknown')
+
+        draft = WgDraftFactory(intended_std_level_id='ps')
+        url = urlreverse('ietf.doc.views_doc.idnits2_state', kwargs=dict(name=draft.canonical_name()))
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r,'Proposed')
