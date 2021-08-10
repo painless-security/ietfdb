@@ -34,11 +34,13 @@ This renders the list of links below the title on the meeting proceedings page.
       </a>
     </div>
 
-    <div class="proceedings-row">
-      <a href="{% url 'ietf.meeting.views.proceedings_acknowledgements' num=meeting.number %}">
-        Acknowledgements
-      </a>
-    </div>
+    {% if meeting.proceedings_format_version < 3 %}
+      <div class="proceedings-row">
+        <a href="{% url 'ietf.meeting.views.proceedings_acknowledgements' num=meeting.number %}">
+          Acknowledgements
+        </a>
+      </div>
+    {% endif %}
   </div>
 
   {% with materials=meeting.get_proceedings_materials %}

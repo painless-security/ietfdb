@@ -1011,7 +1011,11 @@ SECR_PROCEEDINGS_DIR = '/a/www/www6s/proceedings/'
 SECR_PPT2PDF_COMMAND = ['/usr/bin/soffice','--headless','--convert-to','pdf:writer_globaldocument_pdf_Export','--outdir']
 SECR_VIRTUAL_MEETINGS = ['108']
 STATS_REGISTRATION_ATTENDEES_JSON_URL = 'https://registration.ietf.org/{number}/attendees/'
-NEW_PROCEEDINGS_START = 95
+PROCEEDINGS_VERSION_CHANGES = [
+    0,   # version 1
+    95,  # version 2: meeting 95 and later (was number was NEW_PROCEEDINGS_START)
+    111, # version 3: meeting 111 and later
+]
 YOUTUBE_API_KEY = ''
 YOUTUBE_API_SERVICE_NAME = 'youtube'
 YOUTUBE_API_VERSION = 'v3'
