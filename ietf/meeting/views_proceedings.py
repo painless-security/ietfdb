@@ -193,6 +193,7 @@ def edit_material(request, num, material_type):
 
 @role_required('Secretariat')
 def remove_restore_material(request, num, material_type, action):
+    """Remove or restore proceedings material"""
     if action not in ['remove', 'restore']:
         return HttpResponseBadRequest('Unsupported action')
     meeting = get_meeting(num)
@@ -200,12 +201,14 @@ def remove_restore_material(request, num, material_type, action):
     if material is None:
         raise Http404('No such material for this meeting')
     if request.method == 'POST':
-        material.document.set_state(
-            State.objects.get(
-                type_id='procmaterials',
-                slug='active' if action == 'restore' else 'removed',
-            )
+        prev_state = material.document.get_state('procmaterials')
+        new_state = State.objects.get(
+            type_id='procmaterials',
+            slug='active' if action == 'restore' else 'removed',
         )
+        if new_state != prev_state:
+            material.document.set_state(new_state)
+            add_state_change_event(material.document, request.user.person, prev_state, new_state)
         return redirect('ietf.meeting.views_proceedings.material_details', num=num)
 
     return render(
