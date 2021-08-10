@@ -69,7 +69,7 @@ class UploadMaterialForm(forms.Form):
                     if fieldname != action:
                         del self.fields[fieldname]
 
-        if doc_type.slug == 'procmaterials':
+        if doc_type.slug == 'procmaterials' and 'abstract' in self.fields:
             del self.fields['abstract']
 
     def _default_name(self):

@@ -8,10 +8,11 @@ from django.db import migrations
 def forward(apps, schema_editor):
     ProceedingsMaterialTypeName = apps.get_model('name', 'ProceedingsMaterialTypeName')
     names = [
-        {'slug': 'social_event', 'name': 'Social Event', 'desc': 'Social event'},
-        {'slug': 'host_speaker_series', 'name': 'Host Speaker Series', 'desc': 'Host speaker series'},
-        {'slug': 'acknowledgements', 'name': 'Acknowledgements', 'desc': 'Acknowledgements'},
-        {'slug': 'additional_information', 'name': 'Additional Information', 'desc': 'Any other materials'},
+        {'slug': 'supporters', 'name': 'Sponsors and Supporters', 'desc': 'Sponsors and supporters', 'order': 0},
+        {'slug': 'host_speaker_series', 'name': 'Host Speaker Series', 'desc': 'Host speaker series', 'order': 1},
+        {'slug': 'social_event', 'name': 'Social Event', 'desc': 'Social event', 'order': 2},
+        {'slug': 'wiki', 'name': 'Meeting Wiki', 'desc': 'Meeting wiki', 'order': 3},
+        {'slug': 'additional_information', 'name': 'Additional Information', 'desc': 'Any other materials', 'order': 4},
     ]
     for name in names:
         ProceedingsMaterialTypeName.objects.create(used=True, **name)

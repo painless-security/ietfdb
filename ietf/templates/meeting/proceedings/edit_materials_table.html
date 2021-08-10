@@ -41,7 +41,7 @@
             <td colspan="2"></td>
           {% endif %}
           {% if user|has_role:'Secretariat' %}
-            {% if forloop.first and material %}
+            {% if forloop.first %}
               <td rowspan="{{ proceedings_materials|length }}">
                 <a href="{% url 'ietf.meeting.views_proceedings.material_details' num=meeting.number %}">
                   Edit materials
