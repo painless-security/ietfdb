@@ -146,8 +146,8 @@ def upload_material(request, num, material_type):
 def material_details(request, num):
     meeting = get_meeting(num)
     proceedings_materials = [
-        (type_slug, ProceedingsMaterialTypeName.objects.get(pk=type_slug), meeting.proceedings_materials.filter(type=type_slug).first())
-        for type_slug in ['acknowledgements', 'social_event', 'host_speaker_series', 'additional_information']
+        (type_name.slug, type_name, meeting.proceedings_materials.filter(type=type_name).first())
+        for type_name in ProceedingsMaterialTypeName.objects.all()
     ]
     return render(
         request,

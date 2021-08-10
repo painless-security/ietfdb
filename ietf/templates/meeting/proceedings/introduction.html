@@ -44,34 +44,11 @@ This renders the list of links below the title on the meeting proceedings page.
   {% with materials=meeting.get_proceedings_materials %}
     {% if materials|length > 0 %}
       <div class="proceedings-column">
-        {% if materials.acknowledgements %}
+        {% for mat in materials.values %}
           <div class="proceedings-row">
-            <a href="{{ materials.acknowledgements.get_href }}">
-              {{ materials.acknowledgements }}
-            </a>
+            <a href="{{ mat.get_href }}">{{ mat }}</a>
           </div>
-        {% endif %}
-        {% if materials.host_speaker_series %}
-          <div class="proceedings-row">
-            <a href="{{ materials.host_speaker_series.get_href }}">
-              {{ materials.host_speaker_series }}
-            </a>
-          </div>
-        {% endif %}
-        {% if materials.social_event %}
-          <div class="proceedings-row">
-            <a href="{{ materials.social_event.get_href }}">
-              {{ materials.social_event }}
-            </a>
-          </div>
-        {% endif %}
-        {% if materials.additional_information %}
-          <div class="proceedings-row">
-            <a href="{{ materials.additional_information.get_href }}">
-              {{ materials.additional_information }}
-            </a>
-          </div>
-        {% endif %}
+        {% endfor %}
       </div>
     {% endif %}
   {% endwith %}
