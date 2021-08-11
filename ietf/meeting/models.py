@@ -1467,11 +1467,10 @@ class ProceedingsMaterial(models.Model):
         return self.document.title
 
     def get_href(self):
-        return f'{self.document.get_href(self.meeting)}.{self.document.file_extension()}'
+        return f'{self.document.get_href(self.meeting)}'
 
     def active(self):
         return self.document.get_state().slug == 'active'
-
 
 def _sponsor_upload_path(instance, filename):
     """Compute filename relative to the storage location"""

@@ -18,13 +18,43 @@ from ietf.secr.proceedings.utils import handle_upload_file
 from ietf.utils.text import xslugify
 
 class UploadProceedingsMaterialForm(FileUploadForm):
+    use_url = forms.BooleanField(
+        required=False,
+        label='Use an external URL instead of uploading a document',
+    )
+    external_url = forms.URLField(
+        required=False,
+        help_text='External URL to link from the proceedings'
+    )
+    field_order = ['use_url', 'external_url']  # will precede superclass fields
+
+    class Media:
+        js = (
+            'ietf/js/upload-material.js',
+        )
+
     def __init__(self, *args, **kwargs):
         super().__init__(doc_type='procmaterials', *args, **kwargs)
         self.fields['file'].label = 'Select a file to upload. Allowed format{}: {}'.format(
             '' if len(self.mime_types) == 1 else 's',
             ', '.join(self.mime_types),
         )
+        self.fields['file'].required = False
 
+    def clean_file(self):
+        if self.cleaned_data.get('file', None) is None:
+            return None
+        # bypass cleaning the file if it is empty
+        return super().clean_file()
+
+    def clean(self):
+        if self.cleaned_data['use_url']:
+            if not self.cleaned_data['external_url']:
+                self.add_error('external_url', 'This field is required')
+        else:
+            self.cleaned_data['external_url'] = None  # make sure this is empty
+            if self.cleaned_data['file'] is None:
+                self.add_error('file', 'This field is required')
 
 class EditProceedingsMaterialForm(forms.Form):
     """Form to edit proceedings material properties"""
@@ -39,9 +69,12 @@ class EditProceedingsMaterialForm(forms.Form):
     )
 
 
-def save_proceedings_material_doc(meeting, material_type, title, request, file=None, state=None):
+def save_proceedings_material_doc(meeting, material_type, title, request, file=None, external_url=None, state=None):
     events = []
     by = request.user.person
+
+    if not (file is None or external_url is None):
+        raise ValueError('One of file or external_url must be None')
 
     doc_name = '-'.join([
         'proceedings',
@@ -54,8 +87,8 @@ def save_proceedings_material_doc(meeting, material_type, title, request, file=N
     created = False
     doc = Document.objects.filter(type_id='procmaterials', name=doc_name).first()
     if doc is None:
-        if file is None:
-            raise ValueError('Cannot create a new document without a file')
+        if file is None and external_url is None:
+            raise ValueError('Cannot create a new document without a file or external URL')
         doc = Document.objects.create(
             type_id='procmaterials',
             name=doc_name,
@@ -76,12 +109,26 @@ def save_proceedings_material_doc(meeting, material_type, title, request, file=N
             raise RuntimeError(save_error)
 
         doc.uploaded_filename = filename
+        doc.external_url = ''
         e = NewRevisionDocEvent.objects.create(
             type="new_revision",
             doc=doc,
             rev=doc.rev,
             by=by,
             desc="New version available: <b>%s-%s</b>" % (doc.name, doc.rev),
+        )
+        events.append(e)
+    elif (external_url is not None) and external_url != doc.external_url:
+        if not created:
+            doc.rev = '{:02}'.format(int(doc.rev) + 1)
+        doc.uploaded_filename = ''
+        doc.external_url = external_url
+        e = NewRevisionDocEvent.objects.create(
+            type="new_revision",
+            doc=doc,
+            rev=doc.rev,
+            by=by,
+            desc="Set external URL to <b>{}</b>".format(external_url),
         )
         events.append(e)
 
@@ -126,13 +173,20 @@ def upload_material(request, num, material_type):
                 material_type,
                 request=request,
                 file=form.cleaned_data.get('file', None),
+                external_url=form.cleaned_data.get('external_url', None),
                 title=str(material if material is not None else material_type),
             )
             if material is None:
                 meeting.proceedings_materials.create(type=material_type, document=doc)
             return redirect('ietf.meeting.views_proceedings.material_details')
     else:
-        form = UploadProceedingsMaterialForm()
+        initial = dict()
+        if material is not None:
+            ext_url = material.document.external_url
+            if ext_url != '':
+                initial['use_url'] = True
+                initial['external_url'] = ext_url
+        form = UploadProceedingsMaterialForm(initial=initial)
 
     return render(request, 'meeting/proceedings/upload_material.html', {
         'form': form,

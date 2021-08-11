@@ -3,6 +3,9 @@
 
 {% load bootstrap3 %}
 
+{% block morecss %}
+  {{ form.media.css }}
+{% endblock %}
 {% block title %}
   Upload {{ material_type.name }} for {{ meeting }} Proceedings
 {% endblock %}
@@ -16,14 +19,14 @@
 
 {% block intro %}
   <p>
-  {% if material is None %}
-    This document will be linked from the {{ meeting }} proceedings under the "{{ material_type.name }}" label.
-    You can change the label by setting the title after uploading the document.
-  {% else %}
-    Select a file to replace the existing document. This document will be linked from the
-    {{ meeting }} proceedings under the "{{ material.document.title }}" label.
-    You can change the label by changing the title after uploading the document.
-  {% endif %}
+    {% if material is None %}
+      This document will be linked from the {{ meeting }} proceedings under the "{{ material_type.name }}" label.
+      You can change the label by setting the title after uploading the document.
+    {% else %}
+      Select a file to replace the existing document. This document will be linked from the
+      {{ meeting }} proceedings under the "{{ material.document.title }}" label.
+      You can change the label by changing the title after uploading the document.
+    {% endif %}
   </p>
 {% endblock %}
 
@@ -34,4 +37,8 @@
 
     {% block form_buttons %}{{ block.super }}{% endblock %}
   </form>
+{% endblock %}
+
+{% block js %}
+  {{ form.media.js }}
 {% endblock %}
