@@ -231,10 +231,9 @@ class Meeting(models.Model):
 
     def get_proceedings_materials(self):
         """Get proceedings materials"""
-        return {
-            mat.type.slug: mat
-            for mat in self.proceedings_materials.filter(document__states__slug='active')
-        }
+        return self.proceedings_materials.filter(
+            document__states__slug='active'
+        ).order_by('type__order')
 
     @property
     def proceedings_format_version(self):
