@@ -38,7 +38,7 @@
         <a class="btn btn-default" href="/meeting/{{meeting.number}}/requests">Meeting requests/conflicts</a>
       </p>
 
-      {% include 'meeting/proceedings/edit_materials_table.html' with meeting=meeting proceedings_materials=proceedings_materials user=user only %}
+      {% include 'meeting/proceedings/materials_table.html' with meeting=meeting proceedings_materials=proceedings_materials user=user only %}
 
       {% with "True" as show_agenda %}
 	<!-- Plenaries -->

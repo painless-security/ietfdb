@@ -1471,6 +1471,9 @@ class ProceedingsMaterial(models.Model):
     def active(self):
         return self.document.get_state().slug == 'active'
 
+    def is_url(self):
+        return len(self.document.external_url) > 0
+
 def _sponsor_upload_path(instance, filename):
     """Compute filename relative to the storage location"""
     num = instance.meeting.number

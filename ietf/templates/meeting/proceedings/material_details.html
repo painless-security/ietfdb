@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {# Copyright The IETF Trust 2015-2021, All Rights Reserved #}
-{% load origin ietf_filters static %}
+{% load origin ietf_filters static tz %}
 
 {% block title %}{{ meeting }} : Proceedings Materials{% endblock %}
 
@@ -22,38 +22,58 @@
     <div class="panel-heading">Proceedings Materials</div>
     <div class="panel-body">
       <table class="table table-condensed table-striped">
-        {% for mat_slug, mat_type, mat in proceedings_materials %}
+      <thead>
+      <tr>
+        <th>Type</th>
+        <th>Title</th>
+        <th>Document</th>
+        <th>Updated</th>
+        <th></th>
+      </tr>
+      </thead>
+      <tbody>
+        {% for mat_type, mat in proceedings_materials %}
           <tr>
-            {% if mat and mat.active%}
+            <td>{{ mat_type }}</td>
+            {% if mat and mat.active %}
               {% url 'ietf.doc.views_doc.document_main' name=mat.document.name as url %}
               <td>
                 <a href="{{ mat.document.get_href }}">{{ mat.document.title }}</a>
-                <a href="{{ url }}">({{ mat.document.name }})</a>
+              </td>
+              <td>
+                <a href="{{ url }}">{{ mat.document }}</a>
+                {% if mat.is_url %} (external URL) {% else %} (uploaded file) {% endif %}
+              </td>
+              <td>
+                {% with timestamp=mat.document.time|utc %}
+                  {{ timestamp|date:"Y-m-d" }}<br><small>{{ timestamp|date:"H:i:s" }}&nbsp;UTC</small>
+                {% endwith %}
               </td>
             {% else %}
-              <td>{{ mat_type.name }}</td>
+              <td colspan="3"></td>
             {% endif %}
 
             {% if user|has_role:"Secretariat" %}
               <td class="col-md-2">
-                {% url 'ietf.meeting.views_proceedings.upload_material' num=meeting.number material_type=mat_slug as upload_url %}
-                {% url 'ietf.meeting.views_proceedings.edit_material' num=meeting.number material_type=mat_slug as edit_url %}
-                {% url 'ietf.meeting.views_proceedings.remove_material' num=meeting.number material_type=mat_slug as remove_url %}
-                {% url 'ietf.meeting.views_proceedings.restore_material' num=meeting.number material_type=mat_slug as restore_url %}
+                {% url 'ietf.meeting.views_proceedings.upload_material' num=meeting.number material_type=mat_type.slug as upload_url %}
+                {% url 'ietf.meeting.views_proceedings.edit_material' num=meeting.number material_type=mat_type.slug as edit_url %}
+                {% url 'ietf.meeting.views_proceedings.remove_material' num=meeting.number material_type=mat_type.slug as remove_url %}
+                {% url 'ietf.meeting.views_proceedings.restore_material' num=meeting.number material_type=mat_type.slug as restore_url %}
                 {% if mat is None %}
-                  <a class="btn btn-default btn-sm pull-right" href="{{ upload_url }}">Upload Material</a>
+                  <a class="btn btn-default btn-sm pull-right" href="{{ upload_url }}">Add Material</a>
                 {% elif mat.active %}
-                  <a class="btn btn-default btn-sm pull-right" href="{{ upload_url }}">Upload Revision</a>
+                  <a class="btn btn-default btn-sm pull-right" href="{{ upload_url }}">Replace Material</a>
+                  <a class="btn btn-default btn-sm pull-right" href="{{ edit_url }}">Change title</a>
                   <a class="btn btn-default btn-sm pull-right" href="{{ remove_url }}">Remove</a>
-                  <a class="btn btn-default btn-sm pull-right" href="{{ edit_url }}">Edit</a>
                 {% else %}
-                  <a class="btn btn-default btn-sm pull-right" href="{{ upload_url }}">Upload Material</a>
+                  <a class="btn btn-default btn-sm pull-right" href="{{ upload_url }}">Add Material</a>
                   <a class="btn btn-default btn-sm pull-right" href="{{ restore_url }}">Restore</a>
                 {% endif %}
               </td>
             {% endif %}
           </tr>
         {% endfor %}
+      </tbody>
       </table>
     </div>
   </div>

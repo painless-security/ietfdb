@@ -1,7 +1,7 @@
 {# Copyright The IETF Trust 2021, All Rights Reserved #}
 {% load ietf_filters misc_filters tz %}
-
-{% if proceedings_materials|keep_only:2|keep_only:'active' or user|has_role:'Secretariat' %}
+{# only show if user is secretariat or at least one material is active #}
+{% if proceedings_materials|keep_only:1|keep_only:'active' or user|has_role:'Secretariat' %}
   <!-- Proceedings materials not tied to groups -->
   <h2 class="anchor-target" id="proceedings-materials">Proceedings Materials</h2>
   <table class="table table-condensed table-striped">
@@ -21,7 +21,7 @@
     </thead>
 
     <tbody>
-    {% for type_slug, type_name, material in proceedings_materials %}
+    {% for type_name, material in proceedings_materials %}
       {# secretariat sees empty slots, others do not #}
       {% if user|has_role:'Secretariat' or meeting and material.active %}
         <tr>
@@ -29,7 +29,7 @@
           {% if material and material.active %}
             <td>
               <a
-                href="{% url 'ietf.meeting.views.materials_document' document=material.document.name num=meeting.number %}">
+                href="{{ material.get_href }}">
                 {{ material.document.title }}
               </a>
             </td>
