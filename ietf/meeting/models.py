@@ -1519,3 +1519,4 @@ class Sponsor(models.Model):
 
     class Meta:
         unique_together = (('meeting', 'name'),)
+        ordering = ('pk',)

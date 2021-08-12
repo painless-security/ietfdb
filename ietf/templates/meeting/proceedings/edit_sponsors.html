@@ -1,11 +1,13 @@
 {% extends "base.html" %}
 {# Copyright The IETF Trust 2021, All Rights Reserved #}
-{% load origin %}
+{% load origin bootstrap3 %}
 
-{% load bootstrap3 %}
+{% block morecss %}
+  img.logo {max-width: 30rem; max-height: 30rem;}
+{% endblock %}
 
 {% block title %}
-  Edit Sponsors for {{ meeting }} Proceedings
+  Edit Hosts for {{ meeting }} Proceedings
 {% endblock %}
 
 {% block content %}
@@ -13,7 +15,7 @@
 
   <h1>
     {% block content_header %}
-      Edit Meeting Sponsors<br>
+      Edit Meeting Hosts<br>
       <small>
         {{ meeting }}
       </small>
@@ -21,22 +23,22 @@
   </h1>
 
   <p class="help-block">
-    The sponsors listed below will appear on the meeting proceedings.
-    If you need to add more sponsors than there are slots, fill out the form below, save, and
+    The sponsors listed below will appear on the proceedings as meeting hosts.
+    If you need to add more than there are slots, fill out the form below, save, and
     reopen this page.
   </p>
 
   <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
-    {#    {% bootstrap_formset formset %}#}
     {{ formset.management_form }}
     {{ formset.non_form_errors }}
     <table class="table table-striped container-fluid">
       {% for form in formset %}
         <tr class="row">
           <td class="col-md-3">
-            {% if form.logo.value %}
-              <img src="{% url 'ietf.meeting.views_proceedings.sponsor_logo' num=meeting.number sponsor_id=form.instance.pk %} ">
+            {% if form.instance.pk and form.instance.logo %}
+              <img class="logo"
+                   src="{% url 'ietf.meeting.views_proceedings.sponsor_logo' num=meeting.number sponsor_id=form.instance.pk %} ">
             {% endif %}
           </td>
           <td class="col-md-9">
