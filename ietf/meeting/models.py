@@ -1474,40 +1474,43 @@ class ProceedingsMaterial(models.Model):
     def is_url(self):
         return len(self.document.external_url) > 0
 
-def _sponsor_upload_path(instance, filename):
-    """Compute filename relative to the storage location"""
+def _host_upload_path(instance, filename):
+    """Compute filename relative to the storage location
+
+    Must live outside a class to allow migrations to deconstruct fields that use it
+    """
     num = instance.meeting.number
     path = (
-            Path(num) / 'sponsors' / f'logo-{xslugify(instance.name)}'
+            Path(num) / 'meetinghosts' / f'logo-{xslugify(instance.name)}'
     ).with_suffix(
         Path(filename).suffix
     )
     return str(path)
 
 
-class Sponsor(models.Model):
+class MeetingHost(models.Model):
     """Meeting sponsor"""
-    meeting = ForeignKey(Meeting, related_name='sponsors')
+    meeting = ForeignKey(Meeting, related_name='meetinghosts')
     name = models.CharField(max_length=255, blank=False)
     logo = MissingOkImageField(
-        storage=NoLocationMigrationFileSystemStorage(location=settings.SPONSOR_LOGO_PATH),
-        upload_to=_sponsor_upload_path,
+        storage=NoLocationMigrationFileSystemStorage(location=settings.MEETINGHOST_LOGO_PATH),
+        upload_to=_host_upload_path,
         width_field='logo_width',
         height_field='logo_height',
         blank=False,
         validators=[
             MaxImageSizeValidator(
-                settings.SPONSOR_LOGO_MAX_UPLOAD_WIDTH,
-                settings.SPONSOR_LOGO_MAX_UPLOAD_HEIGHT,
+                settings.MEETINGHOST_LOGO_MAX_UPLOAD_WIDTH,
+                settings.MEETINGHOST_LOGO_MAX_UPLOAD_HEIGHT,
             ),
             WrappedValidator(validate_file_size, True),
             WrappedValidator(
                 validate_file_extension,
-                settings.MEETING_VALID_UPLOAD_EXTENSIONS['sponsorlogo'],
+                settings.MEETING_VALID_UPLOAD_EXTENSIONS['meetinghostlogo'],
             ),
             WrappedValidator(
                 validate_mime_type,
-                settings.MEETING_VALID_UPLOAD_MIME_TYPES['sponsorlogo'],
+                settings.MEETING_VALID_UPLOAD_MIME_TYPES['meetinghostlogo'],
                 True,
             ),
         ],
