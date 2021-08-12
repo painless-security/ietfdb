@@ -30,18 +30,18 @@ This renders the title block for the meeting proceedings page.
       </div>
     {% endif %}
   </div>
-  {% with sponsors=meeting.sponsors.all %}
-    {% if sponsors.exists %}
+  {% with hosts=meeting.meetinghosts.all %}
+    {% if hosts.exists %}
       <div class="proceedings-column">
         <div class="proceedings-row">
           Hosted by:
-          {% for sponsor in sponsors %}
+          {% for host in hosts %}
             <div class="host-logo">
                 <img class="host{{ forloop.counter }}"
-                     src="{% url 'ietf.meeting.views_proceedings.sponsor_logo' num=meeting.number sponsor_id=sponsor.pk %}"
-                     height="{{ sponsor.logo_height }}"
-                     width="{{ sponsor.logo_width }}"
-                     title="{{ sponsor.name }}">
+                     src="{% url 'ietf.meeting.views_proceedings.meetinghost_logo' num=meeting.number host_id=host.pk %}"
+                     height="{{ host.logo_height }}"
+                     width="{{ host.logo_width }}"
+                     title="{{ host.name }}">
             </div>{% endfor %}
         </div>
       </div>

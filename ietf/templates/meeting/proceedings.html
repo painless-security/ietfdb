@@ -28,14 +28,14 @@
   .proceedings-intro > .proceedings-column > .proceedings-row {display: flex;}
   .finalize-button {position: absolute; top: 0; right: 0;}
   .proceedings-intro .host-logo {
-    max-height: {{ sponsor_logo.max_height }}px;
-    max-width: {{ sponsor_logo.max_width }}px;
+    max-height: {{ meetinghost_logo.max_height }}px;
+    max-width: {{ meetinghost_logo.max_width }}px;
     overflow: hidden;
     margin: 0 0 0 1rem;
   }
   {# Resize logo so longest edge matches the display size, maintaining aspect ratio. #}
-  {% widthratio sponsor_logo.max_width sponsor_logo.max_height 1 as displayed_aspect %}
-  {% for host in meeting.sponsors.all %}
+  {% widthratio meetinghost_logo.max_width meetinghost_logo.max_height 1 as displayed_aspect %}
+  {% for host in meeting.meetinghosts.all %}
     {% widthratio host.logo.width host.logo.height 1 as logo_aspect %}
     .host-logo img.host{{ forloop.counter }}  {
       {% if logo_aspect > displayed_aspect %}width: 100%; height: auto;{% else %}width: auto; height: 100%;{% endif %}

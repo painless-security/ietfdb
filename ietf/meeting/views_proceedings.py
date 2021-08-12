@@ -11,7 +11,7 @@ from ietf.doc.utils import add_state_change_event
 from ietf.doc.models import DocAlias, DocEvent, Document, NewRevisionDocEvent, State
 from ietf.ietfauth.utils import role_required
 from ietf.meeting.forms import FileUploadForm
-from ietf.meeting.models import Meeting, Sponsor
+from ietf.meeting.models import Meeting, MeetingHost
 from ietf.meeting.helpers import get_meeting
 from ietf.name.models import ProceedingsMaterialTypeName
 from ietf.secr.proceedings.utils import handle_upload_file
@@ -271,21 +271,21 @@ def remove_restore_material(request, num, material_type, action):
     )
 
 @role_required('Secretariat')
-def edit_sponsors(request, num):
+def edit_meetinghosts(request, num):
     meeting = get_meeting(num)
 
-    SponsorFormSet = forms.inlineformset_factory(
+    MeetingHostFormSet = forms.inlineformset_factory(
         Meeting,
-        Sponsor,
+        MeetingHost,
         fields=('name', 'logo',),
         extra=2,
     )
 
     if request.method == 'POST':
-        formset = SponsorFormSet(request.POST, request.FILES, instance=meeting)
+        formset = MeetingHostFormSet(request.POST, request.FILES, instance=meeting)
         if formset.is_valid():
             formset.save()
-            # remove any logos from deleted sponsors
+            # remove any logos from deleted hosts
             for form in formset.deleted_forms:
                 try:
                     Path(form.instance.logo.path).unlink()
@@ -293,17 +293,17 @@ def edit_sponsors(request, num):
                     pass  # After python 3.8, can use missing_ok param to unlink instead
             return redirect('ietf.meeting.views.materials', num=meeting.number)
     else:
-        formset = SponsorFormSet(instance=meeting)
+        formset = MeetingHostFormSet(instance=meeting)
 
-    return render(request, 'meeting/proceedings/edit_sponsors.html', {
+    return render(request, 'meeting/proceedings/edit_meetinghosts.html', {
         'formset': formset,
         'meeting': meeting,
     })
 
 
-def sponsor_logo(request, num, sponsor_id):
-    sponsor = get_object_or_404(Sponsor, pk=sponsor_id)
-    if sponsor.meeting.number != num:
+def meetinghost_logo(request, num, host_id):
+    host = get_object_or_404(MeetingHost, pk=host_id)
+    if host.meeting.number != num:
         raise Http404()
 
-    return FileResponse(sponsor.logo.open())
+    return FileResponse(host.logo.open())

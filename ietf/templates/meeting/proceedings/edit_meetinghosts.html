@@ -23,7 +23,7 @@
   </h1>
 
   <p class="help-block">
-    The sponsors listed below will appear on the proceedings as meeting hosts.
+    The entries below will appear on the proceedings as meeting hosts.
     If you need to add more than there are slots, fill out the form below, save, and
     reopen this page.
   </p>
@@ -38,7 +38,7 @@
           <td class="col-md-3">
             {% if form.instance.pk and form.instance.logo %}
               <img class="logo"
-                   src="{% url 'ietf.meeting.views_proceedings.sponsor_logo' num=meeting.number sponsor_id=form.instance.pk %} ">
+                   src="{% url 'ietf.meeting.views_proceedings.meetinghost_logo' num=meeting.number host_id=form.instance.pk %} ">
             {% endif %}
           </td>
           <td class="col-md-9">
