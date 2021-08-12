@@ -1474,14 +1474,14 @@ class ProceedingsMaterial(models.Model):
     def is_url(self):
         return len(self.document.external_url) > 0
 
-def _host_upload_path(instance, filename):
+def _host_upload_path(instance : 'MeetingHost', filename):
     """Compute filename relative to the storage location
 
     Must live outside a class to allow migrations to deconstruct fields that use it
     """
     num = instance.meeting.number
     path = (
-            Path(num) / 'meetinghosts' / f'logo-{xslugify(instance.name)}'
+            Path(num) / 'meetinghosts' / instance.filename_stem()
     ).with_suffix(
         Path(filename).suffix
     )
@@ -1523,3 +1523,7 @@ class MeetingHost(models.Model):
     class Meta:
         unique_together = (('meeting', 'name'),)
         ordering = ('pk',)
+
+    def filename_stem(self):
+        """Compute the stem of the filename expected for this MeetingHost"""
+        return f'logo-{xslugify(self.name)}'

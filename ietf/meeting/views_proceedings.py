@@ -1,9 +1,9 @@
+import os
 from pathlib import Path
 
 from django import forms
 from django.http import Http404, FileResponse, HttpResponseBadRequest
 from django.shortcuts import render, redirect, get_object_or_404
-from django.urls import reverse as urlreverse
 
 import debug                            # pyflakes:ignore
 
@@ -284,13 +284,41 @@ def edit_meetinghosts(request, num):
     if request.method == 'POST':
         formset = MeetingHostFormSet(request.POST, request.FILES, instance=meeting)
         if formset.is_valid():
+            # Remember names of files before we change anything
+            orig_paths = {
+                form.instance.pk: MeetingHost.objects.get(pk=form.instance.pk).logo.path
+                for form in formset.forms if form.instance.pk is not None
+            }
+
+            # this will update the DB and add any newly uploaded files
             formset.save()
-            # remove any logos from deleted hosts
-            for form in formset.deleted_forms:
-                try:
-                    Path(form.instance.logo.path).unlink()
-                except FileNotFoundError:
-                    pass  # After python 3.8, can use missing_ok param to unlink instead
+
+            # remove logo files from deleted hosts
+            deleted_forms = formset.deleted_forms
+            for form in deleted_forms:
+                os.remove(form.instance.logo.path)
+
+            # remove any logo files that have already changed names - this means that a new file was uploaded
+            # alongside the name change
+            remaining_forms = set(formset.forms).difference(deleted_forms).difference(formset.extra_forms)
+            for form in remaining_forms:
+                pk = form.instance.pk
+                if pk in orig_paths and form.instance.logo.path != orig_paths[pk]:
+                    os.remove(orig_paths[pk])
+
+            # now see if any logo files need to be renamed to match changed names
+            for form in remaining_forms:
+                host : MeetingHost = form.instance
+                logo_name = Path(host.logo.name)  # the partial filename name passed to the Storage class
+                expected_stem = host.filename_stem()
+                if logo_name.stem != expected_stem:
+                    # for Python >= 3.9, the with_name() business could be simplified using with_stem()
+                    new_name = logo_name.with_name(expected_stem).with_suffix(logo_name.suffix)
+                    logo_path = Path(host.logo.path)  # the complete file path, determined by Storage class
+                    os.rename(logo_path, logo_path.with_name(new_name.name))  # new_name.name gives just the filename
+                    host.logo.name = str(new_name)
+                    host.save()
+
             return redirect('ietf.meeting.views.materials', num=meeting.number)
     else:
         formset = MeetingHostFormSet(instance=meeting)
