@@ -175,7 +175,7 @@ def materials(request, num=None):
             session.past_cutoff_date = past_cutoff_date
 
     proceedings_materials = [
-        (type_name.slug, type_name, meeting.proceedings_materials.filter(type=type_name).first())
+        (type_name, meeting.proceedings_materials.filter(type=type_name).first())
         for type_name in ProceedingsMaterialTypeName.objects.all()
     ]
 

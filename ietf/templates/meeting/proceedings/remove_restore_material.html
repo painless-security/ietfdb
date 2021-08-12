@@ -10,7 +10,7 @@
   {% origin %}
   <h1>{{ action|capfirst }} material</h1>
 
-  <p>{{ action|capfirst }} <strong>{{material.document.name}}</strong> as {{ material.type.name }} for {{ material.meeting }} proceedings?</p>
+  <p>{{ action|capfirst }} <strong>{{material}}</strong> for the {{ material.meeting }} proceedings?</p>
 
   <form method="post">
     {% csrf_token %}

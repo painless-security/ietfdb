@@ -22,8 +22,14 @@
 
 {% if material is not None %}
   <p>
-    A file for this material type was uploaded at {% with tm=material.document.time|utc %}
-    {{ tm|date:"H:i:s" }} on {{ tm|date:"Y-m-d" }}.{% endwith %}
+    {% if material.active %}
+      {% if material.is_url %} An external URL for this material was set at
+      {% else %} A file for this material type was uploaded at {% endif %}
+      {% with tm=material.document.time|utc %}
+      {{ tm|date:"H:i:s" }} UTC on {{ tm|date:"Y-m-d" }}.{% endwith %}
+    {% else %}
+      This material has been removed and will not appear in the proceedings.
+    {% endif %}
   </p>
 {% endif %}
   {% block intro %}{% endblock %}

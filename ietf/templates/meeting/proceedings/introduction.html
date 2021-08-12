@@ -46,7 +46,7 @@ This renders the list of links below the title on the meeting proceedings page.
   {% with materials=meeting.get_proceedings_materials %}
     {% if materials|length > 0 %}
       <div class="proceedings-column">
-        {% for mat in materials.values %}
+        {% for mat in materials %}
           <div class="proceedings-row">
             <a href="{{ mat.get_href }}">{{ mat }}</a>
           </div>

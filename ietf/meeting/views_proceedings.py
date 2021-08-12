@@ -200,7 +200,7 @@ def upload_material(request, num, material_type):
 def material_details(request, num):
     meeting = get_meeting(num)
     proceedings_materials = [
-        (type_name.slug, type_name, meeting.proceedings_materials.filter(type=type_name).first())
+        (type_name, meeting.proceedings_materials.filter(type=type_name).first())
         for type_name in ProceedingsMaterialTypeName.objects.all()
     ]
     return render(
@@ -238,7 +238,6 @@ def edit_material(request, num, material_type):
 
     return render(request, 'meeting/proceedings/edit_material.html', {
         'action': 'revise',
-        'back_href': urlreverse('ietf.meeting.views.materials', kwargs={'num': num}),
         'form': form,
         'material': material,
         'material_type': material.type,
