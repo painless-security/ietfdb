@@ -89,6 +89,16 @@
       </tr>
     {% endif %}
 
+    {% if doc.type_id == 'procmaterials' and doc.external_url|length > 0 %}
+      <tr>
+        <th>External URL</th>
+        <td class="edit"></td>
+        <td>
+          <a href="{{ doc.external_url }}">{{ doc.external_url }}</a>
+        </td>
+      </tr>
+    {% endif %}
+
     {% if doc.type_id != 'procmaterials' %}
       {% if presentations or can_manage_material %}
         <tr>
