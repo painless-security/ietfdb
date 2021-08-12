@@ -36,12 +36,13 @@ This renders the title block for the meeting proceedings page.
         <div class="proceedings-row">
           Hosted by:
           {% for sponsor in sponsors %}
-            {# some ad blockers hide images with classes like 'sponsor-logo', hence the odd abbreviation #}
-            <img class="spons-logo"
-                 src="{% url 'ietf.meeting.views_proceedings.sponsor_logo' num=meeting.number sponsor_id=sponsor.pk %}"
-                 height="{{ sponsor.logo_height }}"
-                 width="{{ sponsor.logo_width }}"
-                 title="{{ sponsor.name }}"> {% endfor %}
+            <div class="host-logo">
+                <img class="host{{ forloop.counter }}"
+                     src="{% url 'ietf.meeting.views_proceedings.sponsor_logo' num=meeting.number sponsor_id=sponsor.pk %}"
+                     height="{{ sponsor.logo_height }}"
+                     width="{{ sponsor.logo_width }}"
+                     title="{{ sponsor.name }}">
+            </div>{% endfor %}
         </div>
       </div>
     {% endif %}
