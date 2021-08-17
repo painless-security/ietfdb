@@ -14,13 +14,17 @@
   {% origin %}
 
   <h1>
-    {% block content_header %}
       Edit Meeting Hosts<br>
       <small>
         {{ meeting }}
       </small>
-    {% endblock %}
   </h1>
+
+  {% if meeting.proceedings_final %}
+    <div class="alert alert-warning">
+      The proceedings for this meeting have already been finalized.
+    </div>
+  {% endif %}
 
   <p class="help-block">
     The entries below will appear on the proceedings as meeting hosts.
