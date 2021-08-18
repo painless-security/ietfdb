@@ -156,6 +156,42 @@ class SessionRequestTestCase(TestCase):
         r = self.client.get(redirect_url)
         self.assertContains(r, 'First session with: {}'.format(group2.acronym))
 
+    def test_edit_notification_email_group_conflicts(self):
+        """Notification email after edit should list group conflicts"""
+        meeting = MeetingFactory(type_id='ietf', date=datetime.date.today())
+        group = GroupFactory()
+        SessionFactory(meeting=meeting, group=group, status_id='sched')
+
+        conflict_data = {
+            c: ' '.join(g.acronym for g in GroupFactory.create_batch(2))
+            for c in meeting.group_conflict_types.all()
+        }
+        self.assertGreater(len(conflict_data), 0, 'No group conflicts enabled for meeting under test')
+        post_data = {
+            'num_session': '1',
+            'length_session1': '3600',
+            'attendees': '10',
+            'submit': 'Continue',
+        }
+        post_data.update({
+            f'constraint_{c.slug}': groups for c, groups in conflict_data.items()
+        })
+
+        empty_outbox()
+        self.client.login(username="secretary", password="secretary+password")
+        r = self.client.post(
+            reverse('ietf.secr.sreq.views.edit', kwargs={'acronym': group.acronym}),
+            post_data,
+            HTTP_HOST='example.com',
+        )
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(len(outbox), 1, 'Mail should have been sent after updating request')
+        email_body = outbox[0].get_payload()
+        self.assertIn('Conflicts to Avoid', email_body)
+        for c, groups in conflict_data.items():
+            self.assertIn(f'{c.name.title()}: {groups}', email_body)
+
+
     def test_edit_inactive_conflicts(self):
         """Inactive conflicts should be displayed and removable"""
         meeting = MeetingFactory(type_id='ietf', date=datetime.date.today(), group_conflicts=['chair_conflict'])
@@ -293,6 +329,7 @@ class SubmitRequestCase(TestCase):
                      'joint_with_groups': group3.acronym + ' ' + group4.acronym,
                      'joint_for_session': '1',
                      'submit': 'Continue'}
+        empty_outbox()
         self.client.login(username="secretary", password="secretary+password")
         r = self.client.post(url,post_data)
         self.assertEqual(r.status_code, 200)
@@ -302,11 +339,17 @@ class SubmitRequestCase(TestCase):
         self.assertContains(r, group2.acronym)
         self.assertContains(r, 'First session with: {} {}'.format(group3.acronym, group4.acronym))
 
+        # No email should have been sent
+        self.assertEqual(len(outbox), 0, 'Mail should not have been sent before confirming submission')
+
         post_data['submit'] = 'Submit'
         r = self.client.post(confirm_url,post_data)
         self.assertRedirects(r, main_url)
         session_count_after = Session.objects.filter(meeting=meeting, group=group, type='regular').count()
         self.assertEqual(session_count_after, session_count_before + 1)
+
+        self.assertEqual(len(outbox), 1, 'Mail should have been sent after confirming submission')
+        self.assertNotIn('Conflicts to avoid', outbox[0].get_payload())
 
         # test that second confirm does not add sessions
         r = self.client.post(confirm_url,post_data)
@@ -322,6 +365,38 @@ class SubmitRequestCase(TestCase):
             list(TimerangeName.objects.filter(name__in=['thursday-afternoon-early', 'thursday-afternoon-late']).values('name'))
         )
         self.assertEqual(list(session.joint_with_groups.all()), [group3, group4])
+
+    def test_submit_request_notification_email_group_conflicts(self):
+        """Notification email on a submission should list group conflicts"""
+        meeting = MeetingFactory(type_id='ietf', date=datetime.date.today())
+        group = GroupFactory()
+        conflict_data = {
+            c: ' '.join(g.acronym for g in GroupFactory.create_batch(2))
+            for c in meeting.group_conflict_types.all()
+        }
+        self.assertGreater(len(conflict_data), 0, 'No group conflicts enabled for meeting under test')
+        post_data = {
+            'num_session': '1',
+            'length_session1': '3600',
+            'attendees': '10',
+            'submit': 'Submit',
+        }
+        post_data.update({
+            f'constraint_{c.slug}': groups for c, groups in conflict_data.items()
+        })
+
+        empty_outbox()
+        self.client.login(username="secretary", password="secretary+password")
+        r = self.client.post(
+            reverse('ietf.secr.sreq.views.confirm',kwargs={'acronym':group.acronym}),
+            post_data,
+        )
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(len(outbox), 1, 'Mail should have been sent after confirming submission')
+        email_body = outbox[0].get_payload()
+        self.assertIn('Conflicts to Avoid', email_body)
+        for c, groups in conflict_data.items():
+            self.assertIn(f'{c.name.title()}: {groups}', email_body)
 
     def test_submit_request_invalid(self):
         MeetingFactory(type_id='ietf', date=datetime.date.today())
@@ -692,3 +767,23 @@ class SessionFormTest(TestCase):
         form = SessionForm(data=form_data, group=self.group1, meeting=self.meeting)
         self.assertFalse(form.is_valid())
         return form
+
+    def test_cleaned_conflicts(self):
+        """Test the cleaned_constraints method"""
+        form_data = dict(
+            self.valid_form_data
+        )
+        form = SessionForm(data=form_data, group=self.group1, meeting=self.meeting)
+        with self.assertRaises(RuntimeError, msg='cleaned_conflicts() should not be callable before is_valid()'):
+            form.cleaned_conflicts()
+
+        self.assertTrue(form.is_valid())
+        conflicts = form.cleaned_conflicts()
+        self.assertCountEqual(
+            conflicts,
+            [
+                dict(name=ConstraintName.objects.get(slug='chair_conflict'), groups=self.group2.acronym),
+                dict(name=ConstraintName.objects.get(slug='tech_overlap'), groups=self.group3.acronym),
+                dict(name=ConstraintName.objects.get(slug='key_participant'), groups=self.group4.acronym),
+            ]
+        )

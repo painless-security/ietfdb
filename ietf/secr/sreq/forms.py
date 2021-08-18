@@ -241,10 +241,12 @@ class SessionForm(forms.Form):
 
         # Validate the individual conflict fields
         for _, cfield_id, _ in self._wg_field_data:
+            normalized_value = data[cfield_id].replace(',', ' ')  # always represent as space-separated list
             try:
-                check_conflict(data[cfield_id], self.group)
+                check_conflict(normalized_value, self.group)
             except forms.ValidationError as e:
                 self.add_error(cfield_id, e)
+            data[cfield_id] = normalized_value
 
         # Skip remaining tests if individual field tests had errors,
         if self.errors:
@@ -285,6 +287,26 @@ class SessionForm(forms.Form):
                 )
         
         return data
+
+    def cleaned_conflicts(self):
+        """Summarizes the cleaned conflicts on the form
+
+        Returns a list of dicts with keys 'name' and 'groups'. The corresponding values
+        are the relevant ConstraintName object and the corresponding cleaned form field value
+        (a space-separated list of group acronyms).
+
+        Only accessible when cleaned_data exists (i.e., after form.is_valid() is called).
+        """
+        cleaned_data = getattr(self, 'cleaned_data', None)
+        if cleaned_data is None:
+            raise RuntimeError('Form has not yet been validated')
+
+        outbound_conflicts = []
+        for conflictname, cfield_id in self.wg_constraint_field_ids():
+            conflict_groups = cleaned_data[cfield_id]
+            if len(conflict_groups) > 0:
+                outbound_conflicts.append(dict(name=conflictname, groups=conflict_groups))
+        return outbound_conflicts
 
 
 class VirtualSessionForm(SessionForm):

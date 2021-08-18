@@ -145,7 +145,7 @@ def save_conflicts(group, meeting, conflicts, name):
                                 name=constraint_name)
         constraint.save()
 
-def send_notification(group,meeting,login,session,action):
+def send_notification(group, meeting, login, session, conflicts, action):
     '''
     This function generates email notifications for various session request activities.
     session argument is a dictionary of fields from the session request form
@@ -161,6 +161,7 @@ def send_notification(group,meeting,login,session,action):
     context['session'] = session
     context['group'] = group
     context['meeting'] = meeting
+    context['session_conflicts'] = conflicts
     context['login'] = login
     context['header'] = 'A new'
     context['requester'] = get_requester_text(login,group)
@@ -301,12 +302,7 @@ def confirm(request, acronym):
         session_data['timeranges_display'] = [t.desc for t in form.cleaned_data['timeranges']]
     session_data['resources'] = [ ResourceAssociation.objects.get(pk=pk) for pk in request.POST.getlist('resources') ]
 
-    # extract wg conflict constraint data for the view
-    outbound_conflicts = []
-    for conflictname, cfield_id in form.wg_constraint_field_ids():
-        conflict_groups = form.cleaned_data[cfield_id]
-        if len(conflict_groups) > 0:
-            outbound_conflicts.append(dict(name=conflictname, groups=conflict_groups))
+    outbound_conflicts = form.cleaned_conflicts()
 
     button_text = request.POST.get('submit', '')
     if button_text == 'Cancel':
@@ -373,7 +369,7 @@ def confirm(request, acronym):
         add_event_info_to_session_qs(Session.objects.filter(group=group, meeting=meeting)).filter(current_status='notmeet').delete()
 
         # send notification
-        send_notification(group,meeting,login,session_data,'new')
+        send_notification(group, meeting, login, session_data, outbound_conflicts, 'new')
 
         status_text = 'IETF Agenda to be scheduled'
         messages.success(request, 'Your request has been sent to %s' % status_text)
@@ -585,7 +581,7 @@ def edit(request, acronym, num=None):
                 #add_session_activity(group,'Session Request was updated',meeting,user)
 
                 # send notification
-                send_notification(group,meeting,login,form.cleaned_data,'update')
+                send_notification(group, meeting, login, form.cleaned_data, form.cleaned_conflicts(), 'update')
 
             # nuke any cache that might be lingering around.
             from ietf.meeting.helpers import session_constraint_expire
