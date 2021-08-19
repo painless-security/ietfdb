@@ -631,119 +631,6 @@ class MeetingTests(BaseMeetingTestCase):
         r = self.client.get(url)
         self.assertEqual(r.status_code, 200)
 
-    def test_proceedings(self):
-        meeting = make_meeting_test_data(meeting=MeetingFactory(type_id='ietf', number='100'))
-        session = Session.objects.filter(meeting=meeting, group__acronym="mars").first()
-        GroupEventFactory(group=session.group,type='status_update')
-        SessionPresentationFactory(document__type_id='recording',session=session)
-        SessionPresentationFactory(document__type_id='recording',session=session,document__title="Audio recording for tests")
-
-        self.write_materials_files(meeting, session)
-
-        url = urlreverse("ietf.meeting.views.proceedings", kwargs=dict(num=meeting.number))
-        r = self.client.get(url)
-        self.assertEqual(r.status_code, 200)
-
-    def test_proceedings_no_agenda(self):
-        meeting = MeetingFactory(type_id='ietf',populate_schedule=False,date=datetime.date.today())
-        url = urlreverse('ietf.meeting.views.proceedings')
-        r = self.client.get(url)
-        self.assertRedirects(r, urlreverse('ietf.meeting.views.materials'))
-        url = urlreverse('ietf.meeting.views.proceedings', kwargs=dict(num=meeting.number))
-        r = self.client.get(url)
-        self.assertRedirects(r, urlreverse('ietf.meeting.views.materials', kwargs=dict(num=meeting.number)))
-
-    def test_proceedings_acknowledgements(self):
-        make_meeting_test_data()
-        meeting = MeetingFactory(type_id='ietf', date=datetime.date(2016,7,14), number="96")
-        meeting.acknowledgements = 'test acknowledgements'
-        meeting.save()
-        url = urlreverse('ietf.meeting.views.proceedings_acknowledgements',kwargs={'num':meeting.number})
-        response = self.client.get(url)
-        self.assertContains(response, 'test acknowledgements')
-
-    @override_settings(PROCEEDINGS_VERSION_CHANGES=[0, 95, 111])
-    def test_proceedings_acknowledgements_link(self):
-        """Link to proceedings_acknowledgements view should not appear for 'new' meetings
-
-        With the PROCEEDINGS_VERSION_CHANGES settings value used here, expect the proceedings_acknowledgements
-        view to be linked for meetings 95-110.
-        """
-        meeting_with_acks = MeetingFactory(type_id='ietf', date=datetime.date(2020,7,25), number='108')
-        SessionFactory(meeting=meeting_with_acks)  # make sure meeting has a scheduled session
-        meeting_with_acks.acknowledgements = 'these acknowledgements should appear'
-        meeting_with_acks.save()
-        url = urlreverse('ietf.meeting.views.proceedings',kwargs={'num':meeting_with_acks.number})
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 200)
-        q = PyQuery(response.content)
-        self.assertEqual(
-            len(q('a[href="{}"]'.format(
-                urlreverse('ietf.meeting.views.proceedings_acknowledgements',
-                           kwargs={'num':meeting_with_acks.number})
-            ))),
-            1,
-        )
-
-        meeting_without_acks = MeetingFactory(type_id='ietf', date=datetime.date(2022,7,25), number='113')
-        SessionFactory(meeting=meeting_without_acks)  # make sure meeting has a scheduled session
-        meeting_without_acks.acknowledgements = 'these acknowledgements should not appear'
-        meeting_without_acks.save()
-        url = urlreverse('ietf.meeting.views.proceedings',kwargs={'num':meeting_without_acks.number})
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 200)
-        q = PyQuery(response.content)
-        self.assertEqual(
-            len(q('a[href="{}"]'.format(
-                urlreverse('ietf.meeting.views.proceedings_acknowledgements',
-                           kwargs={'num':meeting_without_acks.number})
-            ))),
-            0,
-        )
-
-    @patch('ietf.meeting.utils.requests.get')
-    def test_proceedings_attendees(self, mockobj):
-        mockobj.return_value.text = b'[{"LastName":"Smith","FirstName":"John","Company":"ABC","Country":"US"}]'
-        mockobj.return_value.json = lambda: json.loads(b'[{"LastName":"Smith","FirstName":"John","Company":"ABC","Country":"US"}]')
-        make_meeting_test_data()
-        meeting = MeetingFactory(type_id='ietf', date=datetime.date(2016,7,14), number="96")
-        finalize(meeting)
-        url = urlreverse('ietf.meeting.views.proceedings_attendees',kwargs={'num':96})
-        response = self.client.get(url)
-        self.assertContains(response, 'Attendee List')
-        q = PyQuery(response.content)
-        self.assertEqual(1,len(q("#id_attendees tbody tr")))
-
-    @patch('urllib.request.urlopen')
-    def test_proceedings_overview(self, mock_urlopen):
-        '''Test proceedings IETF Overview page.
-        Note: old meetings aren't supported so need to add a new meeting then test.
-        '''
-        mock_urlopen.return_value = BytesIO(b'[{"LastName":"Smith","FirstName":"John","Company":"ABC","Country":"US"}]')
-        make_meeting_test_data()
-        meeting = MeetingFactory(type_id='ietf', date=datetime.date(2016,7,14), number="96")
-        finalize(meeting)
-        url = urlreverse('ietf.meeting.views.proceedings_overview',kwargs={'num':96})
-        response = self.client.get(url)
-        self.assertContains(response, 'The Internet Engineering Task Force')
-
-    def test_proceedings_progress_report(self):
-        make_meeting_test_data()
-        MeetingFactory(type_id='ietf', date=datetime.date(2016,4,3), number="95")
-        MeetingFactory(type_id='ietf', date=datetime.date(2016,7,14), number="96")
-
-        url = urlreverse('ietf.meeting.views.proceedings_progress_report',kwargs={'num':96})
-        response = self.client.get(url)
-        self.assertContains(response, 'Progress Report')
-
-    def test_feed(self):
-        meeting = make_meeting_test_data()
-        session = Session.objects.filter(meeting=meeting, group__acronym="mars").first()
-
-        r = self.client.get("/feed/wg-proceedings/")
-        self.assertContains(r, "agenda")
-        self.assertContains(r, session.group.acronym)
-
     def test_important_dates(self):
         meeting=MeetingFactory(type_id='ietf')
         meeting.show_important_dates = True
@@ -5731,3 +5618,116 @@ class MeetingHostTests(BaseMeetingTestCase):
 
 class ProceedingsTests(BaseMeetingTestCase):
     """Tests related to meeting proceedings display"""
+    def test_proceedings(self):
+        meeting = make_meeting_test_data(meeting=MeetingFactory(type_id='ietf', number='100'))
+        session = Session.objects.filter(meeting=meeting, group__acronym="mars").first()
+        GroupEventFactory(group=session.group,type='status_update')
+        SessionPresentationFactory(document__type_id='recording',session=session)
+        SessionPresentationFactory(document__type_id='recording',session=session,document__title="Audio recording for tests")
+
+        self.write_materials_files(meeting, session)
+
+        url = urlreverse("ietf.meeting.views.proceedings", kwargs=dict(num=meeting.number))
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+
+    def test_proceedings_no_agenda(self):
+        meeting = MeetingFactory(type_id='ietf',populate_schedule=False,date=datetime.date.today())
+        url = urlreverse('ietf.meeting.views.proceedings')
+        r = self.client.get(url)
+        self.assertRedirects(r, urlreverse('ietf.meeting.views.materials'))
+        url = urlreverse('ietf.meeting.views.proceedings', kwargs=dict(num=meeting.number))
+        r = self.client.get(url)
+        self.assertRedirects(r, urlreverse('ietf.meeting.views.materials', kwargs=dict(num=meeting.number)))
+
+    def test_proceedings_acknowledgements(self):
+        make_meeting_test_data()
+        meeting = MeetingFactory(type_id='ietf', date=datetime.date(2016,7,14), number="96")
+        meeting.acknowledgements = 'test acknowledgements'
+        meeting.save()
+        url = urlreverse('ietf.meeting.views.proceedings_acknowledgements',kwargs={'num':meeting.number})
+        response = self.client.get(url)
+        self.assertContains(response, 'test acknowledgements')
+
+    @override_settings(PROCEEDINGS_VERSION_CHANGES=[0, 95, 111])
+    def test_proceedings_acknowledgements_link(self):
+        """Link to proceedings_acknowledgements view should not appear for 'new' meetings
+
+        With the PROCEEDINGS_VERSION_CHANGES settings value used here, expect the proceedings_acknowledgements
+        view to be linked for meetings 95-110.
+        """
+        meeting_with_acks = MeetingFactory(type_id='ietf', date=datetime.date(2020,7,25), number='108')
+        SessionFactory(meeting=meeting_with_acks)  # make sure meeting has a scheduled session
+        meeting_with_acks.acknowledgements = 'these acknowledgements should appear'
+        meeting_with_acks.save()
+        url = urlreverse('ietf.meeting.views.proceedings',kwargs={'num':meeting_with_acks.number})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        q = PyQuery(response.content)
+        self.assertEqual(
+            len(q('a[href="{}"]'.format(
+                urlreverse('ietf.meeting.views.proceedings_acknowledgements',
+                           kwargs={'num':meeting_with_acks.number})
+            ))),
+            1,
+        )
+
+        meeting_without_acks = MeetingFactory(type_id='ietf', date=datetime.date(2022,7,25), number='113')
+        SessionFactory(meeting=meeting_without_acks)  # make sure meeting has a scheduled session
+        meeting_without_acks.acknowledgements = 'these acknowledgements should not appear'
+        meeting_without_acks.save()
+        url = urlreverse('ietf.meeting.views.proceedings',kwargs={'num':meeting_without_acks.number})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        q = PyQuery(response.content)
+        self.assertEqual(
+            len(q('a[href="{}"]'.format(
+                urlreverse('ietf.meeting.views.proceedings_acknowledgements',
+                           kwargs={'num':meeting_without_acks.number})
+            ))),
+            0,
+        )
+
+    @patch('ietf.meeting.utils.requests.get')
+    def test_proceedings_attendees(self, mockobj):
+        mockobj.return_value.text = b'[{"LastName":"Smith","FirstName":"John","Company":"ABC","Country":"US"}]'
+        mockobj.return_value.json = lambda: json.loads(b'[{"LastName":"Smith","FirstName":"John","Company":"ABC","Country":"US"}]')
+        make_meeting_test_data()
+        meeting = MeetingFactory(type_id='ietf', date=datetime.date(2016,7,14), number="96")
+        finalize(meeting)
+        url = urlreverse('ietf.meeting.views.proceedings_attendees',kwargs={'num':96})
+        response = self.client.get(url)
+        self.assertContains(response, 'Attendee List')
+        q = PyQuery(response.content)
+        self.assertEqual(1,len(q("#id_attendees tbody tr")))
+
+    @patch('urllib.request.urlopen')
+    def test_proceedings_overview(self, mock_urlopen):
+        '''Test proceedings IETF Overview page.
+        Note: old meetings aren't supported so need to add a new meeting then test.
+        '''
+        mock_urlopen.return_value = BytesIO(b'[{"LastName":"Smith","FirstName":"John","Company":"ABC","Country":"US"}]')
+        make_meeting_test_data()
+        meeting = MeetingFactory(type_id='ietf', date=datetime.date(2016,7,14), number="96")
+        finalize(meeting)
+        url = urlreverse('ietf.meeting.views.proceedings_overview',kwargs={'num':96})
+        response = self.client.get(url)
+        self.assertContains(response, 'The Internet Engineering Task Force')
+
+    def test_proceedings_progress_report(self):
+        make_meeting_test_data()
+        MeetingFactory(type_id='ietf', date=datetime.date(2016,4,3), number="95")
+        MeetingFactory(type_id='ietf', date=datetime.date(2016,7,14), number="96")
+
+        url = urlreverse('ietf.meeting.views.proceedings_progress_report',kwargs={'num':96})
+        response = self.client.get(url)
+        self.assertContains(response, 'Progress Report')
+
+    def test_feed(self):
+        meeting = make_meeting_test_data()
+        session = Session.objects.filter(meeting=meeting, group__acronym="mars").first()
+
+        r = self.client.get("/feed/wg-proceedings/")
+        self.assertContains(r, "agenda")
+        self.assertContains(r, session.group.acronym)
+
