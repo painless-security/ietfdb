@@ -71,11 +71,21 @@ else:
     print("     "+skip_message)
 
 
-class MeetingTests(TestCase):
+class BaseMeetingTestCase(TestCase):
+    """Base class for meeting-related tests that need to set up temporary directories
+
+    This creates temporary directories for meeting-related uploads, then updates settings
+    to point to them. It also patches the Storage class to use the temporary directories.
+    When done, removes its files, resets the settings, and shuts off the patched Storage.
+
+    If subclasses have their own setUp/tearDown routines, they must remember to call the
+    superclass methods.
+    """
     def setUp(self):
         self.materials_dir = self.tempdir('materials')
         self.id_dir = self.tempdir('id')
         self.archive_dir = self.tempdir('id-archive')
+        self.storage_dir = self.tempdir('storage')
         #
         os.mkdir(os.path.join(self.archive_dir, "unknown_ids"))
         os.mkdir(os.path.join(self.archive_dir, "deleted_tombstones"))
@@ -84,13 +94,28 @@ class MeetingTests(TestCase):
         self.saved_agenda_path = settings.AGENDA_PATH
         self.saved_id_dir = settings.INTERNET_DRAFT_PATH
         self.saved_archive_dir = settings.INTERNET_DRAFT_ARCHIVE_DIR
+        self.saved_meetinghost_logo_path = settings.MEETINGHOST_LOGO_PATH
         #
         settings.AGENDA_PATH = self.materials_dir
         settings.INTERNET_DRAFT_PATH = self.id_dir
         settings.INTERNET_DRAFT_ARCHIVE_DIR = self.archive_dir
+        settings.MEETINGHOST_LOGO_PATH = self.storage_dir
 
+        # The FileSystemStorage has already set its location before
+        # the settings were changed. Mock the method it uses to get the
+        # location and fill in our temporary location. Without this, test
+        # files will upload to the locations specified in settings.py.
+        # Note that this will affect any use of the storage class in
+        # meeting.models - i.e., FloorPlan.image and MeetingHost.logo
+        self.patcher = patch('ietf.meeting.models.NoLocationMigrationFileSystemStorage.base_location',
+                             new_callable=PropertyMock)
+        mocked = self.patcher.start()
+        mocked.return_value = self.storage_dir
 
     def tearDown(self):
+        self.patcher.stop()
+        #
+        shutil.rmtree(self.storage_dir)
         shutil.rmtree(self.id_dir)
         shutil.rmtree(self.archive_dir)
         shutil.rmtree(self.materials_dir)
@@ -98,7 +123,7 @@ class MeetingTests(TestCase):
         settings.AGENDA_PATH = self.saved_agenda_path
         settings.INTERNET_DRAFT_PATH = self.saved_id_dir
         settings.INTERNET_DRAFT_ARCHIVE_DIR = self.saved_archive_dir
-
+        settings.MEETINGHOST_LOGO_PATH = self.saved_meetinghost_logo_path
 
     def write_materials_file(self, meeting, doc, content):
         path = os.path.join(self.materials_dir, "%s/%s/%s" % (meeting.number, doc.type_id, doc.uploaded_filename))
@@ -122,8 +147,10 @@ class MeetingTests(TestCase):
 
         self.write_materials_file(meeting, session.materials.filter(type="slides").exclude(states__type__slug='slides',states__slug='deleted').first(),
                                   "This is a slideshow")
-        
 
+
+
+class MeetingTests(BaseMeetingTestCase):
     def test_meeting_agenda(self):
         meeting = make_meeting_test_data()
         session = Session.objects.filter(meeting=meeting, group__acronym="mars").first()
@@ -5359,27 +5386,7 @@ class AgendaFilterTests(TestCase):
                           expected_filter_keywords='bof')
 
 
-class MeetingHostTests(TestCase):
-    def setUp(self):
-        self.logo_dir = self.tempdir('logo')
-        self.saved_meetinghost_logo_path = settings.MEETINGHOST_LOGO_PATH
-        settings.MEETINGHOST_LOGO_PATH = self.logo_dir
-        # The FileSystemStorage has already set its location before
-        # the settings were changed. Mock the method it uses to get the
-        # location and fill in our temporary location. Without this, test
-        # files will upload to the locations specified in settings.py.
-        # Note that this will affect any use of the storage class in
-        # meeting.models - i.e., FloorPlan.image and MeetingHost.logo
-        self.patcher = patch('ietf.meeting.models.NoLocationMigrationFileSystemStorage.base_location',
-                             new_callable=PropertyMock)
-        mocked = self.patcher.start()
-        mocked.return_value = self.logo_dir
-
-    def tearDown(self):
-        shutil.rmtree(self.logo_dir)
-        self.patcher.stop()
-        settings.MEETINGHOST_LOGO_PATH = self.saved_meetinghost_logo_path
-
+class MeetingHostTests(BaseMeetingTestCase):
     def _logo_file(self, width=128, height=128, format='PNG', ext=None):
         img = Image.new('RGB', (width, height))  # just a black image
         data = BytesIO()
@@ -5720,3 +5727,7 @@ class MeetingHostTests(TestCase):
             self.assertRedirects(r, urlreverse('ietf.meeting.views.materials', kwargs=dict(num=meeting.number)))
             self.assertEqual(meeting.meetinghosts.count(), 1)
             meeting.meetinghosts.all().delete()
+
+
+class ProceedingsTests(BaseMeetingTestCase):
+    """Tests related to meeting proceedings display"""
