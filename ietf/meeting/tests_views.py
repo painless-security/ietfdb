@@ -5420,6 +5420,20 @@ class MeetingHostTests(TestCase):
             },
         )
 
+    def test_permissions(self):
+        meeting = MeetingFactory(type_id='ietf')
+        url = urlreverse('ietf.meeting.views_proceedings.edit_meetinghosts', kwargs=dict(num=meeting.number))
+        self.client.logout()
+        login_testing_unauthorized(self, 'ad', url)
+        login_testing_unauthorized(self, 'secretary', url)
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+
+        self.client.logout()
+        login_testing_unauthorized(self, 'ad', url, method='post')
+        login_testing_unauthorized(self, 'secretary', url, method='post')
+        # don't bother checking a real post - it'll be tested in other methods
+
     def test_add(self):
         """Can add a new meeting host"""
         meeting = MeetingFactory(type_id='ietf')
