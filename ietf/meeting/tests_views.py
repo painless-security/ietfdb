@@ -12,12 +12,15 @@ import shutil
 import pytz
 
 from unittest import skipIf
-from mock import patch
+from mock import patch, PropertyMock
 from pyquery import PyQuery
 from lxml.etree import tostring
 from io import StringIO, BytesIO
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urlsplit
+from PIL import Image
+from pathlib import Path
+
 
 from django.urls import reverse as urlreverse
 from django.conf import settings
@@ -631,6 +634,45 @@ class MeetingTests(TestCase):
         url = urlreverse('ietf.meeting.views.proceedings_acknowledgements',kwargs={'num':meeting.number})
         response = self.client.get(url)
         self.assertContains(response, 'test acknowledgements')
+
+    @override_settings(PROCEEDINGS_VERSION_CHANGES=[0, 95, 111])
+    def test_proceedings_acknowledgements_link(self):
+        """Link to proceedings_acknowledgements view should not appear for 'new' meetings
+
+        With the PROCEEDINGS_VERSION_CHANGES settings value used here, expect the proceedings_acknowledgements
+        view to be linked for meetings 95-110.
+        """
+        meeting_with_acks = MeetingFactory(type_id='ietf', date=datetime.date(2020,7,25), number='108')
+        SessionFactory(meeting=meeting_with_acks)  # make sure meeting has a scheduled session
+        meeting_with_acks.acknowledgements = 'these acknowledgements should appear'
+        meeting_with_acks.save()
+        url = urlreverse('ietf.meeting.views.proceedings',kwargs={'num':meeting_with_acks.number})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        q = PyQuery(response.content)
+        self.assertEqual(
+            len(q('a[href="{}"]'.format(
+                urlreverse('ietf.meeting.views.proceedings_acknowledgements',
+                           kwargs={'num':meeting_with_acks.number})
+            ))),
+            1,
+        )
+
+        meeting_without_acks = MeetingFactory(type_id='ietf', date=datetime.date(2022,7,25), number='113')
+        SessionFactory(meeting=meeting_without_acks)  # make sure meeting has a scheduled session
+        meeting_without_acks.acknowledgements = 'these acknowledgements should not appear'
+        meeting_without_acks.save()
+        url = urlreverse('ietf.meeting.views.proceedings',kwargs={'num':meeting_without_acks.number})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        q = PyQuery(response.content)
+        self.assertEqual(
+            len(q('a[href="{}"]'.format(
+                urlreverse('ietf.meeting.views.proceedings_acknowledgements',
+                           kwargs={'num':meeting_without_acks.number})
+            ))),
+            0,
+        )
 
     @patch('ietf.meeting.utils.requests.get')
     def test_proceedings_attendees(self, mockobj):
@@ -5319,3 +5361,351 @@ class AgendaFilterTests(TestCase):
                           expected_filter_item='keyword31',
                           expected_filter_keywords='bof')
 
+
+class MeetingHostTests(TestCase):
+    def setUp(self):
+        self.logo_dir = self.tempdir('logo')
+        self.saved_meetinghost_logo_path = settings.MEETINGHOST_LOGO_PATH
+        settings.MEETINGHOST_LOGO_PATH = self.logo_dir
+        # The FileSystemStorage has already set its location before
+        # the settings were changed. Mock the method it uses to get the
+        # location and fill in our temporary location. Without this, test
+        # files will upload to the locations specified in settings.py.
+        # Note that this will affect any use of the storage class in
+        # meeting.models - i.e., FloorPlan.image and MeetingHost.logo
+        self.patcher = patch('ietf.meeting.models.NoLocationMigrationFileSystemStorage.base_location',
+                             new_callable=PropertyMock)
+        mocked = self.patcher.start()
+        mocked.return_value = self.logo_dir
+
+    def tearDown(self):
+        shutil.rmtree(self.logo_dir)
+        self.patcher.stop()
+        settings.MEETINGHOST_LOGO_PATH = self.saved_meetinghost_logo_path
+
+    def _logo_file(self, width=128, height=128, format='PNG', ext=None):
+        img = Image.new('RGB', (width, height))  # just a black image
+        data = BytesIO()
+        img.save(data, format=format)
+        data.seek(0)
+        data.name = f'logo.{ext if ext is not None else format.lower()}'
+        return data
+
+    def _assertHostFieldCountGreaterEqual(self, r, min_count):
+        q = PyQuery(r.content)
+        self.assertGreaterEqual(
+            len(q('input[type="text"][name^="meetinghosts-"][name$="-name"]')),
+            min_count,
+            f'Must have at least {min_count} host name field(s)',
+        )
+        self.assertGreaterEqual(
+            len(q('input[type="file"][name^="meetinghosts-"][name$="-logo"]')),
+            min_count,
+            f'Must have at least {min_count} host logo field(s)',
+        )
+
+    def _create_first_host(self, meeting, logo, url):
+        """Helper to create a first host via POST"""
+        return self.client.post(
+            url,
+            {
+                'meetinghosts-TOTAL_FORMS': '2',
+                'meetinghosts-INITIAL_FORMS': '0',
+                'meetinghosts-MIN_NUM_FORMS': '0',
+                'meetinghosts-MAX_NUM_FORMS': '1000',
+                'meetinghosts-0-id': '',
+                'meetinghosts-0-meeting': str(meeting.pk),
+                'meetinghosts-0-name': 'Some Sponsor, Inc.',
+                'meetinghosts-0-logo': logo,
+                'meetinghosts-1-id': '',
+                'meetinghosts-1-meeting': str(meeting.pk),
+                'meetinghosts-1-name': '',
+            },
+        )
+
+    def test_add(self):
+        """Can add a new meeting host"""
+        meeting = MeetingFactory(type_id='ietf')
+        url = urlreverse('ietf.meeting.views_proceedings.edit_meetinghosts', kwargs=dict(num=meeting.number))
+
+        # get the edit page to check that it has the necessary fields
+        self.client.login(username='secretary', password='secretary+password')
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        self._assertHostFieldCountGreaterEqual(r, 1)
+
+        # post our response
+        logos = [self._logo_file() for _ in range(2)]
+        r = self._create_first_host(meeting, logos[0], url)
+        self.assertRedirects(r, urlreverse('ietf.meeting.views.materials', kwargs=dict(num=meeting.number)))
+        self.assertEqual(meeting.meetinghosts.count(), 1)
+        host = meeting.meetinghosts.first()
+        self.assertEqual(host.name, 'Some Sponsor, Inc.')
+        logo_filename = Path(host.logo.path)
+        self.assertEqual(logo_filename.name, 'logo-some-sponsor-inc.png')
+        self.assertCountEqual(
+            logo_filename.parent.iterdir(),
+            [logo_filename],
+            'Unexpected or missing files in the output directory',
+        )
+
+        # retrieve the page again to ensure we have more fields
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        self._assertHostFieldCountGreaterEqual(r, 2)  # must have at least one extra
+
+        # post our response to add an additional host
+        r = self.client.post(
+            url,
+            {
+                'meetinghosts-TOTAL_FORMS': '3',
+                'meetinghosts-INITIAL_FORMS': '1',
+                'meetinghosts-MIN_NUM_FORMS': '0',
+                'meetinghosts-MAX_NUM_FORMS': '1000',
+                'meetinghosts-0-id': str(host.pk),
+                'meetinghosts-0-meeting': str(meeting.pk),
+                'meetinghosts-0-name': 'Some Sponsor, Inc.',
+                'meetinghosts-1-id':'',
+                'meetinghosts-1-meeting': str(meeting.pk),
+                'meetinghosts-1-name': 'Another Sponsor, Ltd.',
+                'meetinghosts-1-logo': logos[1],
+                'meetinghosts-2-id':'',
+                'meetinghosts-2-meeting': str(meeting.pk),
+                'meetinghosts-2-name': '',
+            },
+        )
+        self.assertRedirects(r, urlreverse('ietf.meeting.views.materials', kwargs=dict(num=meeting.number)))
+        self.assertEqual(meeting.meetinghosts.count(), 2)
+        host = meeting.meetinghosts.first()
+        self.assertEqual(host.name, 'Some Sponsor, Inc.')
+        logo_filename = Path(host.logo.path)
+        self.assertEqual(logo_filename.name, 'logo-some-sponsor-inc.png')
+        host = meeting.meetinghosts.last()
+        self.assertEqual(host.name, 'Another Sponsor, Ltd.')
+        logo2_filename = Path(host.logo.path)
+        self.assertEqual(logo2_filename.name, 'logo-another-sponsor-ltd.png')
+        self.assertCountEqual(
+            logo_filename.parent.iterdir(),
+            [logo_filename, logo2_filename],
+            'Unexpected or missing files in the output directory',
+        )
+
+        # retrieve the page again to ensure we have yet more fields
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        self._assertHostFieldCountGreaterEqual(r, 3)  # must have at least one extra
+
+    def test_edit_name(self):
+        """Can change name of meeting host
+
+        The main complication is checking that the file has been
+        renamed to match the new host name.
+        """
+        meeting = MeetingFactory(type_id='ietf')
+        url = urlreverse('ietf.meeting.views_proceedings.edit_meetinghosts', kwargs=dict(num=meeting.number))
+
+        # create via UI so we don't have to deal with creating storage paths
+        self.client.login(username='secretary', password='secretary+password')
+        logo = self._logo_file()
+        r = self._create_first_host(meeting, logo, url)
+        self.assertRedirects(r, urlreverse('ietf.meeting.views.materials', kwargs=dict(num=meeting.number)))
+        self.assertEqual(meeting.meetinghosts.count(), 1)
+        host = meeting.meetinghosts.first()
+        self.assertEqual(host.name, 'Some Sponsor, Inc.')
+        orig_logopath = Path(host.logo.path)
+        self.assertEqual(orig_logopath.name, 'logo-some-sponsor-inc.png')
+        self.assertTrue(orig_logopath.exists())
+
+        # post our response to modify the name
+        r = self.client.post(
+            url,
+            {
+                'meetinghosts-TOTAL_FORMS': '3',
+                'meetinghosts-INITIAL_FORMS': '1',
+                'meetinghosts-MIN_NUM_FORMS': '0',
+                'meetinghosts-MAX_NUM_FORMS': '1000',
+                'meetinghosts-0-id': str(host.pk),
+                'meetinghosts-0-meeting': str(meeting.pk),
+                'meetinghosts-0-name': 'Modified Sponsor, Inc.',
+                'meetinghosts-1-id':'',
+                'meetinghosts-1-meeting': str(meeting.pk),
+                'meetinghosts-1-name': '',
+                'meetinghosts-2-id':'',
+                'meetinghosts-2-meeting': str(meeting.pk),
+                'meetinghosts-2-name': '',
+            },
+        )
+        self.assertRedirects(r, urlreverse('ietf.meeting.views.materials', kwargs=dict(num=meeting.number)))
+        self.assertEqual(meeting.meetinghosts.count(), 1)
+        host = meeting.meetinghosts.first()
+        self.assertEqual(host.name, 'Modified Sponsor, Inc.')
+        second_logopath = Path(host.logo.path)
+        self.assertTrue(second_logopath.exists())
+        self.assertEqual(second_logopath.name, 'logo-modified-sponsor-inc.png')
+        with second_logopath.open('rb') as f:
+            self.assertEqual(f.read(), logo.getvalue())
+        self.assertFalse(orig_logopath.exists())
+
+    def test_meeting_host_replace_logo(self):
+        """Can replace logo of a meeting host"""
+        meeting = MeetingFactory(type_id='ietf')
+        url = urlreverse('ietf.meeting.views_proceedings.edit_meetinghosts', kwargs=dict(num=meeting.number))
+
+        # create via UI so we don't have to deal with creating storage paths
+        self.client.login(username='secretary', password='secretary+password')
+        logo = self._logo_file()
+        r = self._create_first_host(meeting, logo, url)
+        self.assertRedirects(r, urlreverse('ietf.meeting.views.materials', kwargs=dict(num=meeting.number)))
+        self.assertEqual(meeting.meetinghosts.count(), 1)
+        host = meeting.meetinghosts.first()
+        self.assertEqual(host.name, 'Some Sponsor, Inc.')
+        orig_logopath = Path(host.logo.path)
+        self.assertEqual(orig_logopath.name, 'logo-some-sponsor-inc.png')
+        self.assertTrue(orig_logopath.exists())
+
+        # post our response to replace the logo
+        new_logo = self._logo_file(200, 200)  # different size to distinguish images
+        r = self.client.post(
+            url,
+            {
+                'meetinghosts-TOTAL_FORMS': '3',
+                'meetinghosts-INITIAL_FORMS': '1',
+                'meetinghosts-MIN_NUM_FORMS': '0',
+                'meetinghosts-MAX_NUM_FORMS': '1000',
+                'meetinghosts-0-id': str(host.pk),
+                'meetinghosts-0-meeting': str(meeting.pk),
+                'meetinghosts-0-name': 'Some Sponsor, Inc.',
+                'meetinghosts-0-logo': new_logo,
+                'meetinghosts-1-id':'',
+                'meetinghosts-1-meeting': str(meeting.pk),
+                'meetinghosts-1-name': '',
+                'meetinghosts-2-id':'',
+                'meetinghosts-2-meeting': str(meeting.pk),
+                'meetinghosts-2-name': '',
+            },
+        )
+        self.assertRedirects(r, urlreverse('ietf.meeting.views.materials', kwargs=dict(num=meeting.number)))
+        self.assertEqual(meeting.meetinghosts.count(), 1)
+        host = meeting.meetinghosts.first()
+        self.assertEqual(host.name, 'Some Sponsor, Inc.')
+        second_logopath = Path(host.logo.path)
+        self.assertEqual(orig_logopath, second_logopath)
+        self.assertEqual(second_logopath.name, 'logo-some-sponsor-inc.png')
+        self.assertTrue(second_logopath.exists())
+        with second_logopath.open('rb') as f:
+            self.assertEqual(f.read(), new_logo.getvalue())
+
+    def test_change_name_and_replace_logo(self):
+        """Can simultaneously change name and replace logo"""
+        meeting = MeetingFactory(type_id='ietf')
+        url = urlreverse('ietf.meeting.views_proceedings.edit_meetinghosts', kwargs=dict(num=meeting.number))
+
+        # create via UI so we don't have to deal with creating storage paths
+        self.client.login(username='secretary', password='secretary+password')
+        logo = self._logo_file()
+        r = self._create_first_host(meeting, logo, url)
+        self.assertRedirects(r, urlreverse('ietf.meeting.views.materials', kwargs=dict(num=meeting.number)))
+        self.assertEqual(meeting.meetinghosts.count(), 1)
+        host = meeting.meetinghosts.first()
+        self.assertEqual(host.name, 'Some Sponsor, Inc.')
+        orig_logopath = Path(host.logo.path)
+        self.assertEqual(orig_logopath.name, 'logo-some-sponsor-inc.png')
+        self.assertTrue(orig_logopath.exists())
+
+        # post our response to replace the logo
+        new_logo = self._logo_file(200, 200)  # different size to distinguish images
+        r = self.client.post(
+            url,
+            {
+                'meetinghosts-TOTAL_FORMS': '3',
+                'meetinghosts-INITIAL_FORMS': '1',
+                'meetinghosts-MIN_NUM_FORMS': '0',
+                'meetinghosts-MAX_NUM_FORMS': '1000',
+                'meetinghosts-0-id': str(host.pk),
+                'meetinghosts-0-meeting': str(meeting.pk),
+                'meetinghosts-0-name': 'Modified Sponsor, Ltd.',
+                'meetinghosts-0-logo': new_logo,
+                'meetinghosts-1-id':'',
+                'meetinghosts-1-meeting': str(meeting.pk),
+                'meetinghosts-1-name': '',
+                'meetinghosts-2-id':'',
+                'meetinghosts-2-meeting': str(meeting.pk),
+                'meetinghosts-2-name': '',
+            },
+        )
+        self.assertRedirects(r, urlreverse('ietf.meeting.views.materials', kwargs=dict(num=meeting.number)))
+        self.assertEqual(meeting.meetinghosts.count(), 1)
+        host = meeting.meetinghosts.first()
+        self.assertEqual(host.name, 'Modified Sponsor, Ltd.')
+        second_logopath = Path(host.logo.path)
+        self.assertEqual(second_logopath.name, 'logo-modified-sponsor-ltd.png')
+        self.assertTrue(second_logopath.exists())
+        with second_logopath.open('rb') as f:
+            self.assertEqual(f.read(), new_logo.getvalue())
+        self.assertFalse(orig_logopath.exists())
+
+    def test_remove(self):
+        """Can delete a meeting host and its logo"""
+        meeting = MeetingFactory(type_id='ietf')
+        url = urlreverse('ietf.meeting.views_proceedings.edit_meetinghosts', kwargs=dict(num=meeting.number))
+
+        # create via UI so we don't have to deal with creating storage paths
+        self.client.login(username='secretary', password='secretary+password')
+        logo = self._logo_file()
+        r = self._create_first_host(meeting, logo, url)
+        self.assertRedirects(r, urlreverse('ietf.meeting.views.materials', kwargs=dict(num=meeting.number)))
+        self.assertEqual(meeting.meetinghosts.count(), 1)
+        host = meeting.meetinghosts.first()
+        self.assertEqual(host.name, 'Some Sponsor, Inc.')
+        logopath = Path(host.logo.path)
+        self.assertEqual(logopath.name, 'logo-some-sponsor-inc.png')
+        self.assertTrue(logopath.exists())
+
+        # now delete
+        r = self.client.post(
+            url,
+            {
+                'meetinghosts-TOTAL_FORMS': '3',
+                'meetinghosts-INITIAL_FORMS': '1',
+                'meetinghosts-MIN_NUM_FORMS': '0',
+                'meetinghosts-MAX_NUM_FORMS': '1000',
+                'meetinghosts-0-id': str(host.pk),
+                'meetinghosts-0-meeting': str(meeting.pk),
+                'meetinghosts-0-name': 'Modified Sponsor, Ltd.',
+                'meetinghosts-0-DELETE': 'on',
+                'meetinghosts-1-id':'',
+                'meetinghosts-1-meeting': str(meeting.pk),
+                'meetinghosts-1-name': '',
+                'meetinghosts-2-id':'',
+                'meetinghosts-2-meeting': str(meeting.pk),
+                'meetinghosts-2-name': '',
+            },
+        )
+        self.assertRedirects(r, urlreverse('ietf.meeting.views.materials', kwargs=dict(num=meeting.number)))
+        self.assertEqual(meeting.meetinghosts.count(), 0)
+        self.assertFalse(logopath.exists())
+
+    def test_logo_types_checked(self):
+        """Only allowed image types should be accepted"""
+        allowed_formats = [('JPEG', 'jpg'), ('PNG', 'png')]
+
+        meeting = MeetingFactory(type_id='ietf')
+        url = urlreverse('ietf.meeting.views_proceedings.edit_meetinghosts', kwargs=dict(num=meeting.number))
+        self.client.login(username='secretary', password='secretary+password')
+
+        junk = BytesIO()
+        junk.write(b'this is not an image')
+        junk.seek(0)
+        r = self._create_first_host(meeting, junk, url)
+        self.assertContains(r, 'Upload a valid image', status_code=200)
+        self.assertEqual(meeting.meetinghosts.count(), 0)
+
+        for fmt, ext in allowed_formats:
+            r = self._create_first_host(
+                meeting,
+                self._logo_file(format=fmt, ext=ext),
+                url
+            )
+            self.assertRedirects(r, urlreverse('ietf.meeting.views.materials', kwargs=dict(num=meeting.number)))
+            self.assertEqual(meeting.meetinghosts.count(), 1)
+            meeting.meetinghosts.all().delete()
