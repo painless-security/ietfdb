@@ -3764,7 +3764,6 @@ def proceedings(request, num=None):
 
     meeting = get_meeting(num)
 
-    import pdb; pdb.set_trace()
     if (meeting.number.isdigit() and int(meeting.number) <= 96):
         return HttpResponseRedirect('https://www.ietf.org/proceedings/%s' % meeting.number)
 

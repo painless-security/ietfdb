@@ -38,7 +38,7 @@
             {% if mat and mat.active %}
               {% url 'ietf.doc.views_doc.document_main' name=mat.document.name as url %}
               <td>
-                <a href="{{ mat.document.get_href }}">{{ mat.document.title }}</a>
+                <a href="{{ mat.document.get_href }}">{{ mat }}</a>
               </td>
               <td>
                 <a href="{{ url }}">{{ mat.document }}</a>

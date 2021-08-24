@@ -1,7 +1,5 @@
 # Copyright The IETF Trust 2009-2020, All Rights Reserved
 # -*- coding: utf-8 -*-
-
-
 import datetime
 import io
 import json
@@ -47,7 +45,7 @@ from ietf.meeting.test_data import make_meeting_test_data, make_interim_meeting,
 from ietf.meeting.utils import finalize, condition_slide_order
 from ietf.meeting.utils import add_event_info_to_session_qs
 from ietf.meeting.views import session_draft_list, parse_agenda_filter_params
-from ietf.name.models import SessionStatusName, ImportantDateName, RoleName
+from ietf.name.models import SessionStatusName, ImportantDateName, RoleName, ProceedingsMaterialTypeName
 from ietf.utils.decorators import skip_coverage
 from ietf.utils.mail import outbox, empty_outbox, get_payload_text
 from ietf.utils.test_utils import TestCase, login_testing_unauthorized, unicontent
@@ -56,7 +54,8 @@ from ietf.utils.text import xslugify
 from ietf.person.factories import PersonFactory
 from ietf.group.factories import GroupFactory, GroupEventFactory, RoleFactory
 from ietf.meeting.factories import ( SessionFactory, SessionPresentationFactory, ScheduleFactory,
-    MeetingFactory, FloorPlanFactory, TimeSlotFactory, SlideSubmissionFactory, RoomFactory )
+    MeetingFactory, FloorPlanFactory, TimeSlotFactory, SlideSubmissionFactory, RoomFactory, MeetingHostFactory,
+    ProceedingsMaterialFactory )
 from ietf.doc.factories import DocumentFactory, WgDraftFactory
 from ietf.submit.tests import submission_file
 from ietf.utils.test_utils import assert_ical_response_is_valid
@@ -132,7 +131,9 @@ class BaseMeetingTestCase(TestCase):
         if not os.path.exists(dirname):
             os.makedirs(dirname)
 
-        with io.open(path, "w") as f:
+        if isinstance(content, str):
+            content = content.encode()
+        with io.open(path, "wb") as f:
             f.write(content)
 
     def write_materials_files(self, meeting, session):
@@ -5276,15 +5277,16 @@ class AgendaFilterTests(TestCase):
                           expected_filter_keywords='bof')
 
 
-class MeetingHostTests(BaseMeetingTestCase):
-    def _logo_file(self, width=128, height=128, format='PNG', ext=None):
-        img = Image.new('RGB', (width, height))  # just a black image
-        data = BytesIO()
-        img.save(data, format=format)
-        data.seek(0)
-        data.name = f'logo.{ext if ext is not None else format.lower()}'
-        return data
+def logo_file(width=128, height=128, format='PNG', ext=None):
+    img = Image.new('RGB', (width, height))  # just a black image
+    data = BytesIO()
+    img.save(data, format=format)
+    data.seek(0)
+    data.name = f'logo.{ext if ext is not None else format.lower()}'
+    return data
 
+
+class MeetingHostTests(BaseMeetingTestCase):
     def _assertHostFieldCountGreaterEqual(self, r, min_count):
         q = PyQuery(r.content)
         self.assertGreaterEqual(
@@ -5343,7 +5345,7 @@ class MeetingHostTests(BaseMeetingTestCase):
         self._assertHostFieldCountGreaterEqual(r, 1)
 
         # post our response
-        logos = [self._logo_file() for _ in range(2)]
+        logos = [logo_file() for _ in range(2)]
         r = self._create_first_host(meeting, logos[0], url)
         self.assertRedirects(r, urlreverse('ietf.meeting.views.materials', kwargs=dict(num=meeting.number)))
         self.assertEqual(meeting.meetinghosts.count(), 1)
@@ -5414,7 +5416,7 @@ class MeetingHostTests(BaseMeetingTestCase):
 
         # create via UI so we don't have to deal with creating storage paths
         self.client.login(username='secretary', password='secretary+password')
-        logo = self._logo_file()
+        logo = logo_file()
         r = self._create_first_host(meeting, logo, url)
         self.assertRedirects(r, urlreverse('ietf.meeting.views.materials', kwargs=dict(num=meeting.number)))
         self.assertEqual(meeting.meetinghosts.count(), 1)
@@ -5461,7 +5463,7 @@ class MeetingHostTests(BaseMeetingTestCase):
 
         # create via UI so we don't have to deal with creating storage paths
         self.client.login(username='secretary', password='secretary+password')
-        logo = self._logo_file()
+        logo = logo_file()
         r = self._create_first_host(meeting, logo, url)
         self.assertRedirects(r, urlreverse('ietf.meeting.views.materials', kwargs=dict(num=meeting.number)))
         self.assertEqual(meeting.meetinghosts.count(), 1)
@@ -5472,7 +5474,7 @@ class MeetingHostTests(BaseMeetingTestCase):
         self.assertTrue(orig_logopath.exists())
 
         # post our response to replace the logo
-        new_logo = self._logo_file(200, 200)  # different size to distinguish images
+        new_logo = logo_file(200, 200)  # different size to distinguish images
         r = self.client.post(
             url,
             {
@@ -5510,7 +5512,7 @@ class MeetingHostTests(BaseMeetingTestCase):
 
         # create via UI so we don't have to deal with creating storage paths
         self.client.login(username='secretary', password='secretary+password')
-        logo = self._logo_file()
+        logo = logo_file()
         r = self._create_first_host(meeting, logo, url)
         self.assertRedirects(r, urlreverse('ietf.meeting.views.materials', kwargs=dict(num=meeting.number)))
         self.assertEqual(meeting.meetinghosts.count(), 1)
@@ -5521,7 +5523,7 @@ class MeetingHostTests(BaseMeetingTestCase):
         self.assertTrue(orig_logopath.exists())
 
         # post our response to replace the logo
-        new_logo = self._logo_file(200, 200)  # different size to distinguish images
+        new_logo = logo_file(200, 200)  # different size to distinguish images
         r = self.client.post(
             url,
             {
@@ -5559,7 +5561,7 @@ class MeetingHostTests(BaseMeetingTestCase):
 
         # create via UI so we don't have to deal with creating storage paths
         self.client.login(username='secretary', password='secretary+password')
-        logo = self._logo_file()
+        logo = logo_file()
         r = self._create_first_host(meeting, logo, url)
         self.assertRedirects(r, urlreverse('ietf.meeting.views.materials', kwargs=dict(num=meeting.number)))
         self.assertEqual(meeting.meetinghosts.count(), 1)
@@ -5611,7 +5613,7 @@ class MeetingHostTests(BaseMeetingTestCase):
         for fmt, ext in allowed_formats:
             r = self._create_first_host(
                 meeting,
-                self._logo_file(format=fmt, ext=ext),
+                logo_file(format=fmt, ext=ext),
                 url
             )
             self.assertRedirects(r, urlreverse('ietf.meeting.views.materials', kwargs=dict(num=meeting.number)))
@@ -5620,8 +5622,85 @@ class MeetingHostTests(BaseMeetingTestCase):
 
 
 class ProceedingsTests(BaseMeetingTestCase):
-    """Tests related to meeting proceedings display"""
+    """Tests related to meeting proceedings display
+
+    Fills in all material types
+    """
+    def _create_proceedings_materials(self, meeting):
+        """Create various types of proceedings materials for meeting"""
+        MeetingHostFactory.create_batch(2, meeting=meeting)  # create a couple of meeting hosts/logos
+        ProceedingsMaterialFactory(
+            # default title, not removed
+            meeting=meeting,
+            type=ProceedingsMaterialTypeName.objects.get(slug='supporters')
+        )
+        ProceedingsMaterialFactory(
+            # custom title, not removed
+            meeting=meeting,
+            type=ProceedingsMaterialTypeName.objects.get(slug='host_speaker_series'),
+            document__title='Speakers'
+        )
+        ProceedingsMaterialFactory(
+            # default title, removed
+            meeting=meeting,
+            type=ProceedingsMaterialTypeName.objects.get(slug='social_event'),
+            document__states=[('procmaterials', 'removed')]
+        )
+        ProceedingsMaterialFactory(
+            # custom title, removed
+            meeting=meeting,
+            type=ProceedingsMaterialTypeName.objects.get(slug='additional_information'),
+            document__title='Party', document__states=[('procmaterials', 'removed')]
+        )
+        ProceedingsMaterialFactory(
+            # url
+            meeting=meeting,
+            type=ProceedingsMaterialTypeName.objects.get(slug='wiki'),
+            document__external_url='https://example.com/wiki'
+        )
+
+    @staticmethod
+    def _proceedings_file():
+        """Get a file containing content suitable for a proceedings document
+
+        Currently returns the same file every time.
+        """
+        path = Path(settings.BASE_DIR) / 'meeting/test_procmat.pdf'
+        return path.open('rb')
+
+    def _assertMeetingHostsDisplayed(self, response, meeting):
+        pq = PyQuery(response.content)
+        host_divs = pq('div.host-logo')
+        self.assertEqual(len(host_divs), meeting.meetinghosts.count(), 'Should have a logo for every meeting host')
+        self.assertEqual(
+            [(img.attr('title'), img.attr('src')) for img in host_divs.items('img')],
+            [
+                (host.name,
+                 urlreverse(
+                     'ietf.meeting.views_proceedings.meetinghost_logo',
+                     kwargs=dict(num=meeting.number, host_id=host.pk),
+                 ))
+                for host in meeting.meetinghosts.all()
+            ],
+            'Correct image and name for each host should appear in the correct order'
+        )
+
+    def _assertProceedingsMaterialsDisplayed(self, response, meeting):
+        """Checks that all (and only) active materials are linked with correct href and title"""
+        expected_materials = [
+            m for m in meeting.proceedings_materials.order_by('type__order') if m.active()
+        ]
+        pq = PyQuery(response.content)
+        links = pq('div.proceedings-material a')
+        self.assertEqual(len(links), len(expected_materials), 'Should have an entry for each active ProceedingsMaterial')
+        self.assertEqual(
+            [(link.eq(0).text(), link.eq(0).attr('href')) for link in links.items()],
+            [(str(pm), pm.get_href()) for pm in expected_materials],
+            'Correct title and link for each ProceedingsMaterial should appear in the correct order'
+        )
+
     def test_proceedings(self):
+        """Proceedings should be displayed correctly"""
         meeting = make_meeting_test_data(meeting=MeetingFactory(type_id='ietf', number='100'))
         session = Session.objects.filter(meeting=meeting, group__acronym="mars").first()
         GroupEventFactory(group=session.group,type='status_update')
@@ -5629,10 +5708,51 @@ class ProceedingsTests(BaseMeetingTestCase):
         SessionPresentationFactory(document__type_id='recording',session=session,document__title="Audio recording for tests")
 
         self.write_materials_files(meeting, session)
+        self._create_proceedings_materials(meeting)
 
         url = urlreverse("ietf.meeting.views.proceedings", kwargs=dict(num=meeting.number))
         r = self.client.get(url)
         self.assertEqual(r.status_code, 200)
+
+        if len(meeting.city) > 0:
+            self.assertContains(r, meeting.city)
+        if len(meeting.venue_name) > 0:
+            self.assertContains(r, meeting.venue_name)
+
+        # standard items on every proceedings
+        pq = PyQuery(r.content)
+        self.assertNotEqual(
+            pq('a[href="{}"]'.format(
+                urlreverse('ietf.meeting.views.proceedings_overview', kwargs=dict(num=meeting.number)))
+            ),
+            [],
+            'Should have a link to IETF overview',
+        )
+        self.assertNotEqual(
+            pq('a[href="{}"]'.format(
+                urlreverse('ietf.meeting.views.proceedings_attendees', kwargs=dict(num=meeting.number)))
+            ),
+            [],
+            'Should have a link to attendees',
+        )
+        self.assertNotEqual(
+            pq('a[href="{}"]'.format(
+                urlreverse('ietf.meeting.views.proceedings_progress_report', kwargs=dict(num=meeting.number)))
+            ),
+            [],
+            'Should have a link to activity report',
+        )
+        self.assertNotEqual(
+            pq('a[href="{}"]'.format(
+                urlreverse('ietf.meeting.views.important_dates', kwargs=dict(num=meeting.number)))
+            ),
+            [],
+            'Should have a link to important dates',
+        )
+
+        # configurable contents
+        self._assertMeetingHostsDisplayed(r, meeting)
+        self._assertProceedingsMaterialsDisplayed(r, meeting)
 
     def test_proceedings_no_agenda(self):
         # Meeting number must be larger than the last special-cased proceedings (currently 96)
@@ -5735,3 +5855,292 @@ class ProceedingsTests(BaseMeetingTestCase):
         self.assertContains(r, "agenda")
         self.assertContains(r, session.group.acronym)
 
+    def _procmat_test_meeting(self):
+        """Generate a meeting for proceedings material test"""
+        # meeting number 123 avoids various legacy cases that affect these tests
+        # (as of Aug 2021, anything above 96 is probably ok)
+        return MeetingFactory(type_id='ietf', number='123', date=datetime.date.today())
+
+    def _secretary_only_permission_test(self, url, include_post=True):
+        self.client.logout()
+        login_testing_unauthorized(self, 'ad', url)
+        login_testing_unauthorized(self, 'secretary', url)
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+
+        if include_post:
+            self.client.logout()
+            login_testing_unauthorized(self, 'ad', url, method='post')
+            login_testing_unauthorized(self, 'secretary', url, method='post')
+            # don't bother checking a real post - it'll be tested in other methods
+
+    def test_material_management_permissions(self):
+        """Only the secreatariat should be able to manage proceedings materials"""
+        meeting = self._procmat_test_meeting()
+        # test all materials types in case they wind up treated differently
+        # (unlikely, but more likely than an unwieldy number of types are introduced)
+        for mat_type in ProceedingsMaterialTypeName.objects.filter(used=True):
+            self._secretary_only_permission_test(
+                urlreverse(
+                    'ietf.meeting.views_proceedings.material_details',
+                    kwargs=dict(num=meeting.number),
+                ))
+            self._secretary_only_permission_test(
+                urlreverse(
+                    'ietf.meeting.views_proceedings.upload_material',
+                    kwargs=dict(num=meeting.number, material_type=mat_type.slug),
+                ))
+
+            # remaining tests need material to exist, so create
+            ProceedingsMaterialFactory(meeting=meeting, type=mat_type)
+            self._secretary_only_permission_test(
+                urlreverse(
+                    'ietf.meeting.views_proceedings.edit_material',
+                    kwargs=dict(num=meeting.number, material_type=mat_type.slug),
+                ))
+            self._secretary_only_permission_test(
+                urlreverse(
+                    'ietf.meeting.views_proceedings.remove_material',
+                    kwargs=dict(num=meeting.number, material_type=mat_type.slug),
+                ))
+            # it's ok to use active materials for restore test - no restore is actually issued
+            self._secretary_only_permission_test(
+                urlreverse(
+                    'ietf.meeting.views_proceedings.restore_material',
+                    kwargs=dict(num=meeting.number, material_type=mat_type.slug),
+                ))
+
+    def test_proceedings_material_details(self):
+        """Material details page should correctly show materials"""
+        meeting = self._procmat_test_meeting()
+        url = urlreverse('ietf.meeting.views_proceedings.material_details', kwargs=dict(num=meeting.number))
+        self.client.login(username='secretary', password='secretary+password')
+        procmat_types = ProceedingsMaterialTypeName.objects.filter(used=True)
+
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        pq = PyQuery(r.content)
+        body_rows = pq('tbody > tr')
+        self.assertEqual(len(body_rows), procmat_types.count())
+        for row, mat_type in zip(body_rows.items(), procmat_types.all()):
+            cells = row.find('td')
+            # no materials, so rows should be empty except for label and 'Add' button
+            self.assertEqual(len(cells), 3)  # label, blank, buttons
+            self.assertEqual(cells.eq(0).text(), str(mat_type), 'First column should be material type name')
+            self.assertEqual(cells.eq(1).text(), '', 'Second column should be empty')
+            add_url = urlreverse('ietf.meeting.views_proceedings.upload_material',
+                                 kwargs=dict(num=meeting.number, material_type=mat_type.slug))
+            self.assertEqual(len(cells.eq(2).find(f'a[href="{add_url}"]')), 1, 'Third column should have Add link')
+
+        self._create_proceedings_materials(meeting)
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+
+        pq = PyQuery(r.content)
+        body_rows = pq('tbody > tr')
+        self.assertEqual(len(body_rows), procmat_types.count())
+        # n.b., this loop is over materials, not the type names!
+        for row, mat in zip(body_rows.items(), meeting.proceedings_materials.order_by('type__order')):
+            add_url = urlreverse('ietf.meeting.views_proceedings.upload_material',
+                                 kwargs=dict(num=meeting.number, material_type=mat.type.slug))
+            edit_url = urlreverse('ietf.meeting.views_proceedings.upload_material',
+                                  kwargs=dict(num=meeting.number, material_type=mat.type.slug))
+            remove_url = urlreverse('ietf.meeting.views_proceedings.upload_material',
+                                    kwargs=dict(num=meeting.number, material_type=mat.type.slug))
+            restore_url = urlreverse('ietf.meeting.views_proceedings.upload_material',
+                                     kwargs=dict(num=meeting.number, material_type=mat.type.slug))
+            cells = row.find('td')
+            # no materials, so rows should be empty except for label and 'Add' button
+            self.assertEqual(cells.eq(0).text(), str(mat.type), 'First column should be material type name')
+            if mat.active():
+                self.assertEqual(len(cells), 5)  # label, title, doc, updated, buttons
+                self.assertEqual(cells.eq(1).text(), str(mat), 'Second column should be active material title')
+                self.assertEqual(
+                    cells.eq(2).text(),
+                    '{} ({})'.format(
+                        str(mat.document),
+                        'external URL' if mat.document.external_url else 'uploaded file',
+                    ))
+                mod_time = mat.document.time.astimezone(pytz.utc)
+                c3text = cells.eq(3).text()
+                self.assertIn(mod_time.strftime('%Y-%m-%d'), c3text, 'Updated date incorrect')
+                self.assertIn(mod_time.strftime('%H:%M:%S'), c3text, 'Updated time incorrect')
+                self.assertEqual(len(cells.eq(4).find(f'a[href="{add_url}"]')), 1,
+                                 'Fourth column should have a Replace link')
+                self.assertEqual(len(cells.eq(4).find(f'a[href="{edit_url}"]')), 1,
+                                 'Fourth column should have an Edit link')
+                self.assertEqual(len(cells.eq(4).find(f'a[href="{remove_url}"]')), 1,
+                                 'Fourth column should have a Remove link')
+            else:
+                self.assertEqual(len(cells), 3)  # label, blank, buttons
+                self.assertEqual(cells.eq(0).text(), str(mat.type), 'First column should be material type name')
+                self.assertEqual(cells.eq(1).text(), '', 'Second column should be empty')
+                add_url = urlreverse('ietf.meeting.views_proceedings.upload_material',
+                                     kwargs=dict(num=meeting.number, material_type=mat.type.slug))
+                self.assertEqual(len(cells.eq(2).find(f'a[href="{add_url}"]')), 1,
+                                 'Third column should have Add link')
+                self.assertEqual(len(cells.eq(2).find(f'a[href="{restore_url}"]')), 1,
+                                 'Third column should have Restore link')
+
+    def upload_proceedings_material_test(self, meeting, mat_type, post_data):
+        """Test the upload_proceedings view using provided POST data"""
+        url = urlreverse(
+            'ietf.meeting.views_proceedings.upload_material',
+            kwargs=dict(num=meeting.number, material_type=mat_type.slug),
+        )
+        self.client.login(username='secretary', password='secretary+password')
+        mats_before = [m.pk for m in meeting.proceedings_materials.all()]
+        r = self.client.post(url, post_data)
+        self.assertRedirects(
+            r,
+            urlreverse('ietf.meeting.views_proceedings.material_details',
+                       kwargs=dict(num=meeting.number)),
+        )
+
+        self.assertEqual(meeting.proceedings_materials.count(), len(mats_before) + 1)
+        mat = meeting.proceedings_materials.exclude(pk__in=mats_before).first()
+        self.assertEqual(mat.type, mat_type)
+        self.assertEqual(str(mat), mat_type.name)
+        self.assertEqual(mat.document.rev, '00')
+        return mat
+
+    # use a simple and predictable href format for this test
+    @override_settings(MEETING_DOC_HREFS={'procmaterials': '{doc.name}:{doc.rev}'})
+    def test_add_proceedings_material_doc(self):
+        """Upload proceedings materials document"""
+        meeting = self._procmat_test_meeting()
+        for mat_type in ProceedingsMaterialTypeName.objects.filter(used=True):
+            mat = self.upload_proceedings_material_test(
+                meeting,
+                mat_type,
+                {'file': self._proceedings_file(), 'external_url': ''},
+            )
+            self.assertEqual(mat.get_href(), f'{mat.document.name}:00')
+
+    def test_add_proceedings_material_url(self):
+        """Add a URL as proceedings material"""
+        meeting = self._procmat_test_meeting()
+        for mat_type in ProceedingsMaterialTypeName.objects.filter(used=True):
+            mat = self.upload_proceedings_material_test(
+                meeting,
+                mat_type,
+                {'use_url': 'on', 'external_url': 'https://example.com'},
+            )
+            self.assertEqual(mat.get_href(), 'https://example.com')
+
+    @override_settings(MEETING_DOC_HREFS={'procmaterials': '{doc.name}:{doc.rev}'})
+    def test_replace_proceedings_material(self):
+        """Replace uploaded document with new uploaded document"""
+        # Set up a meeting with a proceedings material in place
+        meeting = self._procmat_test_meeting()
+        pm_doc = ProceedingsMaterialFactory(meeting=meeting)
+        with self._proceedings_file() as f:
+            self.write_materials_file(meeting, pm_doc.document, f.read())
+        pm_url = ProceedingsMaterialFactory(meeting=meeting, document__external_url='https://example.com/first')
+        success_url = urlreverse('ietf.meeting.views_proceedings.material_details', kwargs=dict(num=meeting.number))
+        self.assertNotEqual(pm_doc.type, pm_url.type)
+        self.assertEqual(meeting.proceedings_materials.count(), 2)
+
+        # Replace the uploaded document with another uploaded document
+        pm_doc_url = urlreverse(
+            'ietf.meeting.views_proceedings.upload_material',
+            kwargs=dict(num=meeting.number, material_type=pm_doc.type.slug),
+        )
+        self.client.login(username='secretary', password='secretary+password')
+        r = self.client.post(pm_doc_url, {'file': self._proceedings_file(), 'external_url': ''})
+        self.assertRedirects(r, success_url)
+        self.assertEqual(meeting.proceedings_materials.count(), 2)
+        pm_doc = meeting.proceedings_materials.get(pk=pm_doc.pk)  # refresh from DB
+        self.assertEqual(pm_doc.document.rev, '01')
+        self.assertEqual(pm_doc.get_href(), f'{pm_doc.document.name}:01')
+
+        # Replace the uploaded document with a URL
+        r = self.client.post(pm_doc_url, {'use_url': 'on', 'external_url': 'https://example.com/second'})
+        self.assertRedirects(r, success_url)
+        self.assertEqual(meeting.proceedings_materials.count(), 2)
+        pm_doc = meeting.proceedings_materials.get(pk=pm_doc.pk)  # refresh from DB
+        self.assertEqual(pm_doc.document.rev, '02')
+        self.assertEqual(pm_doc.get_href(), 'https://example.com/second')
+
+        # Now replace the URL doc with another URL
+        pm_url_url = urlreverse(
+            'ietf.meeting.views_proceedings.upload_material',
+            kwargs=dict(num=meeting.number, material_type=pm_url.type.slug),
+        )
+        r = self.client.post(pm_url_url, {'use_url': 'on', 'external_url': 'https://example.com/third'})
+        self.assertRedirects(r, success_url)
+        self.assertEqual(meeting.proceedings_materials.count(), 2)
+        pm_url = meeting.proceedings_materials.get(pk=pm_url.pk)  # refresh from DB
+        self.assertEqual(pm_url.document.rev, '01')
+        self.assertEqual(pm_url.get_href(), 'https://example.com/third')
+
+        # Now replace the URL doc with an uploaded file
+        r = self.client.post(pm_url_url, {'file': self._proceedings_file(), 'external_url': ''})
+        self.assertRedirects(r, success_url)
+        self.assertEqual(meeting.proceedings_materials.count(), 2)
+        pm_url = meeting.proceedings_materials.get(pk=pm_url.pk)  # refresh from DB
+        self.assertEqual(pm_url.document.rev, '02')
+        self.assertEqual(pm_url.get_href(), f'{pm_url.document.name}:02')
+
+    def test_remove_proceedings_material(self):
+        """Proceedings material can be removed"""
+        meeting = self._procmat_test_meeting()
+        pm = ProceedingsMaterialFactory(meeting=meeting)
+
+        self.assertEqual(pm.active(), True)
+
+        url = urlreverse(
+            'ietf.meeting.views_proceedings.remove_material',
+            kwargs=dict(num=meeting.number, material_type=pm.type.slug),
+        )
+        self.client.login(username='secretary', password='secretary+password')
+        r = self.client.post(url)
+        self.assertRedirects(
+            r,
+            urlreverse('ietf.meeting.views_proceedings.material_details',
+                       kwargs=dict(num=meeting.number)),
+        )
+        pm = meeting.proceedings_materials.get(pk=pm.pk)
+        self.assertEqual(pm.active(), False)
+
+    def test_restore_proceedings_material(self):
+        """Proceedings material can be removed"""
+        meeting = self._procmat_test_meeting()
+        pm = ProceedingsMaterialFactory(meeting=meeting, document__states=[('procmaterials', 'removed')])
+
+        self.assertEqual(pm.active(), False)
+
+        url = urlreverse(
+            'ietf.meeting.views_proceedings.restore_material',
+            kwargs=dict(num=meeting.number, material_type=pm.type.slug),
+        )
+        self.client.login(username='secretary', password='secretary+password')
+        r = self.client.post(url)
+        self.assertRedirects(
+            r,
+            urlreverse('ietf.meeting.views_proceedings.material_details',
+                       kwargs=dict(num=meeting.number)),
+        )
+        pm = meeting.proceedings_materials.get(pk=pm.pk)
+        self.assertEqual(pm.active(), True)
+
+    def test_rename_proceedings_material(self):
+        """Proceedings material can be renamed"""
+        meeting = self._procmat_test_meeting()
+        pm = ProceedingsMaterialFactory(meeting=meeting)
+        self.assertEqual(str(pm), pm.type.name)
+        orig_rev = pm.document.rev
+        url = urlreverse(
+            'ietf.meeting.views_proceedings.edit_material',
+            kwargs=dict(num=meeting.number, material_type=pm.type.slug),
+        )
+        self.client.login(username='secretary', password='secretary+password')
+        r = self.client.post(url, {'title': 'This Is Not the Default Name'})
+        self.assertRedirects(
+            r,
+            urlreverse('ietf.meeting.views_proceedings.material_details',
+                       kwargs=dict(num=meeting.number)),
+        )
+        pm = meeting.proceedings_materials.get(pk=pm.pk)
+        self.assertEqual(str(pm), 'This Is Not the Default Name')
+        self.assertEqual(pm.document.rev, orig_rev, 'Renaming should not change document revision')

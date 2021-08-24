@@ -178,7 +178,7 @@ def upload_material(request, num, material_type):
             )
             if material is None:
                 meeting.proceedings_materials.create(type=material_type, document=doc)
-            return redirect('ietf.meeting.views_proceedings.material_details')
+            return redirect('ietf.meeting.views_proceedings.material_details', num=num)
     else:
         initial = dict()
         if material is not None:
@@ -226,7 +226,6 @@ def edit_material(request, num, material_type):
                 material_type,
                 request=request,
                 title=form.cleaned_data['title'],
-                file=form.cleaned_data.get('file', None),
             )
             return redirect("ietf.meeting.views_proceedings.material_details", num=meeting.number)
     else:
@@ -237,7 +236,6 @@ def edit_material(request, num, material_type):
         )
 
     return render(request, 'meeting/proceedings/edit_material.html', {
-        'action': 'revise',
         'form': form,
         'material': material,
         'material_type': material.type,
