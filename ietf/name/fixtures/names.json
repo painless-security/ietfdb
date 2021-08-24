@@ -11818,19 +11818,9 @@
   },
   {
     "fields": {
-      "desc": "Acknowledgements",
-      "name": "Acknowledgements",
-      "order": 0,
-      "used": true
-    },
-    "model": "name.proceedingsmaterialtypename",
-    "pk": "acknowledgements"
-  },
-  {
-    "fields": {
       "desc": "Any other materials",
       "name": "Additional Information",
-      "order": 0,
+      "order": 4,
       "used": true
     },
     "model": "name.proceedingsmaterialtypename",
@@ -11840,7 +11830,7 @@
     "fields": {
       "desc": "Host speaker series",
       "name": "Host Speaker Series",
-      "order": 0,
+      "order": 1,
       "used": true
     },
     "model": "name.proceedingsmaterialtypename",
@@ -11850,11 +11840,31 @@
     "fields": {
       "desc": "Social event",
       "name": "Social Event",
-      "order": 0,
+      "order": 2,
       "used": true
     },
     "model": "name.proceedingsmaterialtypename",
     "pk": "social_event"
+  },
+  {
+    "fields": {
+      "desc": "Sponsors and Supporters",
+      "name": "Sponsors and supporters",
+      "order": 0,
+      "used": true
+    },
+    "model": "name.proceedingsmaterialtypename",
+    "pk": "supporters"
+  },
+  {
+    "fields": {
+      "desc": "Meeting wiki",
+      "name": "Meeting Wiki",
+      "order": 3,
+      "used": true
+    },
+    "model": "name.proceedingsmaterialtypename",
+    "pk": "wiki"
   },
   {
     "fields": {

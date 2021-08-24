@@ -232,7 +232,7 @@ class Meeting(models.Model):
     def get_proceedings_materials(self):
         """Get proceedings materials"""
         return self.proceedings_materials.filter(
-            document__states__slug='active'
+            Q(document__states__slug='active', document__states__type_id='procmaterials')
         ).order_by('type__order')
 
     @property
