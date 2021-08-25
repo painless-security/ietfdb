@@ -239,24 +239,27 @@ class Meeting(models.Model):
     def proceedings_format_version(self):
         """Indicate version of proceedings that should be used for this meeting
 
-        Only makes sense for IETF meeting.
+        Only makes sense for IETF meeting. Returns None for any meeting without a purely numeric number.
 
         Uses settings.PROCEEDINGS_VERSION_CHANGES. Versions start at 1. Entries
         in the array are the first meeting number using each version.
         """
         if not hasattr(self, '_proceedings_format_version'):
-            version = len(settings.PROCEEDINGS_VERSION_CHANGES)  # start assuming latest version
-            mtg_number = self.get_number()
-            if mtg_number is None:
-                unreachable('2021-08-10')
+            if not self.number.isdigit():
+                version = None  # no version for non-IETF meeting
             else:
-                # Find the index of the first entry in the version change array that
-                # is >= this meeting's number. The first entry in the array is 0, so the
-                # version is always >= 1 for positive meeting numbers.
-                for vers, threshold in enumerate(settings.PROCEEDINGS_VERSION_CHANGES):
-                    if mtg_number < threshold:
-                        version = vers
-                        break
+                version = len(settings.PROCEEDINGS_VERSION_CHANGES)  # start assuming latest version
+                mtg_number = self.get_number()
+                if mtg_number is None:
+                    unreachable('2021-08-10')
+                else:
+                    # Find the index of the first entry in the version change array that
+                    # is >= this meeting's number. The first entry in the array is 0, so the
+                    # version is always >= 1 for positive meeting numbers.
+                    for vers, threshold in enumerate(settings.PROCEEDINGS_VERSION_CHANGES):
+                        if mtg_number < threshold:
+                            version = vers
+                            break
             self._proceedings_format_version = version  # save this for later
         return self._proceedings_format_version
 
