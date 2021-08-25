@@ -1645,7 +1645,7 @@ def agenda(request, num=None, name=None, base=None, ext=None, owner=None, utc=""
     meeting = get_ietf_meeting(num)
     if not meeting or (meeting.number.isdigit() and int(meeting.number) <= 64 and (not meeting.schedule or not meeting.schedule.assignments.exists())):
         if ext == '.html' or (meeting and meeting.number.isdigit() and 0 < int(meeting.number) <= 64):
-            return HttpResponseRedirect( 'https://www.ietf.org/proceedings/%s' % num )
+            return HttpResponseRedirect(f'{settings.PROCEEDINGS_V1_BASE_URL.format(meeting=meeting)}')
         else:
             raise Http404("No such meeting")
 
@@ -3796,8 +3796,9 @@ def proceedings(request, num=None):
 
     meeting = get_meeting(num)
 
-    if (meeting.number.isdigit() and int(meeting.number) <= 96):
-        return HttpResponseRedirect('https://www.ietf.org/proceedings/%s' % meeting.number)
+    # Early proceedings were hosted on www.ietf.org rather than the datatracker
+    if meeting.proceedings_format_version == 1:
+        return HttpResponseRedirect(settings.PROCEEDINGS_V1_BASE_URL.format(meeting=meeting))
 
     if not meeting.schedule or not meeting.schedule.assignments.exists():
         kwargs = dict()
@@ -3871,7 +3872,7 @@ def proceedings_acknowledgements(request, num=None):
         raise Http404
     meeting = get_meeting(num)
     if meeting.proceedings_format_version == 1:
-        return HttpResponseRedirect( 'https://www.ietf.org/proceedings/%s/acknowledgement.html' % num )
+        return HttpResponseRedirect( f'{settings.PROCEEDINGS_V1_BASE_URL.format(meeting=meeting)}/acknowledgement.html')
     return render(request, "meeting/proceedings_acknowledgements.html", {
         'meeting': meeting,
     })
@@ -3882,7 +3883,7 @@ def proceedings_attendees(request, num=None):
         raise Http404
     meeting = get_meeting(num)
     if meeting.proceedings_format_version == 1:
-        return HttpResponseRedirect( 'https://www.ietf.org/proceedings/%s/attendees.html' % num )
+        return HttpResponseRedirect(f'{settings.PROCEEDINGS_V1_BASE_URL.format(meeting=meeting)}/attendee.html')
     overview_template = '/meeting/proceedings/%s/attendees.html' % meeting.number
     try:
         template = render_to_string(overview_template, {})
@@ -3899,7 +3900,7 @@ def proceedings_overview(request, num=None):
         raise Http404
     meeting = get_meeting(num)
     if meeting.proceedings_format_version == 1:
-        return HttpResponseRedirect( 'https://www.ietf.org/proceedings/%s/overview.html' % num )
+        return HttpResponseRedirect(f'{settings.PROCEEDINGS_V1_BASE_URL.format(meeting=meeting)}/overview.html')
     overview_template = '/meeting/proceedings/%s/overview.rst' % meeting.number
     try:
         template = render_to_string(overview_template, {})
@@ -3917,7 +3918,7 @@ def proceedings_progress_report(request, num=None):
         raise Http404
     meeting = get_meeting(num)
     if meeting.proceedings_format_version == 1:
-        return HttpResponseRedirect( 'https://www.ietf.org/proceedings/%s/progress-report.html' % num )
+        return HttpResponseRedirect(f'{settings.PROCEEDINGS_V1_BASE_URL.format(meeting=meeting)}/progress-report.html')
     sdate = meeting.previous_meeting().date
     edate = meeting.date
     context = get_progress_stats(sdate,edate)

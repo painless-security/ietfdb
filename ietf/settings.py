@@ -1013,9 +1013,10 @@ SECR_VIRTUAL_MEETINGS = ['108']
 STATS_REGISTRATION_ATTENDEES_JSON_URL = 'https://registration.ietf.org/{number}/attendees/'
 PROCEEDINGS_VERSION_CHANGES = [
     0,   # version 1
-    95,  # version 2: meeting 95 and later (was number was NEW_PROCEEDINGS_START)
+    97,  # version 2: meeting 97 and later (was number was NEW_PROCEEDINGS_START)
     111, # version 3: meeting 111 and later
 ]
+PROCEEDINGS_V1_BASE_URL = 'https://www.ietf.org/proceedings/{meeting.number}'
 YOUTUBE_API_KEY = ''
 YOUTUBE_API_SERVICE_NAME = 'youtube'
 YOUTUBE_API_VERSION = 'v3'
