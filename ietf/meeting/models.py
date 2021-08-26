@@ -8,6 +8,7 @@ import datetime
 import io
 import os
 import pytz
+import random
 import re
 import string
 
@@ -1484,7 +1485,7 @@ def _host_upload_path(instance : 'MeetingHost', filename):
     """
     num = instance.meeting.number
     path = (
-            Path(num) / 'meetinghosts' / instance.filename_stem()
+            Path(num) / 'meetinghosts' / f'logo-{"".join(random.choices(string.ascii_lowercase, k=10))}'
     ).with_suffix(
         Path(filename).suffix
     )
@@ -1526,7 +1527,3 @@ class MeetingHost(models.Model):
     class Meta:
         unique_together = (('meeting', 'name'),)
         ordering = ('pk',)
-
-    def filename_stem(self):
-        """Compute the stem of the filename expected for this MeetingHost"""
-        return f'logo-{xslugify(self.name)}'
