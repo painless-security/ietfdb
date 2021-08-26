@@ -43,8 +43,7 @@ class UploadProceedingsMaterialForm(FileUploadForm):
 
     def clean_file(self):
         if self.cleaned_data.get('file', None) is None:
-            return None
-        # bypass cleaning the file if it is empty
+            return None  # bypass cleaning the file if none was provided
         return super().clean_file()
 
     def clean(self):
@@ -76,6 +75,7 @@ def save_proceedings_material_doc(meeting, material_type, title, request, file=N
     if not (file is None or external_url is None):
         raise ValueError('One of file or external_url must be None')
 
+    # doc naming duplicates naming of docs elsewhere - use dashes instead of underscores
     doc_name = '-'.join([
         'proceedings',
         meeting.number,
