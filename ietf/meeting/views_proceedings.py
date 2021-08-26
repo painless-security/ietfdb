@@ -284,7 +284,7 @@ def edit_meetinghosts(request, num):
         if formset.is_valid():
             # Remember names of files before we change anything
             orig_paths = {
-                form.instance.pk: MeetingHost.objects.get(pk=form.instance.pk).logo.path
+                form: MeetingHost.objects.get(pk=form.instance.pk).logo.path
                 for form in formset.forms if form.instance.pk is not None
             }
 
@@ -294,15 +294,17 @@ def edit_meetinghosts(request, num):
             # remove logo files from deleted hosts
             deleted_forms = formset.deleted_forms
             for form in deleted_forms:
-                os.remove(form.instance.logo.path)
+                # Use orig_paths value here in case the user selected a file and checked
+                # delete. In that case, the new file does not exist.
+                os.remove(orig_paths[form])
 
             # remove any logo files that have already changed names - this means that a new file was uploaded
             # alongside the name change
             remaining_forms = set(formset.forms).difference(deleted_forms).difference(formset.extra_forms)
             for form in remaining_forms:
-                pk = form.instance.pk
-                if pk in orig_paths and form.instance.logo.path != orig_paths[pk]:
-                    os.remove(orig_paths[pk])
+                orig_path = orig_paths.get(form, None)
+                if orig_path is not None and form.instance.logo.path != orig_path:
+                    os.remove(orig_path)
 
             # now see if any logo files need to be renamed to match changed names
             for form in remaining_forms:
