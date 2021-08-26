@@ -5595,9 +5595,51 @@ class MeetingHostTests(BaseMeetingTestCase):
         self.assertEqual(meeting.meetinghosts.count(), 0)
         self.assertFalse(logopath.exists())
 
+    def test_remove_with_selected_logo(self):
+        """Can delete a meeting host after selecting a replacement file"""
+        meeting = MeetingFactory(type_id='ietf')
+        url = urlreverse('ietf.meeting.views_proceedings.edit_meetinghosts', kwargs=dict(num=meeting.number))
+
+        # create via UI so we don't have to deal with creating storage paths
+        self.client.login(username='secretary', password='secretary+password')
+        logo = logo_file()
+        r = self._create_first_host(meeting, logo, url)
+        self.assertRedirects(r, urlreverse('ietf.meeting.views.materials', kwargs=dict(num=meeting.number)))
+        self.assertEqual(meeting.meetinghosts.count(), 1)
+        host = meeting.meetinghosts.first()
+        self.assertEqual(host.name, 'Some Sponsor, Inc.')
+        logopath = Path(host.logo.path)
+        self.assertEqual(logopath.name, 'logo-some-sponsor-inc.png')
+        self.assertTrue(logopath.exists())
+
+        # now delete
+        r = self.client.post(
+            url,
+            {
+                'meetinghosts-TOTAL_FORMS': '3',
+                'meetinghosts-INITIAL_FORMS': '1',
+                'meetinghosts-MIN_NUM_FORMS': '0',
+                'meetinghosts-MAX_NUM_FORMS': '1000',
+                'meetinghosts-0-id': str(host.pk),
+                'meetinghosts-0-meeting': str(meeting.pk),
+                'meetinghosts-0-name': 'Modified Sponsor, Ltd.',
+                'meetinghosts-0-DELETE': 'on',
+                'meetinghosts-0-logo': logo_file(format='JPEG'),
+                'meetinghosts-1-id':'',
+                'meetinghosts-1-meeting': str(meeting.pk),
+                'meetinghosts-1-name': '',
+                'meetinghosts-2-id':'',
+                'meetinghosts-2-meeting': str(meeting.pk),
+                'meetinghosts-2-name': '',
+            },
+        )
+        self.assertRedirects(r, urlreverse('ietf.meeting.views.materials', kwargs=dict(num=meeting.number)))
+        self.assertEqual(meeting.meetinghosts.count(), 0)
+        self.assertFalse(logopath.exists())
+
     def test_logo_types_checked(self):
         """Only allowed image types should be accepted"""
-        allowed_formats = [('JPEG', 'jpg'), ('PNG', 'png')]
+        allowed_formats = [('JPEG', 'jpg'), ('JPEG', 'jpeg'), ('PNG', 'png')]
 
         meeting = MeetingFactory(type_id='ietf')
         url = urlreverse('ietf.meeting.views_proceedings.edit_meetinghosts', kwargs=dict(num=meeting.number))
