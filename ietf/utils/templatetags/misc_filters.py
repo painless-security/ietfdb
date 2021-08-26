@@ -31,6 +31,27 @@ def merge_media(forms, arg=None):
 
 
 @register.filter
+def list_extract(items, arg):
+    """Extract items from a list of containers
+
+    Uses Django template lookup rules: tries list index / dict key lookup first, then
+    tries to getattr. If the result is callable, calls with no arguments and uses the return
+    value..
+
+    Usage: {{ list_of_lists|list_extract:1 }} (gets elt 1 from each item in list)
+           {{ list_of_dicts|list_extract:'key' }} (gets value of 'key' from each dict in list)
+    """
+    def _extract(item):
+        try:
+            return item[arg]
+        except TypeError:
+            pass
+        attr = getattr(item, arg, None)
+        return attr() if callable(attr) else attr
+
+    return [_extract(item) for item in items]
+
+@register.filter
 def keep_only(items, arg):
     """Filter list of items based on an attribute
 
@@ -38,10 +59,4 @@ def keep_only(items, arg):
       Returns the list, keeping only those whose where item[attribute] or item.attribute is
       present and truthy. The attribute can be an int or a string.
     """
-    def _test(item):
-        try:
-            return item[arg]
-        except TypeError:
-            return getattr(item, arg, False)
-
-    return [item for item in items if _test(item)]
+    return [item for item, value in zip(items, list_extract(items, arg)) if value]
