@@ -669,7 +669,7 @@ BOFREQ_PATH = '/a/ietfdata/doc/bofreq/'
 CONFLICT_REVIEW_PATH = '/a/ietfdata/doc/conflict-review'
 STATUS_CHANGE_PATH = '/a/ietfdata/doc/status-change'
 AGENDA_PATH = '/a/www/www6s/proceedings/'
-MEETINGHOST_LOGO_PATH = '/a/www/www6s/proceedings/'
+MEETINGHOST_LOGO_PATH = AGENDA_PATH  # put these in the same place as other proceedings files
 IPR_DOCUMENT_PATH = '/a/www/ietf-ftp/ietf/IPR/'
 IESG_TASK_FILE = '/a/www/www6/iesg/internal/task.txt'
 IESG_ROLL_CALL_FILE = '/a/www/www6/iesg/internal/rollcall.txt'
@@ -929,7 +929,7 @@ MEETING_VALID_UPLOAD_EXTENSIONS = {
     'slides':       ['.doc','.docx','.pdf','.ppt','.pptx','.txt', ], # Note the removal of .zip
     'bluesheets':   ['.pdf', '.txt', ],
     'procmaterials':['.pdf', ],
-    'meetinghostlogo':  ['.png', '.jpg', ],
+    'meetinghostlogo':  ['.png', '.jpg', '.jpeg'],
 }
     
 MEETING_VALID_UPLOAD_MIME_TYPES = {

@@ -426,10 +426,20 @@ class DocumentInfo(models.Model):
         return False
 
     def get_related_session(self) -> Optional['Session']:
-        return None  # override in subclasses
+        """Get the meeting session related to this document
+
+        Return None if there is no related session.
+        Must define this in DocumentInfo subclasses.
+        """
+        raise NotImplementedError(f'Class {self.__class__} must define get_related_session()')
 
     def get_related_proceedings_material(self) -> Optional['ProceedingsMaterial']:
-        return None  # override in subclasses
+        """Get the proceedings material related to this document
+
+        Return None if there is no related proceedings material.
+        Must define this in DocumentInfo subclasses.
+        """
+        raise NotImplementedError(f'Class {self.__class__} must define get_related_proceedings_material()')
 
     def get_related_meeting(self):
         """Get the meeting this document relates to"""
