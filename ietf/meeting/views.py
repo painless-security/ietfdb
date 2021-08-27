@@ -3846,6 +3846,7 @@ def proceedings(request, num=None):
         'cor_cut_off_date': cor_cut_off_date,
         'submission_started': now > begin_date,
         'cache_version': cache_version,
+        'attendance': meeting.get_attendance(),
         'meetinghost_logo': {
             'max_height': settings.MEETINGHOST_LOGO_MAX_DISPLAY_HEIGHT,
             'max_width': settings.MEETINGHOST_LOGO_MAX_DISPLAY_WIDTH,

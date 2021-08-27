@@ -13,10 +13,12 @@ This renders the title block for the meeting proceedings page.
   <div class="proceedings-date">
     {{ meeting.date|date:"d F Y" }} - {{ meeting.end_date|date:"d F Y" }}
   </div>
-
+  {% if attendance is not None %}
   <div class="proceedings-info">
-    X onsite participants, Y remote participants
+    {% if attendance.onsite > 0 %}{{ attendance.onsite }} onsite participant{{ attendance.onsite|pluralize }}{% if attendance.online > 0 %},{% endif %}{% endif %}
+    {% if attendance.online > 0 %}{{ attendance.online }} online participant{{ attendance.online|pluralize }}{% endif %}
   </div>
+  {% endif %}
 </div>
 
 <div class="proceedings-intro with-divider">

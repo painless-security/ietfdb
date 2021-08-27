@@ -67,7 +67,7 @@
       {% load cache %}
       {% cache 900 ietf_meeting_proceedings meeting.number cache_version %}
 
-        {% include 'meeting/proceedings/title.html' with meeting=meeting only %}
+        {% include 'meeting/proceedings/title.html' with meeting=meeting attendance=attendance only %}
         {% include 'meeting/proceedings/introduction.html' with meeting=meeting only %}
 
         {% with "True" as show_agenda %}

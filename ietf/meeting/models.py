@@ -12,6 +12,7 @@ import random
 import re
 import string
 
+from collections import namedtuple
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -47,7 +48,7 @@ from ietf.utils.validators import (
     validate_file_extension,
 )
 from ietf.utils.fields import MissingOkImageField
-from ietf.utils.log import unreachable
+from ietf.utils.log import log, unreachable
 
 countries = list(pytz.country_names.items())
 countries.sort(key=lambda x: x[1])
@@ -235,6 +236,29 @@ class Meeting(models.Model):
         return self.proceedings_materials.filter(
             Q(document__states__slug='active', document__states__type_id='procmaterials')
         ).order_by('type__order')
+
+    def get_attendance(self):
+        """Get the meeting attendance from the MeetingRegistrations
+
+        Returns a NamedTuple with onsite and online attributes. Returns None if the record is unavailable
+        for this meeting.
+        """
+        number = self.get_number()
+        if number is None or number < 110:
+            return None
+        Attendance = namedtuple('Attendance', 'onsite online')
+        return Attendance(
+            onsite=Person.objects.filter(
+                meetingregistration__meeting=self,
+                meetingregistration__attended=True,
+                meetingregistration__reg_type__contains='in_person',
+            ).distinct().count(),
+            online=Person.objects.filter(
+                meetingregistration__meeting=self,
+                meetingregistration__attended=True,
+                meetingregistration__reg_type__contains='remote',
+            ).distinct().count(),
+        )
 
     @property
     def proceedings_format_version(self):
