@@ -26,7 +26,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('doc', '0043_bofreq_docevents'),
-        ('name', '0032_add_procmaterials'),
+        ('name', '0030_add_procmaterials'),
     ]
 
     operations = [

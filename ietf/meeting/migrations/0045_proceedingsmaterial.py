@@ -10,7 +10,7 @@ import ietf.utils.models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('name', '0031_populate_proceedingsmaterialtypename'),
+        ('name', '0029_populate_proceedingsmaterialtypename'),
         ('meeting', '0044_again_assign_correct_constraintnames'),
     ]
 
