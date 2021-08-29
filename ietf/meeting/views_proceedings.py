@@ -1,4 +1,4 @@
-import os
+# Copyright The IETF Trust 2021 All Rights Reserved
 from pathlib import Path
 
 from django import forms

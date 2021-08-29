@@ -246,10 +246,12 @@ class DocumentInfo(models.Model):
             if self.is_meeting_related:
                 if not meeting:
                     meeting = self.get_related_meeting()
+                    if meeting is None:
+                        return ''
 
                 # After IETF 96, meeting materials acquired revision
                 # handling, and the document naming changed.
-                if meeting.number.isdigit() and int(meeting.number) <= 96:
+                if meeting.proceedings_format_version == 1:
                     format = settings.MEETING_DOC_OLD_HREFS[self.type_id]
                 else:
                     # This branch includes interims
@@ -456,7 +458,8 @@ class DocumentInfo(models.Model):
             if material is not None:
                 return material.meeting
         else:
-            return []
+            log.unreachable('2021-08-29')  # if meeting_related, there must be a way to retrieve the meeting!
+            return None
 
     def relations_that(self, relationship):
         """Return the related-document objects that describe a given relationship targeting self."""
@@ -749,10 +752,6 @@ class Document(DocumentInfo):
 
     def get_related_session(self):
         sessions = self.session_set.all()
-        log.assertion(
-            'sessions.count() <= 1',
-            note='Documents cannot handle multiple related sessions',
-        )
         return sessions.first()
 
     def get_related_proceedings_material(self):

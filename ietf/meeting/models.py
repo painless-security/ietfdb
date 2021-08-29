@@ -48,7 +48,7 @@ from ietf.utils.validators import (
     validate_file_extension,
 )
 from ietf.utils.fields import MissingOkImageField
-from ietf.utils.log import log, unreachable
+from ietf.utils.log import unreachable
 
 countries = list(pytz.country_names.items())
 countries.sort(key=lambda x: x[1])

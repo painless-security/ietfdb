@@ -26,6 +26,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('name', '0028_proceedingsmaterialtypename'),
+        ('meeting', '0046_meetinghost'),
     ]
 
     operations = [

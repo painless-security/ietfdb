@@ -5330,6 +5330,9 @@ class MeetingHostTests(BaseMeetingTestCase):
         login_testing_unauthorized(self, 'secretary', url, method='post')
         # don't bother checking a real post - it'll be tested in other methods
 
+    def _assertMatch(self, value, pattern):
+        self.assertIsNotNone(re.match(pattern, value))
+
     def test_add(self):
         """Can add a new meeting host"""
         meeting = MeetingFactory(type_id='ietf')
@@ -5349,7 +5352,7 @@ class MeetingHostTests(BaseMeetingTestCase):
         host = meeting.meetinghosts.first()
         self.assertEqual(host.name, 'Some Sponsor, Inc.')
         logo_filename = Path(host.logo.path)
-        self.assertEqual(logo_filename.name, 'logo-some-sponsor-inc.png')
+        self._assertMatch(logo_filename.name, r'logo-[a-z]+.png')
         self.assertCountEqual(
             logo_filename.parent.iterdir(),
             [logo_filename],
@@ -5386,11 +5389,11 @@ class MeetingHostTests(BaseMeetingTestCase):
         host = meeting.meetinghosts.first()
         self.assertEqual(host.name, 'Some Sponsor, Inc.')
         logo_filename = Path(host.logo.path)
-        self.assertEqual(logo_filename.name, 'logo-some-sponsor-inc.png')
+        self._assertMatch(logo_filename.name, r'logo-[a-z]+.png')
         host = meeting.meetinghosts.last()
         self.assertEqual(host.name, 'Another Sponsor, Ltd.')
         logo2_filename = Path(host.logo.path)
-        self.assertEqual(logo2_filename.name, 'logo-another-sponsor-ltd.png')
+        self._assertMatch(logo2_filename.name, r'logo-[a-z]+.png')
         self.assertCountEqual(
             logo_filename.parent.iterdir(),
             [logo_filename, logo2_filename],
@@ -5420,7 +5423,7 @@ class MeetingHostTests(BaseMeetingTestCase):
         host = meeting.meetinghosts.first()
         self.assertEqual(host.name, 'Some Sponsor, Inc.')
         orig_logopath = Path(host.logo.path)
-        self.assertEqual(orig_logopath.name, 'logo-some-sponsor-inc.png')
+        self._assertMatch(orig_logopath.name, r'logo-[a-z]+.png')
         self.assertTrue(orig_logopath.exists())
 
         # post our response to modify the name
@@ -5447,11 +5450,10 @@ class MeetingHostTests(BaseMeetingTestCase):
         host = meeting.meetinghosts.first()
         self.assertEqual(host.name, 'Modified Sponsor, Inc.')
         second_logopath = Path(host.logo.path)
+        self.assertEqual(second_logopath, orig_logopath)
         self.assertTrue(second_logopath.exists())
-        self.assertEqual(second_logopath.name, 'logo-modified-sponsor-inc.png')
         with second_logopath.open('rb') as f:
             self.assertEqual(f.read(), logo.getvalue())
-        self.assertFalse(orig_logopath.exists())
 
     def test_meeting_host_replace_logo(self):
         """Can replace logo of a meeting host"""
@@ -5467,7 +5469,7 @@ class MeetingHostTests(BaseMeetingTestCase):
         host = meeting.meetinghosts.first()
         self.assertEqual(host.name, 'Some Sponsor, Inc.')
         orig_logopath = Path(host.logo.path)
-        self.assertEqual(orig_logopath.name, 'logo-some-sponsor-inc.png')
+        self._assertMatch(orig_logopath.name, r'logo-[a-z]+.png')
         self.assertTrue(orig_logopath.exists())
 
         # post our response to replace the logo
@@ -5496,8 +5498,7 @@ class MeetingHostTests(BaseMeetingTestCase):
         host = meeting.meetinghosts.first()
         self.assertEqual(host.name, 'Some Sponsor, Inc.')
         second_logopath = Path(host.logo.path)
-        self.assertEqual(orig_logopath, second_logopath)
-        self.assertEqual(second_logopath.name, 'logo-some-sponsor-inc.png')
+        self._assertMatch(second_logopath.name, r'logo-[a-z]+.png')
         self.assertTrue(second_logopath.exists())
         with second_logopath.open('rb') as f:
             self.assertEqual(f.read(), new_logo.getvalue())
@@ -5516,7 +5517,7 @@ class MeetingHostTests(BaseMeetingTestCase):
         host = meeting.meetinghosts.first()
         self.assertEqual(host.name, 'Some Sponsor, Inc.')
         orig_logopath = Path(host.logo.path)
-        self.assertEqual(orig_logopath.name, 'logo-some-sponsor-inc.png')
+        self._assertMatch(orig_logopath.name, r'logo-[a-z]+.png')
         self.assertTrue(orig_logopath.exists())
 
         # post our response to replace the logo
@@ -5545,7 +5546,7 @@ class MeetingHostTests(BaseMeetingTestCase):
         host = meeting.meetinghosts.first()
         self.assertEqual(host.name, 'Modified Sponsor, Ltd.')
         second_logopath = Path(host.logo.path)
-        self.assertEqual(second_logopath.name, 'logo-modified-sponsor-ltd.png')
+        self._assertMatch(second_logopath.name, r'logo-[a-z]+.png')
         self.assertTrue(second_logopath.exists())
         with second_logopath.open('rb') as f:
             self.assertEqual(f.read(), new_logo.getvalue())
@@ -5565,7 +5566,7 @@ class MeetingHostTests(BaseMeetingTestCase):
         host = meeting.meetinghosts.first()
         self.assertEqual(host.name, 'Some Sponsor, Inc.')
         logopath = Path(host.logo.path)
-        self.assertEqual(logopath.name, 'logo-some-sponsor-inc.png')
+        self._assertMatch(logopath.name, r'logo-[a-z]+.png')
         self.assertTrue(logopath.exists())
 
         # now delete
@@ -5606,7 +5607,7 @@ class MeetingHostTests(BaseMeetingTestCase):
         host = meeting.meetinghosts.first()
         self.assertEqual(host.name, 'Some Sponsor, Inc.')
         logopath = Path(host.logo.path)
-        self.assertEqual(logopath.name, 'logo-some-sponsor-inc.png')
+        self._assertMatch(logopath.name, r'logo-[a-z]+.png')
         self.assertTrue(logopath.exists())
 
         # now delete
@@ -5660,6 +5661,8 @@ class MeetingHostTests(BaseMeetingTestCase):
             meeting.meetinghosts.all().delete()
 
 
+# Keep these settings consistent with the assumptions in these tests
+@override_settings(PROCEEDINGS_VERSION_CHANGES=[0, 97, 111])
 class ProceedingsTests(BaseMeetingTestCase):
     """Tests related to meeting proceedings display
 
@@ -5805,14 +5808,13 @@ class ProceedingsTests(BaseMeetingTestCase):
 
     def test_proceedings_acknowledgements(self):
         make_meeting_test_data()
-        meeting = MeetingFactory(type_id='ietf', date=datetime.date(2016,7,14), number="96")
+        meeting = MeetingFactory(type_id='ietf', date=datetime.date(2016,7,14), number="97")
         meeting.acknowledgements = 'test acknowledgements'
         meeting.save()
         url = urlreverse('ietf.meeting.views.proceedings_acknowledgements',kwargs={'num':meeting.number})
         response = self.client.get(url)
         self.assertContains(response, 'test acknowledgements')
 
-    @override_settings(PROCEEDINGS_VERSION_CHANGES=[0, 95, 111])
     def test_proceedings_acknowledgements_link(self):
         """Link to proceedings_acknowledgements view should not appear for 'new' meetings
 
@@ -5856,9 +5858,9 @@ class ProceedingsTests(BaseMeetingTestCase):
         mockobj.return_value.text = b'[{"LastName":"Smith","FirstName":"John","Company":"ABC","Country":"US"}]'
         mockobj.return_value.json = lambda: json.loads(b'[{"LastName":"Smith","FirstName":"John","Company":"ABC","Country":"US"}]')
         make_meeting_test_data()
-        meeting = MeetingFactory(type_id='ietf', date=datetime.date(2016,7,14), number="96")
+        meeting = MeetingFactory(type_id='ietf', date=datetime.date(2016,7,14), number="97")
         finalize(meeting)
-        url = urlreverse('ietf.meeting.views.proceedings_attendees',kwargs={'num':96})
+        url = urlreverse('ietf.meeting.views.proceedings_attendees',kwargs={'num':97})
         response = self.client.get(url)
         self.assertContains(response, 'Attendee List')
         q = PyQuery(response.content)
@@ -5871,18 +5873,18 @@ class ProceedingsTests(BaseMeetingTestCase):
         '''
         mock_urlopen.return_value = BytesIO(b'[{"LastName":"Smith","FirstName":"John","Company":"ABC","Country":"US"}]')
         make_meeting_test_data()
-        meeting = MeetingFactory(type_id='ietf', date=datetime.date(2016,7,14), number="96")
+        meeting = MeetingFactory(type_id='ietf', date=datetime.date(2016,7,14), number="97")
         finalize(meeting)
-        url = urlreverse('ietf.meeting.views.proceedings_overview',kwargs={'num':96})
+        url = urlreverse('ietf.meeting.views.proceedings_overview',kwargs={'num':97})
         response = self.client.get(url)
         self.assertContains(response, 'The Internet Engineering Task Force')
 
     def test_proceedings_progress_report(self):
         make_meeting_test_data()
-        MeetingFactory(type_id='ietf', date=datetime.date(2016,4,3), number="95")
-        MeetingFactory(type_id='ietf', date=datetime.date(2016,7,14), number="96")
+        MeetingFactory(type_id='ietf', date=datetime.date(2016,4,3), number="96")
+        MeetingFactory(type_id='ietf', date=datetime.date(2016,7,14), number="97")
 
-        url = urlreverse('ietf.meeting.views.proceedings_progress_report',kwargs={'num':96})
+        url = urlreverse('ietf.meeting.views.proceedings_progress_report',kwargs={'num':97})
         response = self.client.get(url)
         self.assertContains(response, 'Progress Report')
 
