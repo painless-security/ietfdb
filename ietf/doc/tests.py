@@ -1567,28 +1567,18 @@ class DocTestCase(TestCase):
                 by=Person.objects.get(name="(System)"))
 
         anchors = set()
+        author_slug = slugify(ad.plain_name())
         for doc, ballot in zip(docs, ballots):
-            BallotPositionDocEvent.objects.create(
-                doc=doc,
-                rev=doc.rev,
-                ballot=ballot,
-                type="changed_ballot_position",
-                pos_id="yes",
-                comment="Looks fine to me",
-                comment_time=datetime.datetime.now(),
-                balloter=Person.objects.get(user__username="ad"),
-                by=Person.objects.get(name="(System)"))
-
             r = self.client.get(urlreverse(
                 "ietf.doc.views_doc.ballot_popup",
                 kwargs=dict(name=doc.name, ballot_id=ballot.pk)
             ))
             self.assertEqual(r.status_code, 200)
             q = PyQuery(r.content)
-            href = q('div.balloter-name a').attr('href')
+            href = q(f'div.balloter-name a[href$="{author_slug}"]').attr('href')
             ids = [
                 target.attr('id')
-                for target in q('h4.anchor-target[id$="{}"]'.format(slugify(ad.plain_name()))).items()
+                for target in q(f'h4.anchor-target[id$="{author_slug}"]').items()
             ]
             self.assertEqual(len(ids), 1, 'Should be exactly one link for the balloter')
             self.assertEqual(href, f'#{ids[0]}', 'Anchor href should match ID')
