@@ -38,7 +38,10 @@ class EmailOnFailureCommand(BaseCommand):
     {error}
     """)
     failure_subject = 'Exception in management command'
-    failure_recipients = tuple(item[1] for item in settings.ADMINS)
+
+    @property
+    def failure_recipients(self):
+        return tuple(item[1] for item in settings.ADMINS)
 
     def execute(self, *args, **options):
         try:
