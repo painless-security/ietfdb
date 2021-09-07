@@ -847,10 +847,13 @@ class TimeSlotForm(forms.Form):
                 if not short:
                     self.add_error('short', 'When scheduling this type of time slot, a short name is required')
 
-            if self.timeslot and self.timeslot.type_id == 'regular' and self.active_assignment and ts_type.pk != self.timeslot.type_id:
+            if self.timeslot and self.timeslot.type.slug == 'regular' and self.active_assignment and ts_type.slug != self.timeslot.type.slug:
                 self.add_error('type', "Can't change type on time slots for regular sessions when a session has been assigned")
 
-        if self.active_assignment and self.active_assignment.session.group != self.cleaned_data.get('group') and self.active_assignment.session.materials.exists() and self.timeslot.type_id != 'regular':
+        if (self.active_assignment
+            and self.active_assignment.session.group != self.cleaned_data.get('group')
+            and self.active_assignment.session.materials.exists()
+            and self.timeslot.type.slug != 'regular'):
             self.add_error('group', "Can't change group after materials have been uploaded")
 
 
@@ -1420,23 +1423,23 @@ def agenda_csv(schedule, filtered_assignments):
         row.append(item.timeslot.time.strftime("%H%M"))
         row.append(item.timeslot.end_time().strftime("%H%M"))
 
-        if item.timeslot.type_id == "break":
-            row.append(item.timeslot.type.name)
+        if item.slot_type().slug == "break":
+            row.append(item.slot_type().name)
             row.append(schedule.meeting.break_area)
             row.append("")
             row.append("")
             row.append("")
             row.append(item.timeslot.name)
             row.append("b{}".format(item.timeslot.pk))
-        elif item.timeslot.type_id == "reg":
-            row.append(item.timeslot.type.name)
+        elif item.slot_type().slug == "reg":
+            row.append(item.slot_type().name)
             row.append(schedule.meeting.reg_area)
             row.append("")
             row.append("")
             row.append("")
             row.append(item.timeslot.name)
             row.append("r{}".format(item.timeslot.pk))
-        elif item.timeslot.type_id == "other":
+        elif item.slot_type().slug == "other":
             row.append("None")
             row.append(item.timeslot.location.name if item.timeslot.location else "")
             row.append("")
@@ -1444,7 +1447,7 @@ def agenda_csv(schedule, filtered_assignments):
             row.append(item.session.historic_group.historic_parent.acronym.upper() if item.session.historic_group.historic_parent else "")
             row.append(item.session.name)
             row.append(item.session.pk)
-        elif item.timeslot.type_id == "plenary":
+        elif item.slot_type().slug == "plenary":
             row.append(item.session.name)
             row.append(item.timeslot.location.name if item.timeslot.location else "")
             row.append("")
@@ -1454,7 +1457,7 @@ def agenda_csv(schedule, filtered_assignments):
             row.append(item.session.pk)
             row.append(agenda_field(item))
             row.append(slides_field(item))
-        elif item.timeslot.type_id == 'regular':
+        elif item.slot_type().slug == 'regular':
             row.append(item.timeslot.name)
             row.append(item.timeslot.location.name if item.timeslot.location else "")
             row.append(item.session.historic_group.historic_parent.acronym.upper() if item.session.historic_group.historic_parent else "")
@@ -1651,7 +1654,7 @@ def week_view(request, num=None, name=None, owner=None):
             "key": str(a.timeslot.pk),
             "utc_time": a.timeslot.utc_start_time().strftime("%Y%m%dT%H%MZ"),  # ISO8601 compliant
             "duration": a.timeslot.duration.seconds,
-            "type": a.timeslot.type.name,
+            "type": a.slot_type().name,
             "filter_keywords": ",".join(a.filter_keywords),
         }
 
@@ -1661,10 +1664,10 @@ def week_view(request, num=None, name=None, owner=None):
 
             if a.session.name:
                 item["name"] = a.session.name
-            elif a.timeslot.type_id == "break":
+            elif a.slot_type().slug == "break":
                 item["name"] = a.timeslot.name
-                item["area"] = a.timeslot.type_id
-                item["group"] = a.timeslot.type_id
+                item["area"] = a.slot_type().slug
+                item["group"] = a.slot_type().slug
             elif a.session.historic_group:
                 item["name"] = a.session.historic_group.name
                 if a.session.historic_group.state_id == "bof":
@@ -3441,7 +3444,7 @@ def proceedings(request, num=None):
     plenaries = sessions.filter(name__icontains='plenary').exclude(current_status='notmeet')
     ietf      = sessions.filter(group__parent__type__slug = 'area').exclude(group__acronym='edu')
     irtf      = sessions.filter(group__parent__acronym = 'irtf')
-    training  = sessions.filter(group__acronym__in=['edu','iaoc'], type_id__in=['regular', 'other', 'officehours',]).exclude(current_status='notmeet')
+    training  = sessions.filter(group__acronym__in=['edu','iaoc'], type_id__in=['regular', 'other',]).exclude(current_status='notmeet')
     iab       = sessions.filter(group__parent__acronym = 'iab').exclude(current_status='notmeet')
 
     cache_version = Document.objects.filter(session__meeting__number=meeting.number).aggregate(Max('time'))["time__max"]

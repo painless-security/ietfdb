@@ -764,6 +764,14 @@ class SchedTimeSessAssignment(models.Model):
         else:
             return None
 
+    def meeting(self):
+        """Get the meeting to which this assignment belongs"""
+        return self.session.meeting
+
+    def slot_type(self):
+        """Get the TimeSlotTypeName that applies to this assignment"""
+        return self.timeslot.type
+
     def json_url(self):
         if not hasattr(self, '_cached_json_url'):
             self._cached_json_url =  "/meeting/%s/agenda/%s/%s/session/%u.json" % (
@@ -814,12 +822,12 @@ class SchedTimeSessAssignment(models.Model):
 
             g = getattr(self.session, "historic_group", None) or self.session.group
 
-            if self.timeslot.type_id in ('break', 'reg', 'other'):
+            if self.timeslot.type.slug in ('break', 'reg', 'other'):
                 components.append(g.acronym)
                 components.append(slugify(self.session.name))
 
-            if self.timeslot.type_id in ('regular', 'plenary'):
-                if self.timeslot.type_id == "plenary":
+            if self.timeslot.type.slug in ('regular', 'plenary'):
+                if self.timeslot.type.slug == "plenary":
                     components.append("1plenary")
                 else:
                     p = getattr(g, "historic_parent", None) or g.parent

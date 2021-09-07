@@ -28,7 +28,7 @@ def reverse(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('name', '0024_agendafiltertypename'),
+        ('name', '0025_populate_agendafiltertypename'),
         ('group', '0042_add_liaison_contact_roles_to_used_roles'),
     ]
 

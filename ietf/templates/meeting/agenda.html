@@ -188,7 +188,7 @@
                               <span class="label label-danger pull-right">CANCELLED</span>
                           {% else %}
                               <div class="pull-right padded-left">
-                                  {% if item.timeslot.type.slug == 'other' %}
+                                  {% if item.slot_type.slug == 'other' %}
                                       {% if item.session.agenda or item.session.remote_instructions or item.session.agenda_note %}
                                           {% include "meeting/session_buttons_include.html" with show_agenda=True item=item schedule=schedule %}
                                       {% else %}
@@ -231,12 +231,12 @@
 
               {% if item.session.historic_group %}
                 <tr id="row-{{item.slug}}" 
-                    {% if item.timeslot.type.slug == 'plenary' %}class="{{item.timeslot.type.slug}}danger"{% endif %}
+                    {% if item.slot_type.slug == 'plenary' %}class="{{item.slot_type.slug}}danger"{% endif %}
                     data-filter-keywords="{{ item.filter_keywords|join:',' }}"
                     data-slot-start-ts="{{item.start_timestamp}}"
                     data-slot-end-ts="{{item.end_timestamp}}">
                   <td class="leftmarker"></td>
-		  {% if item.timeslot.type.slug == 'plenary' %}
+		  {% if item.slot_type.slug == 'plenary' %}
 	            <th class="text-nowrap text-right">
                       <span class="hidden-xs">
                          {% include "meeting/timeslot_start_end.html" %}
@@ -295,7 +295,7 @@
                     {% if item.session.agenda %}
 		      <a href="{{ item.session.agenda.get_href }}">
                     {% endif %}
-                    {% if item.timeslot.type.slug == 'plenary' %}
+                    {% if item.slot_type.slug == 'plenary' %}
                       {{item.timeslot.name}}
                     {% else %}
                       {{item.session.historic_group.name}}
