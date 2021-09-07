@@ -35,7 +35,7 @@ from ietf.meeting.utils import add_event_info_to_session_qs
 from ietf.utils.test_utils import assert_ical_response_is_valid
 from ietf.utils.jstest import ( IetfSeleniumTestCase, ifSeleniumEnabled, selenium_enabled,
                                 presence_of_element_child_by_css_selector )
-from ietf import settings
+from django.conf import settings
 
 if selenium_enabled():
     from selenium.webdriver.common.action_chains import ActionChains
