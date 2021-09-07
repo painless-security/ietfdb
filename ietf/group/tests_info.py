@@ -74,7 +74,7 @@ class GroupPagesTests(TestCase):
         self.assertContains(r, group.name)
         self.assertContains(r, escape(group.ad_role().person.plain_name()))
 
-        for t in ('rg','area','ag', 'rag', 'dir','review','team','program'):
+        for t in ('rg','area','ag', 'rag', 'dir','review','team','program','iabasg','adm'):
             g = GroupFactory.create(type_id=t,state_id='active') 
             if t in ['dir','review']:
                 g.parent = GroupFactory.create(type_id='area',state_id='active')
@@ -90,7 +90,7 @@ class GroupPagesTests(TestCase):
         self.assertContains(r, "Directorate")
         self.assertContains(r, "AG")
 
-        for slug in GroupTypeName.objects.exclude(slug__in=['wg','rg','ag','rag','area','dir','review','team','program','adhoc','ise']).values_list('slug',flat=True):
+        for slug in GroupTypeName.objects.exclude(slug__in=['wg','rg','ag','rag','area','dir','review','team','program','adhoc','ise','adm','iabasg']).values_list('slug',flat=True):
             with self.assertRaises(NoReverseMatch):
                 url=urlreverse('ietf.group.views.active_groups', kwargs=dict(group_type=slug))
 
@@ -280,7 +280,7 @@ class GroupPagesTests(TestCase):
             'rg'   : ['secretary','irtf-chair'],
             'ag'   : ['secretary', 'ad' ],
             'rag'  : ['secretary', 'irtf-chair'],
-            'team' : ['secretary',], # The code currently doesn't let ads edit teams or directorates. Maybe it should.
+            'team' : ['secretary' , 'ad'],
             'dir'  : ['secretary',],
             'review'  : ['secretary',],
             'program' : ['secretary', 'iab-member'],
@@ -479,11 +479,16 @@ class GroupEditTests(TestCase):
         area = Group.objects.filter(type="area").first()
 
         # normal get
-        r = self.client.get(url)
-        self.assertEqual(r.status_code, 200)
-        q = PyQuery(r.content)
-        self.assertEqual(len(q('form input[name=acronym]')), 1)
+        for username in ("secretary","ad","irtf-chair"):
+            self.client.logout()
+            login_testing_unauthorized(self, username, url)
+            r = self.client.get(url)
+            self.assertEqual(r.status_code, 200)
+            q = PyQuery(r.content)
+            self.assertEqual(len(q('form input[name=acronym]')), 1)
 
+        self.client.logout()
+        login_testing_unauthorized(self, "secretary", url)
         # faulty post
         r = self.client.post(url, dict(acronym="foobarbaz")) # No name
         self.assertEqual(r.status_code, 200)
@@ -527,7 +532,6 @@ class GroupEditTests(TestCase):
     def test_create_rg(self):
 
         url = urlreverse('ietf.group.views.edit', kwargs=dict(group_type="rg", action="charter"))
-        login_testing_unauthorized(self, "secretary", url)
 
         irtf = Group.objects.get(acronym='irtf')
         num_rgs = len(Group.objects.filter(type="rg"))
@@ -535,11 +539,14 @@ class GroupEditTests(TestCase):
         proposed_state = GroupStateName.objects.get(slug="proposed")
 
         # normal get
-        r = self.client.get(url)
-        self.assertEqual(r.status_code, 200)
-        q = PyQuery(r.content)
-        self.assertEqual(len(q('form input[name=acronym]')), 1)
-        self.assertEqual(q('form select[name=parent]')[0].value,'%s'%irtf.pk)
+        for username in ("secretary", "ad", "irtf-chair"):
+            self.client.logout()
+            login_testing_unauthorized(self, username, url)
+            r = self.client.get(url)
+            self.assertEqual(r.status_code, 200)
+            q = PyQuery(r.content)
+            self.assertEqual(len(q('form input[name=acronym]')), 1)
+            self.assertEqual(q('form select[name=parent]')[0].value,'%s'%irtf.pk)
 
         r = self.client.post(url, dict(acronym="testrg", name="Testing RG", state=proposed_state.pk, parent=irtf.pk))
         self.assertEqual(r.status_code, 302)

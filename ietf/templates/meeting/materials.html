@@ -29,6 +29,7 @@
 
       <p>
         {% if user|has_role:"Secretariat" %}
+          <a class="btn btn-default" href="{% url 'ietf.meeting.views_proceedings.edit_meetinghosts' num=meeting.number %}">Edit meeting hosts</a>
           <a class="btn btn-default" href="{% url 'ietf.secr.proceedings.views.main' %}">Secretariat proceedings functions</a>
           {% if meeting.end_date.today > meeting.end_date %}
             <a class="btn btn-default" href="{% url 'ietf.meeting.views.request_minutes' num=meeting.number %}">Send request for minutes</a>
@@ -36,6 +37,8 @@
         {% endif %}
         <a class="btn btn-default" href="/meeting/{{meeting.number}}/requests">Meeting requests/conflicts</a>
       </p>
+
+      {% include 'meeting/proceedings/materials_table.html' with meeting=meeting proceedings_materials=proceedings_materials user=user only %}
 
       {% with "True" as show_agenda %}
 	<!-- Plenaries -->
@@ -134,8 +137,8 @@
 	      </thead>
 
 	      <tbody>
-		{% for session in training %}
-		  {% ifchanged %}
+		{% for session in training %} 
+		  {% ifchanged %} {# TODO: Find a better way to represent purposed sessions in both materials and proceedings #}
 		    {% include "meeting/group_materials.html" %}
 		  {% endifchanged %}
 		{% endfor %}
@@ -171,7 +174,7 @@
 
 	    <tbody>
 	      {% for session in iab %}
-		{% ifchanged %}
+		{% ifchanged session.group.acronym %}
 		  {% include "meeting/group_materials.html" %}
 		{% endifchanged %}
 	      {% endfor %}
@@ -206,7 +209,7 @@
 
 	    <tbody>
 	      {% for session in irtf|dictsort:"group.acronym" %}
-		{% ifchanged %}
+		{% ifchanged session.group.acronym %}
 		  {% include "meeting/group_materials.html" %}
 		{% endifchanged %}
 	      {% endfor %}
@@ -240,7 +243,7 @@
 
 	    <tbody>
 	      {% for session in other|dictsort:"group.acronym" %}
-		{% ifchanged %}
+		{% ifchanged session.group.acronym %}
 		  {% include "meeting/group_materials.html" %}
 		{% endifchanged %}
 	      {% endfor %}

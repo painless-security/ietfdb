@@ -7,11 +7,17 @@ import random
 import datetime
 
 from django.core.files.base import ContentFile
+from django.db.models import Q
 
-from ietf.meeting.models import Meeting, Session, SchedulingEvent, Schedule, TimeSlot, SessionPresentation, FloorPlan, Room, SlideSubmission
-from ietf.name.models import ConstraintName, SessionStatusName
+from ietf.meeting.models import (Meeting, Session, SchedulingEvent, Schedule,
+    TimeSlot, SessionPresentation, FloorPlan, Room, SlideSubmission, Constraint,
+    MeetingHost, ProceedingsMaterial)
+from ietf.name.models import ConstraintName, SessionStatusName, ProceedingsMaterialTypeName, TimerangeName
+from ietf.doc.factories import ProceedingsMaterialDocFactory
 from ietf.group.factories import GroupFactory
 from ietf.person.factories import PersonFactory
+from ietf.utils.text import xslugify
+
 
 class MeetingFactory(factory.django.DjangoModelFactory):
     class Meta:
@@ -100,6 +106,7 @@ class SessionFactory(factory.django.DjangoModelFactory):
     meeting = factory.SubFactory(MeetingFactory)
     type_id='regular'
     group = factory.SubFactory(GroupFactory)
+    requested_duration = datetime.timedelta(hours=1)
 
     @factory.post_generation
     def status_id(obj, create, extracted, **kwargs):
@@ -220,3 +227,69 @@ class SlideSubmissionFactory(factory.django.DjangoModelFactory):
     make_file = factory.PostGeneration(
                     lambda obj, create, extracted, **kwargs: open(obj.staged_filepath(),'a').close()
                 )
+
+class ConstraintFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Constraint
+
+    meeting = factory.SubFactory(MeetingFactory)
+    source = factory.SubFactory(GroupFactory)
+    target = factory.SubFactory(GroupFactory)
+    person = factory.SubFactory(PersonFactory)
+    time_relation = factory.Iterator(Constraint.TIME_RELATION_CHOICES)
+
+    @factory.lazy_attribute
+    def name(obj):
+        constraint_list = list(ConstraintName.objects.filter(
+              Q(slug__in=['bethere','timerange','time_relation','wg_adjacent'])
+            | Q(meeting=obj.meeting)
+        ))
+        return random.choice(constraint_list)
+
+    @factory.post_generation
+    def timeranges(self, create, extracted, **kwargs):
+        if create:
+            if extracted:
+                for tr in TimerangeName.objects.filter(slug__in=extracted):
+                    self.timeranges.add(tr)
+
+class MeetingHostFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = MeetingHost
+
+    meeting = factory.SubFactory(MeetingFactory, type_id='ietf')
+    name = factory.Faker('company')
+    logo = factory.django.ImageField()  # generates an image
+
+
+def _pmf_doc_name(doc):
+    """Helper to generate document name for a ProceedingsMaterialFactory LazyAttribute"""
+    return 'proceedings-{number}-{slug}'.format(
+        number=doc.factory_parent.meeting.number,
+        slug=xslugify(doc.factory_parent.type.slug).replace("_", "-")[:128]
+    )
+
+class ProceedingsMaterialFactory(factory.django.DjangoModelFactory):
+    """Create a ProceedingsMaterial for testing
+
+    Note: if you want to specify a type, use type=ProceedingsMaterialTypeName.objects.get(slug='slug')
+    rather than the type_id='slug' shortcut. The latter will advance the Iterator used to generate
+    types. This value is then used by the document SubFactory to set the document's title. This will
+    not match the type of material created.
+    """
+    class Meta:
+        model = ProceedingsMaterial
+
+    meeting = factory.SubFactory(MeetingFactory, type_id='ietf')
+    type = factory.Iterator(ProceedingsMaterialTypeName.objects.filter(used=True))
+    # The SelfAttribute atnd LazyAttribute allow the document to be a SubFactory instead
+    # of a generic LazyAttribute. This allows other attributes on the document to be
+    # specified as document__external_url, etc.
+    document = factory.SubFactory(
+        ProceedingsMaterialDocFactory,
+        type_id='procmaterials',
+        title=factory.SelfAttribute('..type.name'),
+        name=factory.LazyAttribute(_pmf_doc_name),
+        uploaded_filename=factory.LazyAttribute(
+            lambda doc: f'{_pmf_doc_name(doc)}-{doc.rev}.pdf'
+        ))

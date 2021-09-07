@@ -1,39 +1,36 @@
 {% extends "base.html" %}
-{# Copyright The IETF Trust 2015, All Rights Reserved #}
+{# Copyright The IETF Trust 2021, All Rights Reserved #}
 {% load origin static %}
 
 {% block pagehead %}
 <link rel="stylesheet" href="{% static "jquery.tablesorter/css/theme.bootstrap.min.css" %}">
 {% endblock %}
 
-{% block title %}Active programs{% endblock %}
+{% block title %}Active administrative groups{% endblock %}
 
 
 {% block content %}
   {% origin %}
-  <h1>Active programs</h1>
+  {% regroup adm by parent as grouped_groups %}
+  {% for grouptype in grouped_groups %}
+  <h1>Active {% firstof grouptype.grouper.verbose_name grouptype.grouper.name 'Top-level Administration' %} Groups</h1>
   <table class="table table-condensed table-striped tablesorter">
     <thead>
       <tr>
-        <th>Program</th>
+        <th>{{grouptype.grouper}}</th>
         <th>Name</th>
-        <th>Lead</th>
       </tr>
     </thead>
     <tbody>
-    {% for group in programs %}
+    {% for group in grouptype.list %}
         <tr>
           <td><a href="{% url "ietf.group.views.group_home" acronym=group.acronym %}">{{ group.acronym }}</a></td>
           <td>{{ group.name }}</td>
-          <td>
-            {% for lead in group.leads %}
-              <a href="mailto:{{ lead.email.address }}">{{ lead.person.plain_name }}</a>{% if not forloop.last %}, {% endif %}
-            {% endfor %}
-          </td>
         </tr>
     {% endfor %}
     </tbody>
   </table>
+  {% endfor %}
 
 {% endblock %}
 
