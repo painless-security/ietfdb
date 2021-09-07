@@ -32,7 +32,7 @@
             <td>{{ assignment.session.group.acronym }}</td>
             <td>{{ assignment.timeslot.location }}</td>
             <td>{{ assignment.timeslot.show_location }}</td>
-            <td>{{ assignment.timeslot.type }}</td>
+            <td>{{ assignment.slot_type }}</td>
             {% if assignment.schedule_id == schedule.pk %}
               <td><a href="{% url "ietf.secr.meetings.views.misc_session_edit" meeting_id=meeting.number schedule_name=schedule.name slot_id=assignment.timeslot.id %}">Edit</a></td>
               <td>

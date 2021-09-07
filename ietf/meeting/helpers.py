@@ -263,6 +263,7 @@ class AgendaKeywordTool:
     timeslot types should be used to define filters.
     """
     filterable_timeslot_slugs = ['officehours']
+    filterable_timeslot_types = TimeSlotTypeName.objects.filter(slug__in=filterable_timeslot_slugs)
 
     def __init__(self, *, assignments=None, sessions=None):
         # n.b., single star argument means only keyword parameters are allowed when calling constructor
@@ -277,17 +278,13 @@ class AgendaKeywordTool:
 
         self.meeting = self.sessions[0].meeting if len(self.sessions) > 0 else None
 
-        self.filterable_timeslot_types = TimeSlotTypeName.objects.filter(
-            slug__in=self.filterable_timeslot_slugs
-        )
-
     def _use_legacy_keywords(self):
         """Should legacy keyword handling be used for this meeting?"""
         # Only IETF meetings need legacy handling. These are identified
         # by having a purely numeric meeting.number.
         return (self.meeting is not None
                 and self.meeting.number.isdigit()
-                and int(self.meeting.number) <= 110)
+                and int(self.meeting.number) <= settings.MEETING_LEGACY_OFFICE_HOURS_END)
 
     # Helper methods
     @staticmethod
@@ -311,30 +308,22 @@ class AgendaFilterOrganizer(AgendaKeywordTool):
 
     The organizer will process its inputs once, when one of its get_ methods is first called.
     """
+    # group acronyms in this list will never be used as filter buttons
+    exclude_acronyms = ('iesg', 'ietf', 'secretariat')
+    # extra keywords to include in the no-heading column if they apply to any sessions
+    extra_labels = ('BoF', 'Plenary')
+    # group types whose acronyms should be word-capitalized
+    capitalized_group_types = ('team',)
+    # group types whose acronyms should be all-caps
+    uppercased_group_types = ('area', 'ietf', 'irtf')
+    # check that the group labeling sets are disjoint
+    assert(set(capitalized_group_types).isdisjoint(uppercased_group_types))
+    # group acronyms that need special handling
+    special_group_labels = dict(edu='EDU', iepg='IEPG')
+
     def __init__(self, *, single_category=False, **kwargs):
         super(AgendaFilterOrganizer, self).__init__(**kwargs)
         self.single_category = single_category
-
-        # group acronyms in this list will never be used as filter buttons
-        self.exclude_acronyms = ['iesg', 'ietf', 'secretariat']
-
-        # extra keywords to include in the no-heading column if they apply to any sessions
-        self.extra_labels = ['BoF', 'Plenary']
-
-        # group types whose acronyms should be word-capitalized
-        self.capitalized_group_types = ['team']
-
-        # group types whose acronyms should be all-caps
-        self.uppercased_group_types = ['area', 'ietf', 'irtf']
-
-        # check that the group labeling sets are disjoint
-        assert(set(self.capitalized_group_types).isdisjoint(self.uppercased_group_types))
-
-        # group acronyms that need special handling
-        self.special_group_labels = dict(
-            edu='EDU',
-            iepg='IEPG',
-        )
         # filled in when _organize_filters() is called
         self.filter_categories = None
         self.special_filters = None
@@ -455,7 +444,7 @@ class AgendaFilterOrganizer(AgendaKeywordTool):
         filter_cols = []
         for ts_type in self.filterable_timeslot_types:
             groups = set(
-                self._get_group(a.session) for a in self.assignments if a.timeslot.type == ts_type
+                self._get_group(a.session) for a in self.assignments if a.slot_type() == ts_type
             )
             if len(groups) > 0:
                 # keyword needs to match what's tagged in filter_keywords_for_session()
@@ -604,7 +593,7 @@ class AgendaKeywordTagger(AgendaKeywordTool):
         Keywords are all lower case.
         """
         for a in self.assignments:
-            a.filter_keywords = {a.timeslot.type.slug.lower()}
+            a.filter_keywords = {a.slot_type().slug.lower()}
             a.filter_keywords.update(self._filter_keywords_for_assignment(a))
             a.filter_keywords = sorted(list(a.filter_keywords))
 
@@ -615,7 +604,7 @@ class AgendaKeywordTagger(AgendaKeywordTool):
 
     @staticmethod
     def _legacy_extra_session_keywords(session):
-        """Get extra keywords for a session at IETF-110 and earlier"""
+        """Get extra keywords for a session at a legacy meeting"""
         office_hours_match = re.match(r'^ *\w+(?: +\w+)* +office hours *$', session.name, re.IGNORECASE)
         if office_hours_match is not None:
             suffix = 'officehours'
@@ -653,8 +642,8 @@ class AgendaKeywordTagger(AgendaKeywordTool):
         keywords = self._filter_keywords_for_session(assignment.session)
 
         if not self._use_legacy_keywords():
-            if assignment.timeslot.type in self.filterable_timeslot_types:
-                type_kw = assignment.timeslot.type.slug.lower()
+            if assignment.slot_type() in self.filterable_timeslot_types:
+                type_kw = assignment.slot_type().slug.lower()
                 grp = self._get_group(assignment.session)
                 if grp:
                     keywords.extend([

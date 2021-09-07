@@ -1147,7 +1147,7 @@ class AgendaTests(IetfSeleniumTestCase):
         for item in self.get_expected_items():
             if item.session.name:
                 label = item.session.name
-            elif item.timeslot.type_id == 'break':
+            elif item.slot_type().slug == 'break':
                 label = item.timeslot.name
             elif item.session.group:
                 label = item.session.group.name
@@ -1765,7 +1765,7 @@ class WeekviewTests(IetfSeleniumTestCase):
         for item in self.get_expected_items():
             if item.session.name:
                 expected_name = item.session.name
-            elif item.timeslot.type_id == 'break':
+            elif item.slot_type().slug == 'break':
                 expected_name = item.timeslot.name
             else:
                 expected_name = item.session.group.name
@@ -1790,7 +1790,7 @@ class WeekviewTests(IetfSeleniumTestCase):
             for item in self.get_expected_items():
                 if item.session.name:
                     expected_name = item.session.name
-                elif item.timeslot.type_id == 'break':
+                elif item.slot_type().slug == 'break':
                     expected_name = item.timeslot.name
                 else:
                     expected_name = item.session.group.name

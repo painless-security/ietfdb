@@ -2412,7 +2412,7 @@ class EditTests(TestCase):
             'time': assignment.timeslot.time.time().isoformat(),
             'duration': assignment.timeslot.duration,
             'location': assignment.timeslot.location_id,
-            'type': assignment.timeslot.type_id,
+            'type': assignment.slot_type().slug,
             'name': assignment.timeslot.name,
             'agenda_note': "New Test Note",
             'action': 'edit-timeslot',

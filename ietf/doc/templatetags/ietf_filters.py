@@ -620,14 +620,16 @@ def is_regular_agenda_item(assignment):
     A regular item appears as a sub-entry in a timeslot within the agenda
 
     >>> from collections import namedtuple  # use to build mock objects
-    >>> factory = lambda t: namedtuple('t1', ['timeslot'])(timeslot=namedtuple('t2', ['type'])(type=namedtuple('t3', ['slug'])(slug=t)))
+    >>> mock_timeslot = namedtuple('t2', ['slug'])
+    >>> mock_assignment = namedtuple('t1', ['slot_type'])  # slot_type must be a callable
+    >>> factory = lambda t: mock_assignment(slot_type=lambda: mock_timeslot(slug=t))
     >>> is_regular_agenda_item(factory('regular'))
     True
 
     >>> any(is_regular_agenda_item(factory(t)) for t in ['plenary', 'break', 'reg', 'other', 'officehours'])
     False
     """
-    return assignment.timeslot.type.slug == 'regular'
+    return assignment.slot_type().slug == 'regular'
 
 @register.filter
 def is_plenary_agenda_item(assignment):
@@ -636,14 +638,16 @@ def is_plenary_agenda_item(assignment):
     A regular item appears as a sub-entry in a timeslot within the agenda
 
     >>> from collections import namedtuple  # use to build mock objects
-    >>> factory = lambda t: namedtuple('t1', ['timeslot'])(timeslot=namedtuple('t2', ['type'])(type=namedtuple('t3', ['slug'])(slug=t)))
+    >>> mock_timeslot = namedtuple('t2', ['slug'])
+    >>> mock_assignment = namedtuple('t1', ['slot_type'])  # slot_type must be a callable
+    >>> factory = lambda t: mock_assignment(slot_type=lambda: mock_timeslot(slug=t))
     >>> is_plenary_agenda_item(factory('plenary'))
     True
 
     >>> any(is_plenary_agenda_item(factory(t)) for t in ['regular', 'break', 'reg', 'other', 'officehours'])
     False
     """
-    return assignment.timeslot.type.slug == 'plenary'
+    return assignment.slot_type().slug == 'plenary'
 
 @register.filter
 def is_special_agenda_item(assignment):
@@ -652,14 +656,16 @@ def is_special_agenda_item(assignment):
     Special items appear as top-level agenda entries with their own timeslot information.
 
     >>> from collections import namedtuple  # use to build mock objects
-    >>> factory = lambda t: namedtuple('t1', ['timeslot'])(timeslot=namedtuple('t2', ['type'])(type=namedtuple('t3', ['slug'])(slug=t)))
+    >>> mock_timeslot = namedtuple('t2', ['slug'])
+    >>> mock_assignment = namedtuple('t1', ['slot_type'])  # slot_type must be a callable
+    >>> factory = lambda t: mock_assignment(slot_type=lambda: mock_timeslot(slug=t))
     >>> all(is_special_agenda_item(factory(t)) for t in ['break', 'reg', 'other', 'officehours'])
     True
 
     >>> any(is_special_agenda_item(factory(t)) for t in ['regular', 'plenary'])
     False
     """
-    return assignment.timeslot.type.slug in [
+    return assignment.slot_type().slug in [
         'break',
         'reg',
         'other',
@@ -670,23 +676,26 @@ def is_special_agenda_item(assignment):
 def should_show_agenda_session_buttons(assignment):
     """Should this agenda item show the session buttons (jabber link, etc)?
     
-    In IETF-110 and earlier, office hours sessions were designated by a name ending
+    In IETF-111 and earlier, office hours sessions were designated by a name ending
     with ' office hours' and belonged to the IESG or some other group. This led to
     incorrect session buttons being displayed. Suppress session buttons for
     when name ends with 'office hours' in the pre-111 meetings.
     >>> from collections import namedtuple  # use to build mock objects
-    >>> factory = lambda num, name: namedtuple('t1', ['session'])(session=namedtuple('t2', ['meeting', 'name'])(name=name, meeting=namedtuple('t3', ['number'])(number=num)))
-    >>> test_cases = [('105', 'acme office hours'), ('110', 'acme office hours')]
+    >>> mock_meeting = namedtuple('t3', ['number'])
+    >>> mock_session = namedtuple('t2', ['name'])
+    >>> mock_assignment = namedtuple('t1', ['meeting', 'session'])  # meeting must be a callable
+    >>> factory = lambda num, name: mock_assignment(session=mock_session(name), meeting=lambda: mock_meeting(num))
+    >>> test_cases = [('105', 'acme office hours'), ('111', 'acme office hours')]
     >>> any(should_show_agenda_session_buttons(factory(*tc)) for tc in test_cases)
     False
-    >>> test_cases = [('interim-2020-acme-111', 'acme'), ('111', 'acme'), ('150', 'acme'), ('105', 'acme'),]
-    >>> test_cases.extend([('110', 'acme'), ('interim-2020-acme-111', 'acme office hours')])
-    >>> test_cases.extend([('111', 'acme office hours'), ('150', 'acme office hours')])
+    >>> test_cases = [('interim-2020-acme-112', 'acme'), ('112', 'acme'), ('150', 'acme'), ('105', 'acme'),]
+    >>> test_cases.extend([('111', 'acme'), ('interim-2020-acme-112', 'acme office hours')])
+    >>> test_cases.extend([('112', 'acme office hours'), ('150', 'acme office hours')])
     >>> all(should_show_agenda_session_buttons(factory(*tc)) for tc in test_cases)
     True
     """
-    num = assignment.session.meeting.number
-    if num.isdigit() and int(num) <= 110:
+    num = assignment.meeting().number
+    if num.isdigit() and int(num) <= settings.MEETING_LEGACY_OFFICE_HOURS_END:
         return not assignment.session.name.lower().endswith(' office hours')
     else:
         return True

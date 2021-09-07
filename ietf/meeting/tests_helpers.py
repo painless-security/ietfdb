@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 import copy
 
+from django.test import override_settings
+
 from ietf.group.factories import GroupFactory
 from ietf.group.models import Group
 from ietf.meeting.factories import SessionFactory, MeetingFactory, TimeSlotFactory
@@ -10,6 +12,8 @@ from ietf.meeting.test_data import make_meeting_test_data
 from ietf.utils.test_utils import TestCase
 
 
+# override the legacy office hours setting to guarantee consistency with the tests
+@override_settings(MEETING_LEGACY_OFFICE_HOURS_END=111)
 class AgendaKeywordTaggerTests(TestCase):
     def do_test_tag_assignments_with_filter_keywords(self, meeting_num, bof=False, historic=None):
         """Assignments should be tagged properly
@@ -19,7 +23,7 @@ class AgendaKeywordTaggerTests(TestCase):
         """
         session_types = ['regular', 'plenary']
         # decide whether meeting should use legacy keywords (for office hours)
-        legacy_keywords = meeting_num <= 110
+        legacy_keywords = meeting_num <= 111
 
         # create meeting and groups
         meeting = MeetingFactory(type_id='ietf', number=meeting_num)
@@ -80,7 +84,7 @@ class AgendaKeywordTaggerTests(TestCase):
         self.assertEqual(len(assignments), orig_num_assignments, 'Should not change number of assignments')
 
         for assignment in assignments:
-            expected_filter_keywords = {assignment.timeslot.type.slug, assignment.session.type.slug}
+            expected_filter_keywords = {assignment.slot_type().slug, assignment.session.type.slug}
 
             if assignment.session == office_hours:
                 expected_filter_keywords.update([
@@ -107,16 +111,16 @@ class AgendaKeywordTaggerTests(TestCase):
 
     def test_tag_assignments_with_filter_keywords(self):
         # use distinct meeting numbers > 111 for non-legacy keyword tests
-        self.do_test_tag_assignments_with_filter_keywords(111)
-        self.do_test_tag_assignments_with_filter_keywords(112, historic='group')
-        self.do_test_tag_assignments_with_filter_keywords(113, historic='parent')
-        self.do_test_tag_assignments_with_filter_keywords(114, bof=True)
-        self.do_test_tag_assignments_with_filter_keywords(115, bof=True, historic='group')
-        self.do_test_tag_assignments_with_filter_keywords(116, bof=True, historic='parent')
+        self.do_test_tag_assignments_with_filter_keywords(112)
+        self.do_test_tag_assignments_with_filter_keywords(113, historic='group')
+        self.do_test_tag_assignments_with_filter_keywords(114, historic='parent')
+        self.do_test_tag_assignments_with_filter_keywords(115, bof=True)
+        self.do_test_tag_assignments_with_filter_keywords(116, bof=True, historic='group')
+        self.do_test_tag_assignments_with_filter_keywords(117, bof=True, historic='parent')
 
 
     def test_tag_assignments_with_filter_keywords_legacy(self):
-        # use distinct meeting numbers < 111 for legacy keyword tests
+        # use distinct meeting numbers <= 111 for legacy keyword tests
         self.do_test_tag_assignments_with_filter_keywords(101)
         self.do_test_tag_assignments_with_filter_keywords(102, historic='group')
         self.do_test_tag_assignments_with_filter_keywords(103, historic='parent')
