@@ -22,6 +22,7 @@ from django.urls import reverse as urlreverse
 from django.conf import settings
 from django.forms import Form
 from django.utils.html import escape
+from django.utils.text import slugify
 
 from tastypie.test import ResourceTestCaseMixin
 
@@ -40,9 +41,10 @@ from ietf.group.models import Group
 from ietf.group.factories import GroupFactory, RoleFactory
 from ietf.ipr.factories import HolderIprDisclosureFactory
 from ietf.meeting.models import Meeting, Session, SessionPresentation, SchedulingEvent
-from ietf.meeting.factories import MeetingFactory, SessionFactory, SessionPresentationFactory
+from ietf.meeting.factories import ( MeetingFactory, SessionFactory, SessionPresentationFactory,
+     ProceedingsMaterialFactory )
 
-from ietf.name.models import SessionStatusName, BallotPositionName
+from ietf.name.models import SessionStatusName, BallotPositionName, DocTypeName
 from ietf.person.models import Person
 from ietf.person.factories import PersonFactory, EmailFactory
 from ietf.utils.mail import outbox
@@ -1548,6 +1550,42 @@ class DocTestCase(TestCase):
         self.assertContains(r, pos2.comment)
         self.assertContains(r,  '(was %s)' % pos.pos)
 
+    def test_document_ballot_popup_unique_anchors_per_doc(self):
+        """Ballot popup anchors should be different for each document"""
+        ad = Person.objects.get(user__username="ad")
+        docs = IndividualDraftFactory.create_batch(2)
+        ballots = [create_ballot_if_not_open(None, doc, ad, 'approve') for doc in docs]
+        for doc, ballot in zip(docs, ballots):
+            BallotPositionDocEvent.objects.create(
+                doc=doc,
+                rev=doc.rev,
+                ballot=ballot,
+                type="changed_ballot_position",
+                pos_id="yes",
+                comment="Looks fine to me",
+                comment_time=datetime.datetime.now(),
+                balloter=Person.objects.get(user__username="ad"),
+                by=Person.objects.get(name="(System)"))
+
+        anchors = set()
+        author_slug = slugify(ad.plain_name())
+        for doc, ballot in zip(docs, ballots):
+            r = self.client.get(urlreverse(
+                "ietf.doc.views_doc.ballot_popup",
+                kwargs=dict(name=doc.name, ballot_id=ballot.pk)
+            ))
+            self.assertEqual(r.status_code, 200)
+            q = PyQuery(r.content)
+            href = q(f'div.balloter-name a[href$="{author_slug}"]').attr('href')
+            ids = [
+                target.attr('id')
+                for target in q(f'h4.anchor-target[id$="{author_slug}"]').items()
+            ]
+            self.assertEqual(len(ids), 1, 'Should be exactly one link for the balloter')
+            self.assertEqual(href, f'#{ids[0]}', 'Anchor href should match ID')
+            anchors.add(href)
+        self.assertEqual(len(anchors), len(docs), 'Each doc should have a distinct anchor for the balloter')
+
     def test_document_ballot_needed_positions(self):
         # draft
         doc = IndividualDraftFactory(intended_std_level_id='ps')
@@ -2209,6 +2247,35 @@ class DocumentMeetingTests(TestCase):
         self.assertEqual(response.status_code,302)
         self.assertEqual(2,doc.docevent_set.count())
 
+    def test_get_related_meeting(self):
+        """Should be able to retrieve related meeting"""
+        meeting = MeetingFactory(type_id='ietf')
+        session = SessionFactory(meeting=meeting)
+        procmat = ProceedingsMaterialFactory(meeting=meeting)
+        for doctype in DocTypeName.objects.filter(used=True):
+            doc = DocumentFactory(type=doctype)
+            self.assertIsNone(doc.get_related_meeting(), 'Doc does not yet have a connection to the meeting')
+            # test through a session
+            doc.session_set.add(session)
+            doc = Document.objects.get(pk=doc.pk)
+            if doc.meeting_related():
+                self.assertEqual(doc.get_related_meeting(), meeting, f'{doc.type.slug} should be related to meeting')
+            else:
+                self.assertIsNone(doc.get_related_meeting(), f'{doc.type.slug} should not be related to meeting')
+            # test with both session and procmat
+            doc.proceedingsmaterial_set.add(procmat)
+            doc = Document.objects.get(pk=doc.pk)
+            if doc.meeting_related():
+                self.assertEqual(doc.get_related_meeting(), meeting, f'{doc.type.slug} should be related to meeting')
+            else:
+                self.assertIsNone(doc.get_related_meeting(), f'{doc.type.slug} should not be related to meeting')
+            # and test with only procmat
+            doc.session_set.remove(session)
+            doc = Document.objects.get(pk=doc.pk)
+            if doc.meeting_related():
+                self.assertEqual(doc.get_related_meeting(), meeting, f'{doc.type.slug} should be related to meeting')
+            else:
+                self.assertIsNone(doc.get_related_meeting(), f'{doc.type.slug} should not be related to meeting')
 
 class ChartTests(ResourceTestCaseMixin, TestCase):
     def test_search_chart_conf(self):

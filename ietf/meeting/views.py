@@ -40,8 +40,9 @@ from django.template.loader import render_to_string
 from django.utils.encoding import force_str
 from django.utils.functional import curry
 from django.utils.text import slugify
-from django.views.decorators.cache import cache_page
 from django.utils.html import format_html
+from django.utils.timezone import now
+from django.views.decorators.cache import cache_page
 from django.views.decorators.csrf import ensure_csrf_cookie, csrf_exempt
 from django.views.generic import RedirectView
 
@@ -86,7 +87,7 @@ from ietf.meeting.utils import diff_meeting_schedules, prefetch_schedule_diff_ob
 from ietf.meeting.utils import swap_meeting_schedule_timeslot_assignments
 from ietf.meeting.utils import preprocess_meeting_important_dates
 from ietf.message.utils import infer_message
-from ietf.name.models import SlideSubmissionStatusName
+from ietf.name.models import SlideSubmissionStatusName, ProceedingsMaterialTypeName
 from ietf.secr.proceedings.utils import handle_upload_file
 from ietf.secr.proceedings.proc_utils import (get_progress_stats, post_process, import_audio_files,
     create_recording)
@@ -172,9 +173,15 @@ def materials(request, num=None):
     for session_list in [plenaries, ietf, training, irtf, iab, other]:
         for session in session_list:
             session.past_cutoff_date = past_cutoff_date
-            
+
+    proceedings_materials = [
+        (type_name, meeting.proceedings_materials.filter(type=type_name).first())
+        for type_name in ProceedingsMaterialTypeName.objects.all()
+    ]
+
     return render(request, "meeting/materials.html", {
         'meeting': meeting,
+        'proceedings_materials': proceedings_materials,
         'plenaries': plenaries,
         'ietf': ietf,
         'training': training,
@@ -220,7 +227,7 @@ def materials_document(request, document, num=None, ext=None):
 
     if not doc.meeting_related():
         raise Http404("Not a meeting related document")
-    if not doc.session_set.filter(meeting__number=num).exists():
+    if doc.get_related_meeting() != meeting:
         raise Http404("No such document for meeting %s" % num)
     if not rev:
         filename = doc.get_file_name()
@@ -468,6 +475,13 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
 
     can_see, can_edit, secretariat = schedule_permissions(meeting, schedule, request.user)
 
+    lock_time = settings.MEETING_SESSION_LOCK_TIME
+    def timeslot_locked(ts):
+        meeting_now = now().astimezone(pytz.timezone(meeting.time_zone))
+        if not settings.USE_TZ:
+            meeting_now = meeting_now.replace(tzinfo=None)
+        return schedule.is_official and (ts.time - meeting_now < lock_time)
+
     if not can_see:
         if request.method == 'POST':
             permission_denied(request, "Can't view this schedule.")
@@ -713,21 +727,39 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
 
         return days
 
+    def _json_response(success, status=None, **extra_data):
+        if status is None:
+            status = 200 if success else 400
+        data = dict(success=success, **extra_data)
+        return JsonResponse(data, status=status)
+
     if request.method == 'POST':
         if not can_edit:
             permission_denied(request, "Can't edit this schedule.")
 
         action = request.POST.get('action')
 
-        # handle ajax requests
+        # Handle ajax requests. Most of these return JSON responses with at least a 'success' key.
+        # For the swapdays and swaptimeslots actions, the response is either a redirect to the
+        # updated page or a simple BadRequest error page. The latter should not normally be seen
+        # by the user, because the front end should be preventing most invalid requests.
         if action == 'assign' and request.POST.get('session', '').isdigit() and request.POST.get('timeslot', '').isdigit():
             session = get_object_or_404(sessions, pk=request.POST['session'])
             timeslot = get_object_or_404(timeslots_qs, pk=request.POST['timeslot'])
+            if timeslot_locked(timeslot):
+                return _json_response(False, error="Can't assign to this timeslot.")
 
             tombstone_session = None
 
             existing_assignments = SchedTimeSessAssignment.objects.filter(session=session, schedule=schedule)
+
             if existing_assignments:
+                assertion('len(existing_assignments) <= 1',
+                          note='Multiple assignments for {} in schedule {}'.format(session, schedule))
+
+                if timeslot_locked(existing_assignments[0].timeslot):
+                    return _json_response(False, error="Can't reassign this session.")
+
                 if schedule.pk == meeting.schedule_id and session.current_status == 'sched':
                     old_timeslot = existing_assignments[0].timeslot
                     # clone session and leave it as a tombstone
@@ -760,17 +792,27 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
                     timeslot=timeslot,
                 )
 
-            r = {'success': True}
             if tombstone_session:
                 prepare_sessions_for_display([tombstone_session])
-                r['tombstone'] = render_to_string("meeting/edit_meeting_schedule_session.html", {'session': tombstone_session})
-            return JsonResponse(r)
+                return _json_response(
+                    True,
+                    tombstone=render_to_string("meeting/edit_meeting_schedule_session.html",
+                                               {'session': tombstone_session})
+                )
+            else:
+                return _json_response(True)
 
         elif action == 'unassign' and request.POST.get('session', '').isdigit():
             session = get_object_or_404(sessions, pk=request.POST['session'])
-            SchedTimeSessAssignment.objects.filter(session=session, schedule=schedule).delete()
+            existing_assignments = SchedTimeSessAssignment.objects.filter(session=session, schedule=schedule)
+            assertion('len(existing_assignments) <= 1',
+                      note='Multiple assignments for {} in schedule {}'.format(session, schedule))
+            if not any(timeslot_locked(ea.timeslot) for ea in existing_assignments):
+                existing_assignments.delete()
+            else:
+                return _json_response(False, error="Can't unassign this session.")
 
-            return JsonResponse({'success': True})
+            return _json_response(True)
 
         elif action == 'swapdays':
             # updating the client side is a bit complicated, so just
@@ -778,13 +820,16 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
 
             swap_days_form = SwapDaysForm(request.POST)
             if not swap_days_form.is_valid():
-                return HttpResponse("Invalid swap: {}".format(swap_days_form.errors), status=400)
+                return HttpResponseBadRequest("Invalid swap: {}".format(swap_days_form.errors))
 
             source_day = swap_days_form.cleaned_data['source_day']
             target_day = swap_days_form.cleaned_data['target_day']
 
             source_timeslots = [ts for ts in timeslots_qs if ts.time.date() == source_day]
             target_timeslots = [ts for ts in timeslots_qs if ts.time.date() == target_day]
+            if any(timeslot_locked(ts) for ts in source_timeslots + target_timeslots):
+                return HttpResponseBadRequest("Can't swap these days.")
+
             swap_meeting_schedule_timeslot_assignments(schedule, source_timeslots, target_timeslots, target_day - source_day)
 
             return HttpResponseRedirect(request.get_full_path())
@@ -796,7 +841,7 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
             # The origin/target timeslots do not need to be the same duration.
             swap_timeslots_form = SwapTimeslotsForm(meeting, request.POST)
             if not swap_timeslots_form.is_valid():
-                return HttpResponse("Invalid swap: {}".format(swap_timeslots_form.errors), status=400)
+                return HttpResponseBadRequest("Invalid swap: {}".format(swap_timeslots_form.errors))
 
             affected_rooms = swap_timeslots_form.cleaned_data['rooms']
             origin_timeslot = swap_timeslots_form.cleaned_data['origin_timeslot']
@@ -812,6 +857,10 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
                 time=target_timeslot.time,
                 duration=target_timeslot.duration,
             )
+            if (any(timeslot_locked(ts) for ts in origin_timeslots)
+                    or any(timeslot_locked(ts) for ts in target_timeslots)):
+                return HttpResponseBadRequest("Can't swap these timeslots.")
+
             swap_meeting_schedule_timeslot_assignments(
                 schedule,
                 list(origin_timeslots),
@@ -820,7 +869,7 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
             )
             return HttpResponseRedirect(request.get_full_path())
 
-        return HttpResponse("Invalid parameters", status=400)
+        return _json_response(False, error="Invalid parameters")
 
     # Show only rooms that have regular sessions
     rooms = meeting.room_set.filter(session_types__slug='regular')
@@ -904,6 +953,7 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
         'unassigned_sessions': unassigned_sessions,
         'session_parents': session_parents,
         'hide_menu': True,
+        'lock_time': lock_time,
     })
 
 
@@ -1595,7 +1645,7 @@ def agenda(request, num=None, name=None, base=None, ext=None, owner=None, utc=""
     meeting = get_ietf_meeting(num)
     if not meeting or (meeting.number.isdigit() and int(meeting.number) <= 64 and (not meeting.schedule or not meeting.schedule.assignments.exists())):
         if ext == '.html' or (meeting and meeting.number.isdigit() and 0 < int(meeting.number) <= 64):
-            return HttpResponseRedirect( 'https://www.ietf.org/proceedings/%s' % num )
+            return HttpResponseRedirect(f'{settings.PROCEEDINGS_V1_BASE_URL.format(meeting=meeting)}')
         else:
             raise Http404("No such meeting")
 
@@ -3746,8 +3796,9 @@ def proceedings(request, num=None):
 
     meeting = get_meeting(num)
 
-    if (meeting.number.isdigit() and int(meeting.number) <= 96):
-        return HttpResponseRedirect( 'https://www.ietf.org/proceedings/%s' % num )
+    # Early proceedings were hosted on www.ietf.org rather than the datatracker
+    if meeting.proceedings_format_version == 1:
+        return HttpResponseRedirect(settings.PROCEEDINGS_V1_BASE_URL.format(meeting=meeting))
 
     if not meeting.schedule or not meeting.schedule.assignments.exists():
         kwargs = dict()
@@ -3795,6 +3846,11 @@ def proceedings(request, num=None):
         'cor_cut_off_date': cor_cut_off_date,
         'submission_started': now > begin_date,
         'cache_version': cache_version,
+        'attendance': meeting.get_attendance(),
+        'meetinghost_logo': {
+            'max_height': settings.MEETINGHOST_LOGO_MAX_DISPLAY_HEIGHT,
+            'max_width': settings.MEETINGHOST_LOGO_MAX_DISPLAY_WIDTH,
+        }
     })
 
 @role_required('Secretariat')
@@ -3816,8 +3872,8 @@ def proceedings_acknowledgements(request, num=None):
     if not (num and num.isdigit()):
         raise Http404
     meeting = get_meeting(num)
-    if int(meeting.number) < settings.NEW_PROCEEDINGS_START:
-        return HttpResponseRedirect( 'https://www.ietf.org/proceedings/%s/acknowledgement.html' % num )
+    if meeting.proceedings_format_version == 1:
+        return HttpResponseRedirect( f'{settings.PROCEEDINGS_V1_BASE_URL.format(meeting=meeting)}/acknowledgement.html')
     return render(request, "meeting/proceedings_acknowledgements.html", {
         'meeting': meeting,
     })
@@ -3827,8 +3883,8 @@ def proceedings_attendees(request, num=None):
     if not (num and num.isdigit()):
         raise Http404
     meeting = get_meeting(num)
-    if int(meeting.number) < settings.NEW_PROCEEDINGS_START:
-        return HttpResponseRedirect( 'https://www.ietf.org/proceedings/%s/attendees.html' % num )
+    if meeting.proceedings_format_version == 1:
+        return HttpResponseRedirect(f'{settings.PROCEEDINGS_V1_BASE_URL.format(meeting=meeting)}/attendee.html')
     overview_template = '/meeting/proceedings/%s/attendees.html' % meeting.number
     try:
         template = render_to_string(overview_template, {})
@@ -3844,8 +3900,8 @@ def proceedings_overview(request, num=None):
     if not (num and num.isdigit()):
         raise Http404
     meeting = get_meeting(num)
-    if int(meeting.number) < settings.NEW_PROCEEDINGS_START:
-        return HttpResponseRedirect( 'https://www.ietf.org/proceedings/%s/overview.html' % num )
+    if meeting.proceedings_format_version == 1:
+        return HttpResponseRedirect(f'{settings.PROCEEDINGS_V1_BASE_URL.format(meeting=meeting)}/overview.html')
     overview_template = '/meeting/proceedings/%s/overview.rst' % meeting.number
     try:
         template = render_to_string(overview_template, {})
@@ -3862,8 +3918,8 @@ def proceedings_progress_report(request, num=None):
     if not (num and num.isdigit()):
         raise Http404
     meeting = get_meeting(num)
-    if int(meeting.number) < settings.NEW_PROCEEDINGS_START:
-        return HttpResponseRedirect( 'https://www.ietf.org/proceedings/%s/progress-report.html' % num )
+    if meeting.proceedings_format_version == 1:
+        return HttpResponseRedirect(f'{settings.PROCEEDINGS_V1_BASE_URL.format(meeting=meeting)}/progress-report.html')
     sdate = meeting.previous_meeting().date
     edate = meeting.date
     context = get_progress_stats(sdate,edate)

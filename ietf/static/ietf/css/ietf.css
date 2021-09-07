@@ -37,6 +37,12 @@ body { padding-top: 72px; }
 .dropdown-submenu > .dropdown-menu li a{
 	line-height: 1.2;
 }
+.dropdown-submenu > .dropdown-menu li.separator{
+  font-size: 80%;
+  margin-left: 1em;
+  padding: .5em 0;
+  border-bottom: 1px solid #CCC;
+}
 .dropdown-submenu > a:after {
 	display: block;
 	content: " ";
@@ -1112,6 +1118,7 @@ a.fc-event, .fc-event, .fc-content, .fc-title, .fc-event-container {
 
 .edit-meeting-schedule .edit-grid .timeslot .time-label {
   display: flex;
+  flex-direction: column;
   position: absolute;
   height: 100%;
   width: 100%;
@@ -1139,6 +1146,10 @@ a.fc-event, .fc-event, .fc-content, .fc-title, .fc-event-container {
 .edit-meeting-schedule .edit-grid .timeslot.would-violate-hint {
   background-color: #ffe0e0;
   outline: #ffe0e0 solid 0.4em;
+}
+
+.edit-meeting-schedule .edit-grid .timeslot.would-violate-hint.dropping {
+  background-color: #ccb3b3;
 }
 
 .edit-meeting-schedule .constraints .encircled,

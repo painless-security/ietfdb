@@ -5,13 +5,13 @@
 from . import checks                           # pyflakes:ignore
 
 # Don't add patch number here:
-__version__ = "7.36.1.dev0"
+__version__ = "7.37.1.dev0"
 
 # set this to ".p1", ".p2", etc. after patching
 __patch__   = ""
 
 __date__    = "$Date: 2021-05-20 14:48:20 -0300 (Thu, 20 May 2021) $"
 
-__rev__     = "$Rev$ (dev) Latest release: Rev. 19289 "
+__rev__     = "$Rev$ (dev) Latest release: Rev. 19348 "
 
 __id__      = "$Id: __init__.py 19015 2021-05-20 17:48:20Z rjsparks@nostrum.com $"
