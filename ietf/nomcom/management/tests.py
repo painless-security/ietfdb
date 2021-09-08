@@ -4,16 +4,13 @@
 import mock
 
 from collections import namedtuple
-from contextlib import contextmanager
-from pathlib import Path
-from tempfile import NamedTemporaryFile
 from textwrap import dedent
 
 from django.core.management import call_command
 from django.test.utils import override_settings
 
 from ietf.nomcom.factories import NomComFactory
-from ietf.utils.test_utils import TestCase
+from ietf.utils.test_utils import TestCase, name_of_file_containing
 
 
 @override_settings(ADMINS=(('Some Admin', 'admin@example.com'),))
@@ -21,21 +18,6 @@ class FeedbackEmailTests(TestCase):
     def setUp(self):
         self.year = 2021
         self.nomcom = NomComFactory(group__acronym=f'nomcom{self.year}')
-        self.feedback_email = dedent("""\
-            From: someone@ietf.org
-            Subject: confidential feedback
-
-            This is a feedback message.
-            """)
-
-    @contextmanager
-    def filename_containing(self, contents):
-        """Get a context with the name of an email file"""
-        f = NamedTemporaryFile('w', delete=False)
-        f.write(contents)
-        f.close()
-        yield f.name  # hand the filename to the context
-        Path(f.name).unlink()  # clean up after context exits
 
     @mock.patch('ietf.utils.management.base.send_smtp')
     def test_send_error_to_admins(self, send_smtp_mock):
@@ -44,7 +26,7 @@ class FeedbackEmailTests(TestCase):
         This email should not contain either the full traceback or the original message.
         """
         # Call with the wrong nomcom year so the admin will be contacted
-        with self.filename_containing(self.feedback_email) as filename:
+        with name_of_file_containing('feedback message') as filename:
             call_command('feedback_email', nomcom_year=self.year + 1, email_file=filename)
 
         self.assertTrue(send_smtp_mock.called)
@@ -66,7 +48,7 @@ class FeedbackEmailTests(TestCase):
         # mock an exception in create_feedback_email()
         create_feedback_mock.side_effect = RuntimeError('mock error')
 
-        with self.filename_containing(self.feedback_email) as filename:
+        with name_of_file_containing('feedback message') as filename:
             call_command('feedback_email', nomcom_year=self.year, email_file=filename)
 
         self.assertTrue(send_smtp_mock.called)
@@ -92,12 +74,12 @@ class FeedbackEmailTests(TestCase):
         # mock up the return value
         create_feedback_mock.return_value = namedtuple('mock_feedback', 'author')('author@example.com')
 
-        with self.filename_containing(self.feedback_email) as filename:
+        with name_of_file_containing('feedback message') as filename:
             call_command('feedback_email', nomcom_year=self.year, email_file=filename)
 
         self.assertEqual(create_feedback_mock.call_count, 1, 'create_feedback_email() should be called once')
         self.assertEqual(
             create_feedback_mock.call_args.args,
-            (self.nomcom, self.feedback_email.encode()),
+            (self.nomcom, b'feedback message'),
             'feedback_email should process the correct email for the correct nomcom'
         )
