@@ -4,6 +4,7 @@
 
 import io
 import sys
+from textwrap import dedent
 
 from ietf.utils.management.base import EmailOnFailureCommand, CommandError
 
@@ -34,7 +35,11 @@ class Command(EmailOnFailureCommand):
             raise CommandError(e)
 
     failure_subject = 'Error during ipr email processing'
-    failure_message = 'An error occurred in the ipr process_email management command:\n\n{error}'
+    failure_message = dedent("""\
+        An error occurred in the ipr process_email management command.
+
+        {error_summary}
+        """)
     def make_failure_message(self, error, **extra):
         msg = super().make_failure_message(error, **extra)
         if self.msg_bytes is not None:

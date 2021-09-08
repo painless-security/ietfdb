@@ -52,13 +52,13 @@ class Command(EmailOnFailureCommand):
             raise CommandError(e)
 
     # Configuration for the email to be sent on failure
+    failure_email_includes_traceback = False  # error messages might contain pieces of the feedback email
     failure_subject = '{nomcom}: error during feedback email processing'
     failure_message = dedent("""\
-        An error occurred in the nomcom feedback_email management command.
-        If available, the original message is attached.
+        An error occurred in the nomcom feedback_email management command while
+        processing feedback for {nomcom}.
         
-        The error was:
-        {error}
+        {error_summary}
         """)
     @property
     def failure_recipients(self):

@@ -3,7 +3,7 @@
 
 from email.message import EmailMessage
 from textwrap import dedent
-from traceback import format_exception
+from traceback import format_exception, extract_tb
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
@@ -18,9 +18,17 @@ class EmailOnFailureCommand(BaseCommand):
 
     Subclasses can override failure_message, failure_subject, and failure_recipients
     to customize the behavior. Both failure_subject and failure_message are formatted
-    with keywords for interpolation. By default, the exception being handled will
-    be available for interpolation as {error}. More interpolation values can
-    be added through the **extra argument to make_failure_message().
+    with keywords for interpolation. By default, the following substitutions are
+    available:
+
+      {error} - the exception instance
+      {error_summary} - multiline summary of error type and location where it occurred
+
+    More interpolation values can be added through the **extra argument to
+    make_failure_message().
+
+    By default, the full traceback will be attached to the notification email.
+    To disable this, set failure_email_includes_traceback to False.
 
     When a command is executed, its handle() method will be called as usual.
     If an exception occurs, instead of printing this to the terminal and
@@ -38,6 +46,7 @@ class EmailOnFailureCommand(BaseCommand):
     {error}
     """)
     failure_subject = 'Exception in management command'
+    failure_email_includes_traceback = True
 
     @property
     def failure_recipients(self):
@@ -53,9 +62,20 @@ class EmailOnFailureCommand(BaseCommand):
             else:
                 raise
 
+    def _summarize_error(self, error):
+        frame = extract_tb(error.__traceback__)[-1]
+        return dedent(f"""\
+            Error details:
+              Exception type: {type(error).__module__}.{type(error).__name__}
+              File: {frame.filename}
+              Line: {frame.lineno}""")
+
     def make_failure_message(self, error, **extra):
         """Generate an EmailMessage to report an error"""
-        format_values = dict(error=error)
+        format_values = dict(
+            error=error,
+            error_summary=self._summarize_error(error),
+        )
         format_values.update(**extra)
         msg = EmailMessage()
         msg['To'] = self.failure_recipients
@@ -64,10 +84,11 @@ class EmailOnFailureCommand(BaseCommand):
         msg.set_content(
             self.failure_message.format(**format_values)
         )
-        msg.add_attachment(
-            ''.join(format_exception(None, error, error.__traceback__)),
-            filename='traceback.txt',
-        )
+        if self.failure_email_includes_traceback:
+            msg.add_attachment(
+                ''.join(format_exception(None, error, error.__traceback__)),
+                filename='traceback.txt',
+            )
         return msg
 
     def add_arguments(self, parser):

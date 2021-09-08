@@ -81,3 +81,26 @@ class EmailOnFailureCommandTests(TestCase):
         self.assertIn('error during the command', parts[1].get_content())
         self.assertIn('Traceback', parts[1].get_content())
         self.assertEqual('attached\n', parts[2].get_content())
+
+    def test_disable_traceback(self, handle_method):
+        """Traceback should not be included when disabled"""
+        class _SubclassCommand(EmailOnFailureCommand):
+            failure_email_includes_traceback = False
+
+        handle_method.side_effect = CommandError('error during the command')
+        empty_outbox()
+        with override_settings(
+                ADMINS=('a1', 'admin@example.com'),
+                SERVER_EMAIL='server@example.com',
+        ):
+            call_command(_SubclassCommand())
+        self.assertEqual(len(outbox), 1)
+        msg = outbox[0]
+        if msg.is_multipart():
+            parts = msg.get_payload()
+            self.assertEqual(len(parts), 1, 'Traceback should not be attached')
+            content = parts[0].get_content()
+        else:
+            content = msg.get_payload()
+        self.assertNotIn('Traceback', content)
+
