@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('name', '0023_change_stream_descriptions'),
+        ('name', '0031_add_procmaterials'),
     ]
 
     operations = [

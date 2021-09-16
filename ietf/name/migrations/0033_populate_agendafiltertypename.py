@@ -25,7 +25,7 @@ def reverse(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('name', '0024_agendafiltertypename'),
+        ('name', '0032_agendafiltertypename'),
     ]
 
     operations = [

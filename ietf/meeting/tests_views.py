@@ -39,7 +39,6 @@ from ietf.meeting.helpers import can_approve_interim_request, can_view_interim_r
 from ietf.meeting.helpers import send_interim_approval_request
 from ietf.meeting.helpers import send_interim_meeting_cancellation_notice, send_interim_session_cancellation_notice
 from ietf.meeting.helpers import send_interim_minutes_reminder, populate_important_dates, update_important_dates
-from ietf.meeting.helpers import filter_keyword_for_specific_session
 from ietf.meeting.models import Session, TimeSlot, Meeting, SchedTimeSessAssignment, Schedule, SessionPresentation, SlideSubmission, SchedulingEvent, Room, Constraint, ConstraintName
 from ietf.meeting.test_data import make_meeting_test_data, make_interim_meeting, make_interim_test_data
 from ietf.meeting.utils import finalize, condition_slide_order
@@ -428,9 +427,12 @@ class MeetingTests(BaseMeetingTestCase):
             self.assertEqual(len(checkboxes), 1,
                              'Row for assignment {} does not have a checkbox input'.format(assignment))
             checkbox = checkboxes.eq(0)
+            kw_token = assignment.session.docname_token_only_for_multiple()
             self.assertEqual(
                 checkbox.attr('data-filter-item'),
-                filter_keyword_for_specific_session(assignment.session),
+                assignment.session.group.acronym.lower() + (
+                    '' if kw_token is None else f'-{kw_token}'
+                )
             )
 
     def test_agenda_personalize_updates_urls(self):

@@ -577,6 +577,15 @@ class AgendaKeywordTagger(AgendaKeywordTool):
         else:
             self._tag_sessions_with_filter_keywords()
 
+    def apply_session_keywords(self):
+        """Tag each item with its session-specific keyword"""
+        if self.assignments is not None:
+            for a in self.assignments:
+                a.session_keyword = self.filter_keyword_for_specific_session(a.session)
+        else:
+            for s in self.sessions:
+                s.session_keyword = self.filter_keyword_for_specific_session(s)
+
     def _is_regular_agenda_filter_group(self, group):
         """Should this group appear in the 'regular' agenda filter button lists?"""
         parent = self._get_group_parent(group)
@@ -621,7 +630,7 @@ class AgendaKeywordTagger(AgendaKeywordTool):
             if group.state_id == 'bof':
                 keywords.add('bof')
             keywords.add(group.acronym.lower())
-        specific_kw = filter_keyword_for_specific_session(session)
+        specific_kw = self.filter_keyword_for_specific_session(session)
         if specific_kw is not None:
             keywords.add(specific_kw)
 
@@ -652,18 +661,18 @@ class AgendaKeywordTagger(AgendaKeywordTool):
                     ])
         return sorted(keywords)
 
+    def filter_keyword_for_specific_session(self, session):
+        """Get keyword that identifies a specific session
 
-def filter_keyword_for_specific_session(session):
-    """Get keyword that identifies a specific session
+        Returns None if the session cannot be selected individually.
+        """
+        group = self._get_group(session)
+        if group is None:
+            return None
+        kw = group.acronym.lower()  # start with this
+        token = session.docname_token_only_for_multiple()
+        return kw if token is None else '{}-{}'.format(kw, token)
 
-    Returns None if the session cannot be selected individually.
-    """
-    group = getattr(session, 'historic_group', session.group)
-    if group is None:
-        return None
-    kw = group.acronym.lower()  # start with this
-    token = session.docname_token_only_for_multiple()
-    return kw if token is None else '{}-{}'.format(kw, token)
 
 def read_session_file(type, num, doc):
     # XXXX FIXME: the path fragment in the code below should be moved to

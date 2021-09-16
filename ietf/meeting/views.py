@@ -66,7 +66,7 @@ from ietf.meeting.helpers import get_wg_list, find_ads_for_meeting
 from ietf.meeting.helpers import get_meeting, get_ietf_meeting, get_current_ietf_meeting_num
 from ietf.meeting.helpers import get_schedule, schedule_permissions
 from ietf.meeting.helpers import preprocess_assignments_for_agenda, read_agenda_file
-from ietf.meeting.helpers import AgendaFilterOrganizer, AgendaKeywordTagger, filter_keyword_for_specific_session
+from ietf.meeting.helpers import AgendaFilterOrganizer, AgendaKeywordTagger
 from ietf.meeting.helpers import convert_draft_to_pdf, get_earliest_session_date
 from ietf.meeting.helpers import can_view_interim_request, can_approve_interim_request
 from ietf.meeting.helpers import can_edit_interim_request
@@ -1566,7 +1566,6 @@ def agenda(request, num=None, name=None, base=None, ext=None, owner=None, utc=""
         get_assignments_for_agenda(schedule),
         meeting
     )
-    filtered_assignments = preprocess_assignments_for_agenda(filtered_assignments, meeting)
     AgendaKeywordTagger(assignments=filtered_assignments).apply()
 
     # Done processing for CSV output
@@ -1738,16 +1737,12 @@ def agenda_personalize(request, num):
         get_assignments_for_agenda(meeting.schedule),
         meeting
     )
-    tag_assignments_with_filter_keywords(filtered_assignments)
-    for assignment in filtered_assignments:
-        # may be None for some sessions
-        assignment.session_keyword = filter_keyword_for_specific_session(assignment.session)
+    tagger = AgendaKeywordTagger(assignments=filtered_assignments)
+    tagger.apply()  # annotate assignments with filter_keywords attribute
+    tagger.apply_session_keywords()  # annotate assignments with session_keyword attribute
 
     # Now prep the filter UI
-    filter_categories, non_area_labels = prepare_filter_keywords(
-        filtered_assignments,
-        extract_groups_hierarchy(filtered_assignments),
-    )
+    filter_organizer = AgendaFilterOrganizer(assignments=filtered_assignments)
 
     is_current_meeting = (num is None) or (num == get_current_ietf_meeting_num())
 
@@ -1758,8 +1753,8 @@ def agenda_personalize(request, num):
             'schedule': meeting.schedule,
             'updated': meeting.updated(),
             'filtered_assignments': filtered_assignments,
-            'filter_categories': filter_categories,
-            'non_area_labels': non_area_labels,
+            'filter_categories': filter_organizer.get_filter_categories(),
+            'non_area_labels': filter_organizer.get_non_area_keywords(),
             'timezone': meeting.time_zone,
             'is_current_meeting': is_current_meeting,
             'cache_time': 150 if is_current_meeting else 3600,
