@@ -1687,6 +1687,16 @@ class AgendaTests(IetfSeleniumTestCase):
             self.fail('iframe href not updated to contain selected time zone')
 
     def test_agenda_session_selection(self):
+        # create a second mars session to test selection of specific sessions
+        SessionFactory(
+            meeting=self.meeting,
+            group__acronym='mars',
+            add_to_schedule=False,
+        ).timeslotassignments.create(
+            timeslot=TimeSlotFactory(meeting=self.meeting, duration=datetime.timedelta(minutes=60)),
+            schedule=self.meeting.schedule,
+        )
+
         wait = WebDriverWait(self.driver, 2)
         url = self.absreverse('ietf.meeting.views.agenda_personalize', kwargs={'num': self.meeting.number})
         self.driver.get(url)
@@ -1703,47 +1713,52 @@ class AgendaTests(IetfSeleniumTestCase):
             'Sessions were selected before being clicked',
         )
 
-        mars_checkbox = self.driver.find_element_by_css_selector('input[type="checkbox"][name="selected-sessions"][data-filter-item="mars"]')
+        mars_sessa_checkbox = self.driver.find_element_by_css_selector('input[type="checkbox"][name="selected-sessions"][data-filter-item="mars-sessa"]')
+        mars_sessb_checkbox = self.driver.find_element_by_css_selector('input[type="checkbox"][name="selected-sessions"][data-filter-item="mars-sessb"]')
+        farfut_button = self.driver.find_element_by_css_selector('button[data-filter-item="farfut"]')
         break_checkbox = self.driver.find_element_by_css_selector('input[type="checkbox"][name="selected-sessions"][data-filter-item="secretariat-sessb"]')
         registration_checkbox = self.driver.find_element_by_css_selector('input[type="checkbox"][name="selected-sessions"][data-filter-item="secretariat-sessa"]')
-        secretariat_button = self.driver.find_element_by_css_selector('button[data-filter-item="secretariat"]')
 
-        mars_checkbox.click()  # select mars session
+        mars_sessa_checkbox.click()  # select mars session
         try:
             wait.until(
-                lambda driver: all('?show=mars' in el.get_attribute('href') for el in elements_to_check)
+                lambda driver: all('?show=mars-sessa' in el.get_attribute('href') for el in elements_to_check)
             )
         except TimeoutException:
             self.fail('Some agenda links were not updated when mars session was selected')
-        self.assertTrue(mars_checkbox.is_selected(), 'mars session checkbox was not selected after being clicked')
+        self.assertTrue(mars_sessa_checkbox.is_selected(), 'mars session A checkbox was not selected after being clicked')
+        self.assertFalse(mars_sessb_checkbox.is_selected(), 'mars session B checkbox was selected without being clicked')
         self.assertFalse(break_checkbox.is_selected(), 'break checkbox was selected without being clicked')
         self.assertFalse(registration_checkbox.is_selected(), 'registration checkbox was selected without being clicked')
 
-        mars_checkbox.click()  # deselect mars session
+        mars_sessa_checkbox.click()  # deselect mars session
         try:
             wait.until(
-                lambda driver: not any('?show=mars' in el.get_attribute('href') for el in elements_to_check)
+                lambda driver: not any('?show=mars-sessa' in el.get_attribute('href') for el in elements_to_check)
             )
         except TimeoutException:
             self.fail('Some agenda links were not updated when mars session was de-selected')
-        self.assertFalse(mars_checkbox.is_selected(), 'mars session checkbox was still selected after being clicked')
+        self.assertFalse(mars_sessa_checkbox.is_selected(), 'mars session A checkbox was still selected after being clicked')
+        self.assertFalse(mars_sessb_checkbox.is_selected(), 'mars session B checkbox was selected without being clicked')
         self.assertFalse(break_checkbox.is_selected(), 'break checkbox was selected without being clicked')
         self.assertFalse(registration_checkbox.is_selected(), 'registration checkbox was selected without being clicked')
 
-        secretariat_button.click()  # turn on all secretariat sessions
+        farfut_button.click()  # turn on all farfut area sessions
+        mars_sessa_checkbox.click()  # but turn off mars session a
         break_checkbox.click()  # also select the break
 
         try:
             wait.until(
                 lambda driver: all(
-                    '?show=secretariat&hide=secretariat-sessb' in el.get_attribute('href')
+                    '?show=farfut,secretariat-sessb&hide=mars-sessa' in el.get_attribute('href')
                     for el in elements_to_check
                 ))
         except TimeoutException:
-            self.fail('Some agenda links were not updated when secretariat group but not break was selected')
-        self.assertFalse(mars_checkbox.is_selected(), 'mars session checkbox was unexpectedly selected')
-        self.assertFalse(break_checkbox.is_selected(), 'break checkbox was unexpectedly selected')
-        self.assertTrue(registration_checkbox.is_selected(), 'registration checkbox was expected to be selected')
+            self.fail('Some agenda links were not updated when farfut area was selected')
+        self.assertFalse(mars_sessa_checkbox.is_selected(), 'mars session A checkbox was unexpectedly selected')
+        self.assertTrue(mars_sessb_checkbox.is_selected(), 'mars session B checkbox was expected to be selected')
+        self.assertTrue(break_checkbox.is_selected(), 'break checkbox was expected to be selected')
+        self.assertFalse(registration_checkbox.is_selected(), 'registration checkbox was unexpectedly selected')
 
 @ifSeleniumEnabled
 class WeekviewTests(IetfSeleniumTestCase):
