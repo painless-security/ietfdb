@@ -26,6 +26,7 @@ from django.conf import settings
 # mostly used by json_dict()
 #from django.template.defaultfilters import slugify, date as date_format, time as time_format
 from django.template.defaultfilters import date as date_format
+from django.urls import reverse as urlreverse
 from django.utils.text import slugify
 from django.utils.safestring import mark_safe
 
@@ -487,6 +488,18 @@ class Room(models.Model):
             'capacity':             self.capacity,
             }
     # floorplan support
+    def floorplan_url(self):
+        mtg_num = self.meeting.get_number()
+        if not mtg_num:
+            return None
+        elif mtg_num <= settings.FLOORPLAN_LAST_LEGACY_MEETING:
+            base_url = settings.FLOORPLAN_LEGACY_BASE_URL.format(meeting=self.meeting)
+        elif self.floorplan:
+            base_url = urlreverse('ietf.meeting.views.floor_plan', kwargs=dict(num=mtg_num))
+        else:
+            return None
+        return f'{base_url}?room={xslugify(self.name)}'
+
     def left(self):
         return min(self.x1, self.x2) if (self.x1 and self.x2) else 0
     def top(self):
