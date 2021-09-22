@@ -167,14 +167,14 @@ jQuery(document).ready(function () {
         let sessionId = selectedSession ? selectedSession.id.slice("session".length) : null;
         // hints on the sessions
         resetSessionsWouldViolate();
-        sessionConstraints.each(function () {
-            if (sessionId) {
+        if (sessionId) {
+            sessionConstraints.each(function () {
                 let sessionIds = this.dataset.sessions;
                 if (sessionIds && (sessionIds.split(",").indexOf(sessionId) !== -1)) {
                     setSessionWouldViolate(this, true);
                 }
-            }
-        });
+            });
+        }
 
         // hints on timeslots
         resetTimeslotsWouldViolate();
