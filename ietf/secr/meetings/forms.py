@@ -130,6 +130,13 @@ class MeetingRoomForm(forms.ModelForm):
         model = Room
         exclude = ['resources']
 
+class MeetingRoomOptionsForm(forms.Form):
+    copy_timeslots = forms.BooleanField(
+        required=False,
+        initial=False,
+        label='Duplicate timeslots from previous meeting for new rooms?',
+    )
+
 class TimeSlotForm(forms.Form):
     day = forms.ChoiceField()
     time = forms.TimeField()

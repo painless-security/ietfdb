@@ -339,6 +339,13 @@ class Meeting(models.Model):
             }
 
     def build_timeslices(self):
+        """Get unique day/time/timeslot data for meeting
+        
+        Returns a list of days, time intervals for each day, and timeslots for each day,
+        with repeated days/time intervals removed. Ignores timeslots that do not have a
+        location. The slots return value contains only one TimeSlot for each distinct
+        time interval.
+        """
         days = []          # the days of the meetings
         time_slices = {}   # the times on each day
         slots = {}
@@ -360,8 +367,9 @@ class Meeting(models.Model):
 
         days.sort()
         for ymd in time_slices:
+            # Make sure these sort the same way
             time_slices[ymd].sort()
-            slots[ymd].sort(key=lambda x: x.time)
+            slots[ymd].sort(key=lambda x: (x.time, x.duration))
         return days,time_slices,slots
 
     # this functions makes a list of timeslices and rooms, and

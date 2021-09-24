@@ -26,7 +26,7 @@ from ietf.person.models import Person
 from ietf.group.models import Group
 from ietf.group.factories import GroupFactory
 from ietf.meeting.factories import ( MeetingFactory, RoomFactory, SessionFactory, TimeSlotFactory,
-                                     ProceedingsMaterialFactory )
+                                     ProceedingsMaterialFactory, ScheduleFactory, ConstraintFactory )
 from ietf.meeting.test_data import make_meeting_test_data, make_interim_meeting
 from ietf.meeting.models import (Schedule, SchedTimeSessAssignment, Session,
                                  Room, TimeSlot, Constraint, ConstraintName,
@@ -793,6 +793,56 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
                            'Drop target for unassigned sessions collapsed to 0 height')
         self.assertGreater(drop_target.size['width'], 0,
                            'Drop target for unassigned sessions collapsed to 0 width')
+
+    def test_session_constraint_hints(self):
+        """Selecting a session should mark conflicting sessions
+
+        To test for recurrence of https://trac.ietf.org/trac/ietfdb/ticket/3327 need to have some constraints that
+        do not conflict. Testing with only violated constraints does not exercise the code adequately.
+        """
+        meeting = MeetingFactory(type_id='ietf', date=datetime.date.today(), populate_schedule=False)
+        TimeSlotFactory.create_batch(5, meeting=meeting)
+        schedule = ScheduleFactory(meeting=meeting)
+        sessions = SessionFactory.create_batch(5, meeting=meeting, add_to_schedule=False)
+        groups = [s.group for s in sessions]
+
+        # Now set up constraints
+        # Get an arbitrary enabled group conflict ConstraintName
+        constraint_names = meeting.enabled_constraint_names().filter(is_group_conflict=True)
+        self.assertGreaterEqual(len(constraint_names), 2, 'Not enough constraint names enabled to perform test')
+
+        # one-way conflict from group 0 to 1
+        ConstraintFactory(meeting=meeting, name=constraint_names[0], source=groups[0], target=groups[1], person=None)
+
+        # one-way conflict from group 2 to 0
+        ConstraintFactory(meeting=meeting, name=constraint_names[0], source=groups[2], target=groups[0], person=None)
+
+        # two-way conflict between groups 0 and 3
+        ConstraintFactory(meeting=meeting, name=constraint_names[0], source=groups[0], target=groups[3], person=None)
+        ConstraintFactory(meeting=meeting, name=constraint_names[0], source=groups[3], target=groups[0], person=None)
+
+        # constraints that are not active when selecting sessions[0]
+        ConstraintFactory(meeting=meeting, name=constraint_names[1], source=groups[1], target=groups[2], person=None)
+        ConstraintFactory(meeting=meeting, name=constraint_names[1], source=groups[3], target=groups[4], person=None)
+
+        url = self.absreverse('ietf.meeting.views.edit_meeting_schedule',
+                              kwargs=dict(num=meeting.number, owner=schedule.owner.email(), name=schedule.name))
+        self.login(schedule.owner.user.username)
+        self.driver.get(url)
+        session_elements = [self.driver.find_element_by_css_selector(f'#session{sess.pk}') for sess in sessions]
+        session_elements[0].click()
+
+        # All conflicting sessions should be flagged with the would-violate-hint class.
+        self.assertIn('would-violate-hint', session_elements[1].get_attribute('class'),
+                      'Constraint violation should be indicated on conflicting session')
+        self.assertIn('would-violate-hint', session_elements[2].get_attribute('class'),
+                      'Constraint violation should be indicated on conflicting session')
+        self.assertIn('would-violate-hint', session_elements[3].get_attribute('class'),
+                      'Constraint violation should be indicated on conflicting session')
+
+        # And the non-conflicting session should not be flagged
+        self.assertNotIn('would-violate-hint', session_elements[4].get_attribute('class'),
+                         'Constraint violation should not be indicated on non-conflicting session')
 
 @ifSeleniumEnabled
 @skipIf(django.VERSION[0]==2, "Skipping test with race conditions under Django 2")
@@ -2544,6 +2594,165 @@ class ProceedingsMaterialTests(IetfSeleniumTestCase):
                          'File chooser should be hidden by default')
         self.assertTrue(external_url_field.is_displayed(),
                         'URL field should be shown by default')
+
+
+class EditTimeslotsTests(IetfSeleniumTestCase):
+    """Test the timeslot editor"""
+    def setUp(self):
+        super().setUp()
+        self.meeting: Meeting = MeetingFactory(
+            type_id='ietf',
+            number=120,
+            date=datetime.datetime.today() + datetime.timedelta(days=10),
+            populate_schedule=False,
+        )
+        self.edit_timeslot_url = self.absreverse(
+            'ietf.meeting.views.edit_timeslots',
+            kwargs=dict(num=self.meeting.number),
+        )
+        self.wait = WebDriverWait(self.driver, 2)
+
+    def do_delete_test(self, selector, keep, delete, cancel=False):
+        self.login('secretary')
+        self.driver.get(self.edit_timeslot_url)
+        delete_button = self.wait.until(
+            expected_conditions.element_to_be_clickable(
+                (By.CSS_SELECTOR, selector)
+            ))
+        delete_button.click()
+
+        if cancel:
+            cancel_button = self.wait.until(
+                expected_conditions.element_to_be_clickable(
+                    (By.CSS_SELECTOR, '#delete-modal button[data-dismiss="modal"]')
+                ))
+            cancel_button.click()
+        else:
+            confirm_button = self.wait.until(
+                expected_conditions.element_to_be_clickable(
+                    (By.CSS_SELECTOR, '#confirm-delete-button')
+                ))
+            confirm_button.click()
+
+        self.wait.until(
+            expected_conditions.invisibility_of_element_located(
+                (By.CSS_SELECTOR, '#delete-modal')
+            ))
+
+        if cancel:
+            keep.extend(delete)
+            delete = []
+
+        self.assertEqual(
+            TimeSlot.objects.filter(pk__in=[ts.pk for ts in delete]).count(),
+            0,
+            'Not all expected timeslots deleted',
+        )
+        self.assertEqual(
+            TimeSlot.objects.filter(pk__in=[ts.pk for ts in keep]).count(),
+            len(keep),
+            'Not all expected timeslots kept'
+        )
+
+    def do_delete_timeslot_test(self, cancel=False):
+        delete = [TimeSlotFactory(meeting=self.meeting)]
+        keep = [TimeSlotFactory(meeting=self.meeting)]
+
+        self.do_delete_test(
+            '#timeslot-table #timeslot{} .delete-button'.format(delete[0].pk),
+            keep,
+            delete
+        )
+
+    def test_delete_timeslot(self):
+        """Delete button for a timeslot should delete that timeslot"""
+        self.do_delete_timeslot_test(cancel=False)
+
+    def test_delete_timeslot_cancel(self):
+        """Timeslot should not be deleted on cancel"""
+        self.do_delete_timeslot_test(cancel=True)
+
+    def do_delete_time_interval_test(self, cancel=False):
+        delete_day = self.meeting.date.date()
+        delete_time = datetime.time(hour=10)
+        other_day = self.meeting.get_meeting_date(1).date()
+        other_time = datetime.time(hour=12)
+        duration = datetime.timedelta(minutes=60)
+
+        delete: [TimeSlot] = TimeSlotFactory.create_batch(
+            2,
+            meeting=self.meeting,
+            time=datetime.datetime.combine(delete_day, delete_time),
+            duration=duration)
+
+        keep: [TimeSlot] = [
+            TimeSlotFactory(
+                meeting=self.meeting,
+                time=datetime.datetime.combine(day, time),
+                duration=duration
+            )
+            for (day, time) in (
+                # combinations of day/time that should not be deleted
+                (delete_day, other_time),
+                (other_day, delete_time),
+                (other_day, other_time),
+            )
+        ]
+
+        selector = (
+            '#timeslot-table '
+            '.delete-button[data-delete-scope="column"]'
+            '[data-col-id="{}T{}-{}"]'.format(
+                delete_day.isoformat(),
+                delete_time.strftime('%H:%M'),
+                (datetime.datetime.combine(delete_day, delete_time) + duration).strftime(
+                    '%H:%M'
+                ))
+        )
+        self.do_delete_test(selector, keep, delete, cancel)
+
+    def test_delete_time_interval(self):
+        """Delete button for a time interval should delete all timeslots in that interval"""
+        self.do_delete_time_interval_test(cancel=False)
+
+    def test_delete_time_interval_cancel(self):
+        """Should not delete a time interval on cancel"""
+        self.do_delete_time_interval_test(cancel=True)
+
+    def do_delete_day_test(self, cancel=False):
+        delete_day = self.meeting.date.date()
+        times = [datetime.time(hour=10), datetime.time(hour=12)]
+        other_days = [self.meeting.get_meeting_date(d).date() for d in range(1, 3)]
+
+        delete: [TimeSlot] = [
+            TimeSlotFactory(
+                meeting=self.meeting,
+                time=datetime.datetime.combine(delete_day, time),
+            ) for time in times
+        ]
+
+        keep: [TimeSlot] = [
+            TimeSlotFactory(
+                meeting=self.meeting,
+                time=datetime.datetime.combine(day, time),
+            ) for day in other_days for time in times
+        ]
+
+        selector = (
+            '#timeslot-table '
+            '.delete-button[data-delete-scope="day"][data-date-id="{}"]'.format(
+                delete_day.isoformat()
+            )
+        )
+        self.do_delete_test(selector, keep, delete, cancel)
+
+    def test_delete_day(self):
+        """Delete button for a day should delete all timeslots on that day"""
+        self.do_delete_day_test(cancel=False)
+
+    def test_delete_day_cancel(self):
+        """Should not delete a day on cancel"""
+        self.do_delete_day_test(cancel=True)
 
 
 # The following are useful debugging tools
