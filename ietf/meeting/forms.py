@@ -8,6 +8,7 @@ import datetime
 
 from django import forms
 from django.conf import settings
+from django.core import validators
 from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.forms import BaseInlineFormSet
@@ -21,8 +22,9 @@ from ietf.meeting.models import Session, Meeting, Schedule, countries, timezones
 from ietf.meeting.helpers import get_next_interim_number, make_materials_directories
 from ietf.meeting.helpers import is_interim_meeting_approved, get_next_agenda_name
 from ietf.message.models import Message
+from ietf.name.models import TimeSlotTypeName
 from ietf.person.models import Person
-from ietf.utils.fields import DatepickerDateField, DurationField, MultiEmailField
+from ietf.utils.fields import DatepickerDateField, DurationField, MultiEmailField, DatepickerSplitDateTimeWidget
 from ietf.utils.validators import ( validate_file_size, validate_mime_type,
     validate_file_extension, validate_no_html_frame)
 
@@ -44,7 +46,8 @@ class GroupModelChoiceField(forms.ModelChoiceField):
         return obj.acronym
 
 class CustomDurationField(DurationField):
-    '''Custom DurationField to display as HH:MM (no seconds)'''
+    """Custom DurationField to display as HH:MM (no seconds)"""
+    widget = forms.TextInput(dict(placeholder='HH:MM'))
     def prepare_value(self, value):
         if isinstance(value, datetime.timedelta):
             return duration_string(value)
@@ -417,3 +420,110 @@ class SwapTimeslotsForm(forms.Form):
         self.fields['origin_timeslot'].queryset = meeting.timeslot_set.all()
         self.fields['target_timeslot'].queryset = meeting.timeslot_set.all()
         self.fields['rooms'].queryset = meeting.room_set.all()
+
+
+class TimeSlotDurationField(CustomDurationField):
+    """Duration field for TimeSlot edit / create forms"""
+    default_validators=[
+        validators.MinValueValidator(datetime.timedelta(seconds=0)),
+        validators.MaxValueValidator(datetime.timedelta(hours=12)),
+    ]
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault('help_text', 'Duration of timeslot in hours and minutes')
+        super().__init__(**kwargs)
+
+
+class TimeSlotEditForm(forms.ModelForm):
+    class Meta:
+        model = TimeSlot
+        fields = ('name', 'type', 'time', 'duration', 'show_location', 'location')
+        field_classes = dict(
+            time=forms.SplitDateTimeField,
+            duration=TimeSlotDurationField
+        )
+        widgets = dict(
+            time=DatepickerSplitDateTimeWidget,
+        )
+
+    def __init__(self, *args, **kwargs):
+        super(TimeSlotEditForm, self).__init__(*args, **kwargs)
+        self.fields['location'].queryset = self.instance.meeting.room_set.all()
+
+
+class TimeSlotCreateForm(forms.Form):
+    name = forms.CharField(max_length=255)
+    type = forms.ModelChoiceField(queryset=TimeSlotTypeName.objects.all(), initial='regular')
+    days = forms.TypedMultipleChoiceField(
+        label='Meeting days',
+        widget=forms.CheckboxSelectMultiple,
+        coerce=lambda s: datetime.date.fromordinal(int(s)),
+        empty_value=None,
+        required=False
+    )
+    other_date = DatepickerDateField(
+        required=False,
+        help_text='Optional date outside the official meeting dates',
+        date_format="yyyy-mm-dd",
+        picker_settings={"autoclose": "1"},
+    )
+
+    time = forms.TimeField(
+        help_text='Time to create timeslot on each selected date',
+        widget=forms.TimeInput(dict(placeholder='HH:MM'))
+    )
+    duration = TimeSlotDurationField()
+    show_location = forms.BooleanField(required=False, initial=True)
+    locations = forms.ModelMultipleChoiceField(
+        queryset=Room.objects.none(),
+        widget=forms.CheckboxSelectMultiple,
+    )
+
+    def __init__(self, meeting, *args, **kwargs):
+        super(TimeSlotCreateForm, self).__init__(*args, **kwargs)
+
+        meeting_days = [
+            meeting.date + datetime.timedelta(days=n)
+            for n in range(meeting.days)
+        ]
+
+        # Fill in dynamic field properties
+        self.fields['days'].choices = self._day_choices(meeting_days)
+        self.fields['other_date'].widget.attrs['data-date-default-view-date'] = meeting.date
+        self.fields['other_date'].widget.attrs['data-date-dates-disabled'] = ','.join(
+            d.isoformat() for d in meeting_days
+        )
+        self.fields['locations'].queryset = meeting.room_set.order_by('name')
+
+    def clean_other_date(self):
+        # Because other_date is not required, failed field validation does not automatically
+        # invalidate the form. It should, otherwise a typo may be silently ignored.
+        if self.data.get('other_date') and not self.cleaned_data.get('other_date'):
+            raise ValidationError('Enter a valid date or leave field blank.')
+        return self.cleaned_data.get('other_date', None)
+
+    def clean(self):
+        # Merge other_date and days fields
+        try:
+            other_date = self.cleaned_data.pop('other_date')
+        except KeyError:
+            other_date = None
+
+        self.cleaned_data['days'] = self.cleaned_data.get('days') or []
+        if other_date is not None:
+            self.cleaned_data['days'].append(other_date)
+        if len(self.cleaned_data['days']) == 0:
+            self.add_error('days', ValidationError('Please select a day or specify a date'))
+
+    @staticmethod
+    def _day_choices(days):
+        """Generates an iterable of value, label pairs for a choice field
+
+        Uses toordinal() to represent dates - would prefer to use isoformat(),
+        but fromisoformat() is not available in python 3.6..
+        """
+        choices = [
+            (str(day.toordinal()), day.strftime('%A ({})'.format(day.isoformat())))
+            for day in days
+        ]
+        return choices

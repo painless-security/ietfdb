@@ -57,7 +57,8 @@ from ietf.ietfauth.utils import role_required, has_role, user_is_person
 from ietf.mailtrigger.utils import gather_address_lists
 from ietf.meeting.models import Meeting, Session, Schedule, FloorPlan, SessionPresentation, TimeSlot, SlideSubmission
 from ietf.meeting.models import SessionStatusName, SchedulingEvent, SchedTimeSessAssignment, Room, TimeSlotTypeName
-from ietf.meeting.forms import CustomDurationField, SwapDaysForm, SwapTimeslotsForm
+from ietf.meeting.forms import ( CustomDurationField, SwapDaysForm, SwapTimeslotsForm,
+                                 TimeSlotCreateForm, TimeSlotEditForm )
 from ietf.meeting.helpers import get_areas, get_person_by_email, get_schedule_by_name
 from ietf.meeting.helpers import build_all_agenda_slices, get_wg_name_list
 from ietf.meeting.helpers import get_all_assignments_from_schedule
@@ -84,7 +85,7 @@ from ietf.meeting.utils import current_session_status
 from ietf.meeting.utils import data_for_meetings_overview
 from ietf.meeting.utils import preprocess_constraints_for_meeting_schedule_editor
 from ietf.meeting.utils import diff_meeting_schedules, prefetch_schedule_diff_objects
-from ietf.meeting.utils import swap_meeting_schedule_timeslot_assignments
+from ietf.meeting.utils import swap_meeting_schedule_timeslot_assignments, bulk_create_timeslots
 from ietf.meeting.utils import preprocess_meeting_important_dates
 from ietf.message.utils import infer_message
 from ietf.name.models import SlideSubmissionStatusName, ProceedingsMaterialTypeName
@@ -365,16 +366,49 @@ def edit_timeslots(request, num=None):
 
     meeting = get_meeting(num)
 
-    time_slices,date_slices,slots = meeting.build_timeslices()
+    if request.method == 'POST':
+        # handle AJAX requests
+        action = request.POST.get('action')
+        if action == 'delete':
+            # delete a timeslot
+            # Parameters:
+            #   slot_id: comma-separated list of TimeSlot PKs to delete
+            slot_id = request.POST.get('slot_id')
+            if slot_id is None:
+                return HttpResponseBadRequest('missing slot_id')
+            slot_ids = [id.strip() for id in slot_id.split(',')]
+            try:
+                timeslots = meeting.timeslot_set.filter(pk__in=slot_ids)
+            except ValueError:
+                return HttpResponseBadRequest('invalid slot_id specification')
+            missing_ids = set(slot_ids).difference(str(ts.pk) for ts in timeslots)
+            if len(missing_ids) != 0:
+                return HttpResponseNotFound('TimeSlot ids not found in meeting {}: {}'.format(
+                    meeting.number,
+                    ', '.join(sorted(missing_ids))
+                ))
+            timeslots.delete()
+            return HttpResponse(content='; '.join('Deleted TimeSlot {}'.format(id) for id in slot_ids))
+        else:
+            return HttpResponseBadRequest('unknown action')
+
+    # Labels here differ from those in the build_timeslices() method. The labels here are
+    # relative to the table: time_slices are the row headings (ie, days), date_slices are
+    # the column headings (i.e., time intervals), and slots are the per-day list of time slots
+    # (with only one time slot per unique time/duration)
+    time_slices, date_slices, slots = meeting.build_timeslices()
 
     ts_list = deque()
     rooms = meeting.room_set.order_by("capacity","name","id")
     for room in rooms:
         for day in time_slices:
             for slice in date_slices[day]:
-                ts_list.append(room.timeslot_set.filter(time=slice[0],duration=datetime.timedelta(seconds=slice[2])).first())
-            
+                ts_list.append(room.timeslot_set.filter(time=slice[0],duration=datetime.timedelta(seconds=slice[2])))
 
+    # Grab these in one query each to identify sessions that are in use and should be handled with care
+    ts_with_official_assignments = meeting.timeslot_set.filter(sessionassignments__schedule=meeting.schedule)
+    ts_with_any_assignments = meeting.timeslot_set.filter(sessionassignments__isnull=False)
+    
     return render(request, "meeting/timeslot_edit.html",
                                          {"rooms":rooms,
                                           "time_slices":time_slices,
@@ -382,6 +416,8 @@ def edit_timeslots(request, num=None):
                                           "date_slices":date_slices,
                                           "meeting":meeting,
                                           "ts_list":ts_list,
+                                          "ts_with_official_assignments": ts_with_official_assignments,
+                                          "ts_with_any_assignments": ts_with_any_assignments,
                                       })
 
 class NewScheduleForm(forms.ModelForm):
@@ -1453,6 +1489,7 @@ def list_schedules(request, num):
     return render(request, "meeting/schedule_list.html", {
         'meeting': meeting,
         'schedule_groups': schedule_groups,
+        'can_edit_timeslots': is_secretariat,
     })
 
 class DiffSchedulesForm(forms.Form):
@@ -3981,10 +4018,64 @@ def edit_timeslot_type(request, num, slot_id):
 
     else:
         form = TimeSlotTypeForm(instance=timeslot)
-        
+
     sessions = timeslot.sessions.filter(timeslotassignments__schedule__in=[meeting.schedule, meeting.schedule.base if meeting.schedule else None])
 
     return render(request, 'meeting/edit_timeslot_type.html', {'timeslot':timeslot,'form':form,'sessions':sessions})
+
+@role_required('Secretariat')
+def edit_timeslot(request, num, slot_id):
+    timeslot = get_object_or_404(TimeSlot, id=slot_id)
+    meeting = get_object_or_404(Meeting, number=num)
+    if timeslot.meeting != meeting:
+        raise Http404()
+    if request.method == 'POST':
+        form = TimeSlotEditForm(instance=timeslot, data=request.POST)
+        if form.is_valid():
+            form.save()
+            return HttpResponseRedirect(reverse('ietf.meeting.views.edit_timeslots', kwargs={'num': num}))
+    else:
+        form = TimeSlotEditForm(instance=timeslot)
+
+    sessions = timeslot.sessions.filter(
+        timeslotassignments__schedule__in=[meeting.schedule, meeting.schedule.base if meeting.schedule else None])
+
+    return render(
+        request,
+        'meeting/edit_timeslot.html',
+        {'timeslot': timeslot, 'form': form, 'sessions': sessions},
+        status=400 if form.errors else 200,
+    )
+
+
+@role_required('Secretariat')
+def create_timeslot(request, num):
+    meeting = get_object_or_404(Meeting, number=num)
+    if request.method == 'POST':
+        form = TimeSlotCreateForm(meeting, data=request.POST)
+        if form.is_valid():
+            bulk_create_timeslots(
+                meeting,
+                [datetime.datetime.combine(day, form.cleaned_data['time'])
+                 for day in form.cleaned_data.get('days', [])],
+                form.cleaned_data['locations'],
+                dict(
+                    name=form.cleaned_data['name'],
+                    type=form.cleaned_data['type'],
+                    duration=form.cleaned_data['duration'],
+                    show_location=form.cleaned_data['show_location'],
+                )
+            )
+            return HttpResponseRedirect(reverse('ietf.meeting.views.edit_timeslots',kwargs={'num':num}))
+    else:
+        form = TimeSlotCreateForm(meeting)
+
+    return render(
+        request,
+        'meeting/create_timeslot.html',
+        dict(meeting=meeting, form=form),
+        status=400 if form.errors else 200,
+    )
 
 
 @role_required('Secretariat')

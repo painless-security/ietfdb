@@ -5,6 +5,7 @@
 import bleach
 import datetime
 import re
+from urllib.parse import urljoin
 
 from email.utils import parseaddr
 
@@ -413,7 +414,6 @@ def format_snippet(text, trunc_words=25):
 @register.simple_tag
 def doc_edit_button(url_name, *args, **kwargs):
     """Given URL name/args/kwargs, looks up the URL just like "url" tag and returns a properly formatted button for the document material tables."""
-    from django.urls import reverse as urlreverse
     return mark_safe('<a class="btn btn-default btn-xs" href="%s">Edit</a>' % (urlreverse(url_name, args=args, kwargs=kwargs)))
 
 @register.filter
@@ -616,7 +616,7 @@ def action_holder_badge(action_holder):
 @register.filter
 def is_regular_agenda_item(assignment):
     """Is this agenda item a regular session item?
-    
+
     A regular item appears as a sub-entry in a timeslot within the agenda
 
     >>> from collections import namedtuple  # use to build mock objects
@@ -634,7 +634,7 @@ def is_regular_agenda_item(assignment):
 @register.filter
 def is_plenary_agenda_item(assignment):
     """Is this agenda item a regular session item?
-    
+
     A regular item appears as a sub-entry in a timeslot within the agenda
 
     >>> from collections import namedtuple  # use to build mock objects
@@ -652,7 +652,7 @@ def is_plenary_agenda_item(assignment):
 @register.filter
 def is_special_agenda_item(assignment):
     """Is this agenda item a special item?
-    
+
     Special items appear as top-level agenda entries with their own timeslot information.
 
     >>> from collections import namedtuple  # use to build mock objects
@@ -675,7 +675,7 @@ def is_special_agenda_item(assignment):
 @register.filter
 def should_show_agenda_session_buttons(assignment):
     """Should this agenda item show the session buttons (jabber link, etc)?
-    
+
     In IETF-111 and earlier, office hours sessions were designated by a name ending
     with ' office hours' and belonged to the IESG or some other group. This led to
     incorrect session buttons being displayed. Suppress session buttons for
@@ -699,3 +699,12 @@ def should_show_agenda_session_buttons(assignment):
         return not assignment.session.name.lower().endswith(' office hours')
     else:
         return True
+
+
+@register.simple_tag
+def absurl(viewname, **kwargs):
+    """Get the absolute URL for a view by name
+
+    Uses settings.IDTRACKER_BASE_URL as the base.
+    """
+    return urljoin(settings.IDTRACKER_BASE_URL, urlreverse(viewname, kwargs=kwargs))
