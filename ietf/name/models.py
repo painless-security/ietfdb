@@ -1,10 +1,13 @@
 # Copyright The IETF Trust 2010-2020, All Rights Reserved
 # -*- coding: utf-8 -*-
 
+import jsonfield
 
 from django.db import models
 
 from ietf.utils.models import ForeignKey
+from ietf.utils.validators import JSONForeignKeyListValidator
+
 
 class NameModel(models.Model):
     slug = models.CharField(max_length=32, primary_key=True)
@@ -68,6 +71,13 @@ class AgendaFilterTypeName(NameModel):
     """none, normal, heading, special"""
 class SessionStatusName(NameModel):
     """Waiting for Approval, Approved, Waiting for Scheduling, Scheduled, Cancelled, Disapproved"""
+class SessionPurposeName(NameModel):
+    """Regular, Tutorial, Office Hours, Coding, Social, Admin"""
+    timeslot_types = jsonfield.JSONField(
+        max_length=256, blank=False, default=[],
+        help_text='Allowed TimeSlotTypeNames',
+        validators=[JSONForeignKeyListValidator('name.TimeSlotTypeName')],
+    )
 class TimeSlotTypeName(NameModel):
     """Session, Break, Registration, Other, Reserved, unavail"""
     private = models.BooleanField(default=False, help_text="Whether sessions of this type should be kept off the public agenda")
