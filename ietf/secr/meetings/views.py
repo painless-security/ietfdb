@@ -537,7 +537,8 @@ def misc_session_edit(request, meeting_id, schedule_name, slot_id):
             name = form.cleaned_data['name']
             short = form.cleaned_data['short']
             duration = form.cleaned_data['duration']
-            slot_type = form.cleaned_data['type']
+            session_purpose = form.cleaned_data['purpose'].purpose
+            slot_type = form.cleaned_data['purpose'].type
             show_location = form.cleaned_data['show_location']
             remote_instructions = form.cleaned_data['remote_instructions']
             time = get_timeslot_time(form, meeting)
@@ -553,6 +554,8 @@ def misc_session_edit(request, meeting_id, schedule_name, slot_id):
             session.name = name
             session.short = short
             session.remote_instructions = remote_instructions
+            session.purpose = session_purpose
+            session.type = slot_type
             session.save()
 
             messages.success(request, 'Location saved')
@@ -570,7 +573,8 @@ def misc_session_edit(request, meeting_id, schedule_name, slot_id):
                    'time':slot.time.strftime('%H:%M'),
                    'duration':duration_string(slot.duration),
                    'show_location':slot.show_location,
-                   'type':slot.type,
+                   'purpose': session.purpose,
+                   'type': session.type,
                    'remote_instructions': session.remote_instructions,
                }
         form = MiscSessionForm(initial=initial, meeting=meeting, session=session)

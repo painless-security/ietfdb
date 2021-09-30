@@ -1,6 +1,8 @@
 # Copyright The IETF Trust 2013-2019, All Rights Reserved
 import datetime
 import re
+import json
+from collections import namedtuple
 
 from django import forms
 from django.db.models import Q
@@ -9,7 +11,7 @@ import debug                            # pyflakes:ignore
 
 from ietf.group.models import Group
 from ietf.meeting.models import Meeting, Room, TimeSlot, Session, SchedTimeSessAssignment
-from ietf.name.models import TimeSlotTypeName
+from ietf.name.models import TimeSlotTypeName, SessionPurposeName
 import ietf.utils.fields
 
 
@@ -168,9 +170,88 @@ class TimeSlotForm(forms.Form):
         return choices
 
 
+class SessionPurposeAndTypeWidget(forms.MultiWidget):
+    css_class = 'session_purpose_widget'  # class to apply to all widgets
+
+    def __init__(self, purpose_choices, type_choices, *args, **kwargs):
+        widgets = (
+            forms.Select(
+                choices=purpose_choices,
+                attrs={
+                    'class': self.css_class,
+                },
+            ),
+            forms.Select(
+                choices=type_choices,
+                attrs={
+                    'class': self.css_class,
+                    'data-allowed-options': json.dumps(self._allowed_types())
+                },
+            ),
+        )
+        super().__init__(widgets=widgets, *args, **kwargs)
+
+    def decompress(self, value):
+        if value:
+            return [getattr(val, 'pk', val) for val in value]
+        else:
+            return [None, None]
+
+    class Media:
+        js = ('secr/js/session_purpose_and_type_widget.js',)
+
+    def _allowed_types(self):
+        """Map from purpose to allowed type values"""
+        return {
+            purpose.slug: purpose.timeslot_types for purpose in SessionPurposeName.objects.all()
+        }
+
+
+class SessionPurposeAndTypeField(forms.MultiValueField):
+    """Field to update Session purpose and type
+
+    Uses SessionPurposeAndTypeWidget to coordinate setting the session purpose and type to valid
+    combinations. Its value should be a tuple with (purpose, type). Its cleaned value is a
+    namedtuple with purpose and value properties.
+    """
+    def __init__(self, purpose_queryset, type_queryset, **kwargs):
+        fields = (
+            forms.ModelChoiceField(queryset=purpose_queryset, label='Purpose'),
+            forms.ModelChoiceField(queryset=type_queryset, label='Type'),
+        )
+        self.widget = SessionPurposeAndTypeWidget(*(field.choices for field in fields))
+        super().__init__(fields=fields, **kwargs)
+
+    @property
+    def purpose(self):
+        return self.fields[0]
+
+    @property
+    def type(self):
+        return self.fields[1]
+
+    def compress(self, data_list):
+        # Convert data from the cleaned list from the widget into a namedtuple
+        if data_list:
+            compressed = namedtuple('CompressedSessionPurposeAndType', 'purpose type')
+            return compressed(*data_list)
+        return None
+
+    def validate(self, value):
+        # Additional validation - value has been passed through compress() already
+        if value.type.pk not in value.purpose.timeslot_types:
+            raise forms.ValidationError(
+                '"%(type)s" is not an allowed type for the purpose "%(purpose)s"',
+                params={'type': value.type, 'purpose': value.purpose},
+                code='invalid_type',
+            )
+
 class MiscSessionForm(TimeSlotForm):
     short = forms.CharField(max_length=32,label='Short Name',help_text='Enter an abbreviated session name (used for material file names)',required=False)
-    type = forms.ModelChoiceField(queryset=TimeSlotTypeName.objects.filter(used=True).exclude(slug__in=('regular',)),empty_label=None)
+    purpose = SessionPurposeAndTypeField(
+        purpose_queryset=SessionPurposeName.objects.filter(used=True).exclude(slug='session').order_by('name'),
+        type_queryset=TimeSlotTypeName.objects.filter(used=True),
+    )
     group = forms.ModelChoiceField(
         queryset=Group.objects.filter(
             Q(type__in=['ietf','team','area'],state='active')|
@@ -194,6 +275,8 @@ class MiscSessionForm(TimeSlotForm):
             self.meeting = kwargs.pop('meeting')
         if 'session' in kwargs:
             self.session = kwargs.pop('session')
+        initial = kwargs.setdefault('initial', dict())
+        initial['purpose'] = (initial.pop('purpose', ''), initial.pop('type', ''))
         super(MiscSessionForm, self).__init__(*args,**kwargs)
         self.fields['location'].queryset = Room.objects.filter(meeting=self.meeting)
 
@@ -203,7 +286,7 @@ class MiscSessionForm(TimeSlotForm):
             return
         cleaned_data = self.cleaned_data
         group = cleaned_data['group']
-        type = cleaned_data['type']
+        type = cleaned_data['purpose'].type
         short = cleaned_data['short']
         if type.slug in ('other','plenary','lead') and not group:
             raise forms.ValidationError('ERROR: a group selection is required')
