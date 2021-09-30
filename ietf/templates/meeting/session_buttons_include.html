@@ -2,10 +2,10 @@
 {% load origin %}
 {% load static %}
 {% load textfilters %}
-{% load ietf_filters %}
+{% load agenda_custom_tags %}
 {% origin %}
 
-{% if item|should_show_agenda_session_buttons %}
+{% if not item|should_suppress_agenda_session_buttons %}
 {% with slug=item.slug %}{% with session=item.session %}{% with timeslot=item.timeslot %}{% with meeting=schedule.meeting %}
 <span id="session-buttons-{{session.pk}}" class="text-nowrap">
   {% with acronym=session.historic_group.acronym %}

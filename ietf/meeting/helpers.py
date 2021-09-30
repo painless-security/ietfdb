@@ -8,6 +8,7 @@ import io
 import os
 import re
 from tempfile import mkstemp
+from typing import Optional, Iterable
 
 from django.http import HttpRequest, Http404
 from django.db.models import F, Max, Q, Prefetch
@@ -255,7 +256,7 @@ class AgendaKeywordTool:
     filterable_timeslot_slugs = ['officehours']
     filterable_timeslot_types = TimeSlotTypeName.objects.filter(slug__in=filterable_timeslot_slugs)
 
-    def __init__(self, *, assignments=None, sessions=None):
+    def __init__(self, *, assignments: Optional[Iterable] =None, sessions: Optional[Iterable] =None):
         # n.b., single star argument means only keyword parameters are allowed when calling constructor
         if assignments is not None and sessions is None:
             self.assignments = assignments
@@ -314,17 +315,15 @@ class AgendaFilterOrganizer(AgendaKeywordTool):
     def __init__(self, *, single_category=False, **kwargs):
         super(AgendaFilterOrganizer, self).__init__(**kwargs)
         self.single_category = single_category
-        # filled in when _organize_filters() is called
         self.filter_categories = None
         self.special_filters = None
+        self._organize_filters()  # fills in filter_categories and special_filters
 
     def get_non_area_keywords(self):
         """Get list of any 'non-area' (aka 'special') keywords
 
         These are the keywords corresponding to the right-most, headingless button column.
         """
-        if self.special_filters is None:
-            self._organize_filters()
         return [sf['keyword'] for sf in self.special_filters['children']]
 
     def get_filter_categories(self):
@@ -333,8 +332,6 @@ class AgendaFilterOrganizer(AgendaKeywordTool):
         If single_category is True, this will be a list with one element. Otherwise it
         may have multiple elements. Each element is a list of filter columns.
         """
-        if self.filter_categories is None:
-            self._organize_filters()
         return self.filter_categories
 
     def _organize_filters(self):
