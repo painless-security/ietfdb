@@ -18,18 +18,15 @@ def forward(apps, schema_editor):
             ('social', 'Social', 'Social event or activity', ['other']),
             ('presentation', 'Presentation', 'Presentation session', ['other', 'regular'])
     )):
-        # verify that we're not about to use an invalid purpose
-        for ts_type in tstypes:
-            TimeSlotTypeName.objects.get(pk=ts_type)  # throws an exception unless exists
-
-        SessionPurposeName.objects.create(
+        spn = SessionPurposeName.objects.create(
             slug=slug,
             name=name,
             desc=desc,
             used=True,
             order=order,
-            timeslot_types = tstypes
         )
+        for ts_type in tstypes:
+            spn.timeslot_types.add(TimeSlotTypeName.objects.get(pk=ts_type))
 
 
 def reverse(apps, schema_editor):

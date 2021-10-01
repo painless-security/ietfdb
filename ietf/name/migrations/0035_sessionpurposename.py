@@ -22,7 +22,7 @@ class Migration(migrations.Migration):
                 ('desc', models.TextField(blank=True)),
                 ('used', models.BooleanField(default=True)),
                 ('order', models.IntegerField(default=0)),
-                ('timeslot_types', jsonfield.fields.JSONField(default=[], help_text='Allowed TimeSlotTypeNames', max_length=256, validators=[ietf.name.models.JSONForeignKeyListValidator('name.TimeSlotTypeName')])),
+                ('timeslot_types', models.ManyToManyField(help_text='Allowed TimeSlotTypeNames', to='name.TimeSlotTypeName')),
             ],
             options={
                 'ordering': ['order', 'name'],

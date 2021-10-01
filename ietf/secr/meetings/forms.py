@@ -174,6 +174,9 @@ class SessionPurposeAndTypeWidget(forms.MultiWidget):
     css_class = 'session_purpose_widget'  # class to apply to all widgets
 
     def __init__(self, purpose_choices, type_choices, *args, **kwargs):
+        # Avoid queries on models that need to be migrated into existence - this widget is
+        # instantiated during Django setup. Attempts to query, e.g., SessionPurposeName will
+        # prevent migrations from running.
         widgets = (
             forms.Select(
                 choices=purpose_choices,
@@ -185,11 +188,36 @@ class SessionPurposeAndTypeWidget(forms.MultiWidget):
                 choices=type_choices,
                 attrs={
                     'class': self.css_class,
-                    'data-allowed-options': json.dumps(self._allowed_types())
+                    'data-allowed-options': None,
                 },
             ),
         )
         super().__init__(widgets=widgets, *args, **kwargs)
+
+    # These queryset properties are needed to propagate changes to the querysets after initialization
+    # down to the widgets. The usual mechanisms in the ModelChoiceFields don't handle this for us
+    # because the subwidgets are not attached to Fields in the usual way.
+    @property
+    def purpose_choices(self):
+        return self.widgets[0].choices
+
+    @purpose_choices.setter
+    def purpose_choices(self, value):
+        self.widgets[0].choices = value
+
+    @property
+    def type_choices(self):
+        return self.widgets[1].choices
+
+    @type_choices.setter
+    def type_choices(self, value):
+        self.widgets[1].choices = value
+
+    def render(self, *args, **kwargs):
+        # Fill in the data-allowed-options (could not do this in init because it needs to
+        # query SessionPurposeName, which will break the migration if done during initialization)
+        self.widgets[1].attrs['data-allowed-options'] = json.dumps(self._allowed_types())
+        return super().render(*args, **kwargs)
 
     def decompress(self, value):
         if value:
@@ -203,7 +231,8 @@ class SessionPurposeAndTypeWidget(forms.MultiWidget):
     def _allowed_types(self):
         """Map from purpose to allowed type values"""
         return {
-            purpose.slug: purpose.timeslot_types for purpose in SessionPurposeName.objects.all()
+            purpose.slug: list(purpose.timeslot_types.values_list('pk', flat=True))
+            for purpose in SessionPurposeName.objects.all()
         }
 
 
@@ -223,12 +252,22 @@ class SessionPurposeAndTypeField(forms.MultiValueField):
         super().__init__(fields=fields, **kwargs)
 
     @property
-    def purpose(self):
-        return self.fields[0]
+    def purpose_queryset(self):
+        return self.fields[0].queryset
+
+    @purpose_queryset.setter
+    def purpose_queryset(self, value):
+        self.fields[0].queryset = value
+        self.widget.purpose_choices = self.fields[0].choices
 
     @property
-    def type(self):
-        return self.fields[1]
+    def type_queryset(self):
+        return self.fields[1].queryset
+
+    @type_queryset.setter
+    def type_queryset(self, value):
+        self.fields[1].queryset = value
+        self.widget.type_choices = self.fields[1].choices
 
     def compress(self, data_list):
         # Convert data from the cleaned list from the widget into a namedtuple
@@ -239,7 +278,7 @@ class SessionPurposeAndTypeField(forms.MultiValueField):
 
     def validate(self, value):
         # Additional validation - value has been passed through compress() already
-        if value.type.pk not in value.purpose.timeslot_types:
+        if value.type not in value.purpose.timeslot_types.all():
             raise forms.ValidationError(
                 '"%(type)s" is not an allowed type for the purpose "%(purpose)s"',
                 params={'type': value.type, 'purpose': value.purpose},
@@ -249,8 +288,8 @@ class SessionPurposeAndTypeField(forms.MultiValueField):
 class MiscSessionForm(TimeSlotForm):
     short = forms.CharField(max_length=32,label='Short Name',help_text='Enter an abbreviated session name (used for material file names)',required=False)
     purpose = SessionPurposeAndTypeField(
-        purpose_queryset=SessionPurposeName.objects.filter(used=True).exclude(slug='session').order_by('name'),
-        type_queryset=TimeSlotTypeName.objects.filter(used=True),
+        purpose_queryset=SessionPurposeName.objects.none(),
+        type_queryset=TimeSlotTypeName.objects.none(),
     )
     group = forms.ModelChoiceField(
         queryset=Group.objects.filter(
@@ -279,6 +318,12 @@ class MiscSessionForm(TimeSlotForm):
         initial['purpose'] = (initial.pop('purpose', ''), initial.pop('type', ''))
         super(MiscSessionForm, self).__init__(*args,**kwargs)
         self.fields['location'].queryset = Room.objects.filter(meeting=self.meeting)
+        self.fields['purpose'].purpose_queryset = SessionPurposeName.objects.filter(
+            used=True
+        ).exclude(
+            slug='session'
+        ).order_by('name')
+        self.fields['purpose'].type_queryset = TimeSlotTypeName.objects.filter(used=True)
 
     def clean(self):
         super(MiscSessionForm, self).clean()

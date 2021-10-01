@@ -73,11 +73,7 @@ class SessionStatusName(NameModel):
     """Waiting for Approval, Approved, Waiting for Scheduling, Scheduled, Cancelled, Disapproved"""
 class SessionPurposeName(NameModel):
     """Regular, Tutorial, Office Hours, Coding, Social, Admin"""
-    timeslot_types = jsonfield.JSONField(
-        max_length=256, blank=False, default=[],
-        help_text='Allowed TimeSlotTypeNames',
-        validators=[JSONForeignKeyListValidator('name.TimeSlotTypeName')],
-    )
+    timeslot_types = models.ManyToManyField('TimeSlotTypeName', help_text='Allowed TimeSlotTypeNames')
 class TimeSlotTypeName(NameModel):
     """Session, Break, Registration, Other, Reserved, unavail"""
     private = models.BooleanField(default=False, help_text="Whether sessions of this type should be kept off the public agenda")
