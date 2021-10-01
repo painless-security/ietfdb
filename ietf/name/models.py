@@ -6,7 +6,6 @@ import jsonfield
 from django.db import models
 
 from ietf.utils.models import ForeignKey
-from ietf.utils.validators import JSONForeignKeyListValidator
 
 
 class NameModel(models.Model):

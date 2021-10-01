@@ -17,22 +17,15 @@ default_purposes = dict(
 def forward(apps, schema_editor):
     GroupFeatures = apps.get_model('group', 'GroupFeatures')
     SessionPurposeName = apps.get_model('name', 'SessionPurposeName')
-
-    # verify that we're not about to use an invalid purpose
-    for purposes in default_purposes.values():
-        for purpose in purposes:
-            SessionPurposeName.objects.get(pk=purpose)  # throws an exception unless exists
-
     for type_, purposes in default_purposes.items():
-        GroupFeatures.objects.filter(
-            type=type_
-        ).update(
-            session_purposes=purposes
-        )
+        gf = GroupFeatures.objects.get(type=type_)
+        for purpose in purposes:
+            gf.session_purposes.add(SessionPurposeName.objects.get(pk=purpose))
 
 def reverse(apps, schema_editor):
     GroupFeatures = apps.get_model('group', 'GroupFeatures')
-    GroupFeatures.objects.update(session_purposes=[])  # clear back out to default
+    for gf in GroupFeatures.objects.all():
+        gf.session_purposes.clear()
 
 
 class Migration(migrations.Migration):

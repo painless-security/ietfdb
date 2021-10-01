@@ -249,38 +249,3 @@ class MaxImageSizeValidator(BaseValidator):
             return x.width, x.height
         except FileNotFoundError:
             return 0, 0  # don't fail if the image is missing
-
-
-@deconstructible
-class JSONForeignKeyListValidator:
-    """Validate that a JSONField is a list of valid foreign key references"""
-    def __init__(self, model_class, field_name='pk'):
-        # model_class can be a class or a string like "app_name.ModelName"
-        self._model = model_class
-        self.field_name = field_name
-
-    @property
-    def model(self):
-        # Lazy model lookup is needed because the validator's __init__() is usually
-        # called while Django is still setting up. It's likely that the model is not
-        # registered at that point, otherwise the caller would not have used the
-        # string form to refer to it.
-        if isinstance(self._model, str):
-            self._model = apps.get_model(self._model)
-        return self._model
-
-    def __call__(self, value):
-        for val in value:
-            try:
-                self.model.objects.get(**{self.field_name: val})
-            except ObjectDoesNotExist:
-                raise ValidationError(
-                    f'No {self.model.__name__} with {self.field_name} == "{val}" exists.'
-                )
-
-    def __eq__(self, other):
-        return (
-                isinstance(other, self.__class__)
-                and (self.model == other.model)
-                and (self.field_name == other.field_name)
-        )
