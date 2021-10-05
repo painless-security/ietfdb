@@ -270,7 +270,7 @@ class SearchableField(forms.CharField):
 
 
 class IETFJSONField(jsonfield.fields.forms.JSONField):
-    def __init__(self, *args, empty_values=fields.CharField.empty_values,
+    def __init__(self, *args, empty_values=jsonfield.fields.forms.JSONField.empty_values,
                  accepted_empty_values=[], **kwargs):
         self.empty_values = [x
                              for x in empty_values
