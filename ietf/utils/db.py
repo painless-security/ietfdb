@@ -13,11 +13,13 @@ from ietf.utils.fields import IETFJSONField as FormIETFJSONField
 
 class IETFJSONField(jsonfield.JSONField):
     form_class = FormIETFJSONField
-    
-    def __init__(self, *args, empty_values=FormIETFJSONField.empty_values, allowed_empty_values=[], **kwargs):
+
+    def __init__(self, *args, empty_values=FormIETFJSONField.empty_values, allowed_empty_values=None, **kwargs):
+        if allowed_empty_values is None:
+            allowed_empty_values = []
         self.empty_values = [x
-                        for x in empty_values
-                        if x not in allowed_empty_values]
+                             for x in empty_values
+                             if x not in allowed_empty_values]
         super().__init__(*args, **kwargs)
 
     def formfield(self, **kwargs):
