@@ -5,6 +5,7 @@
 import io
 import os
 import datetime
+import json
 
 from django import forms
 from django.conf import settings
@@ -22,7 +23,7 @@ from ietf.meeting.models import Session, Meeting, Schedule, countries, timezones
 from ietf.meeting.helpers import get_next_interim_number, make_materials_directories
 from ietf.meeting.helpers import is_interim_meeting_approved, get_next_agenda_name
 from ietf.message.models import Message
-from ietf.name.models import TimeSlotTypeName
+from ietf.name.models import TimeSlotTypeName, SessionPurposeName
 from ietf.person.models import Person
 from ietf.utils.fields import DatepickerDateField, DurationField, MultiEmailField, DatepickerSplitDateTimeWidget
 from ietf.utils.validators import ( validate_file_size, validate_mime_type,
@@ -527,3 +528,77 @@ class TimeSlotCreateForm(forms.Form):
             for day in days
         ]
         return choices
+
+
+class LengthChoiceField(forms.ChoiceField):
+    length_choices = (('3600','60 minutes'),('7200','120 minutes'))
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(
+            choices=(('','--Please select'), *self.length_choices),
+            *args, **kwargs,
+        )
+
+
+class VirtualLengthChoiceField(LengthChoiceField):
+    length_choices = (('3000','50 minutes'),('6000','100 minutes'))
+
+
+class SessionDetailsForm(forms.ModelForm):
+    requested_duration = LengthChoiceField()
+
+    def __init__(self, group, *args, **kwargs):
+        session_purposes = group.features.session_purposes
+        kwargs.setdefault('initial', {})
+        kwargs['initial'].setdefault('purpose', session_purposes.first())
+        super().__init__(*args, **kwargs)
+
+        self.fields['type'].widget.attrs.update({
+            'data-allowed-options': json.dumps({
+                purpose.slug: list(purpose.timeslot_types.values_list('pk', flat=True))
+                for purpose in SessionPurposeName.objects.all()
+            }),
+        })
+        self.fields['purpose'].queryset = session_purposes
+
+    class Meta:
+        model = Session
+        fields = ('name', 'short', 'purpose', 'type', 'requested_duration', 'remote_instructions')
+        labels = {'requested_duration': 'Length'}
+
+    class Media:
+        js = ('ietf/js/meeting/session_details_form.js',)
+
+
+class SessionDetailsInlineFormset(forms.BaseInlineFormSet):
+    def __init__(self, group, meeting, queryset=None, *args, **kwargs):
+        self._meeting = meeting
+
+        # Restrict sessions to the meeting and group. The instance
+        # property handles one of these for free.
+        kwargs['instance'] = group
+        if queryset is None:
+            queryset = Session._default_manager
+        if self._meeting.pk is not None:
+            queryset = queryset.filter(meeting=self._meeting)
+        else:
+            queryset = queryset.none()
+        kwargs['queryset'] = queryset
+
+        kwargs.setdefault('form_kwargs', {})
+        kwargs['form_kwargs'].update({'group': group})
+
+        super().__init__(*args, **kwargs)
+
+
+SessionDetailsFormSet = forms.inlineformset_factory(
+    Group,
+    Session,
+    formset=SessionDetailsInlineFormset,
+    form=SessionDetailsForm,
+    can_delete=True,
+    can_order=False,
+    min_num=1,
+    max_num=3,
+    extra=3,
+)
