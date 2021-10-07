@@ -590,6 +590,10 @@ class SessionDetailsInlineFormset(forms.BaseInlineFormSet):
 
         super().__init__(*args, **kwargs)
 
+    @property
+    def forms_to_keep(self):
+        """Get the not-deleted forms"""
+        return [f for f in self.forms if f not in self.deleted_forms]
 
 SessionDetailsFormSet = forms.inlineformset_factory(
     Group,

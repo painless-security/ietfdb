@@ -281,7 +281,7 @@ def confirm(request, acronym):
 
     form = FormClass(group, meeting, request.POST, hidden=True)
     form.is_valid()
-    
+
     login = request.user.person
 
     # check if request already exists for this group
@@ -316,38 +316,36 @@ def confirm(request, acronym):
     if request.method == 'POST' and button_text == 'Submit':
         # delete any existing session records with status = canceled or notmeet
         add_event_info_to_session_qs(Session.objects.filter(group=group, meeting=meeting)).filter(current_status__in=['canceled', 'notmeet']).delete()
-
-        # create new session records
-        count = 0
-        # lenth_session2 and length_session3 fields might be disabled by javascript and so
-        # wouldn't appear in form data
-        for duration in (form.data.get('length_session1',None),form.data.get('length_session2',None),form.data.get('length_session3',None)):
-            count += 1
-            if duration:
-                slug = 'apprw' if count == 3 else 'schedw'
-                new_session = Session.objects.create(
-                    meeting=meeting,
-                    group=group,
-                    attendees=form.cleaned_data['attendees'],
-                    requested_duration=datetime.timedelta(0,int(duration)),
-                    comments=form.cleaned_data['comments'],
-                    type_id='regular',
-                )
-                SchedulingEvent.objects.create(
-                    session=new_session,
-                    status=SessionStatusName.objects.get(slug=slug),
-                    by=login,
-                )
-                if 'resources' in form.data:
-                    new_session.resources.set(session_data['resources'])
-                jfs = form.data.get('joint_for_session', '-1')
-                if not jfs: # jfs might be ''
-                    jfs = '-1'
-                if int(jfs) == count:
-                    groups_split = form.cleaned_data.get('joint_with_groups').replace(',',' ').split()
-                    joint = Group.objects.filter(acronym__in=groups_split)
-                    new_session.joint_with_groups.set(joint)
-                session_changed(new_session)
+        num_sessions = int(form.cleaned_data['num_session']) + (1 if form.cleaned_data['third_session'] else 0)
+        # Create new session records
+        # Should really use sess_form.save(), but needs data from the main form as well. Need to sort that out properly.
+        for count, sess_form in enumerate(form.session_forms[:num_sessions]):
+            slug = 'apprw' if count == 3 else 'schedw'
+            new_session = Session.objects.create(
+                meeting=meeting,
+                group=group,
+                attendees=form.cleaned_data['attendees'],
+                requested_duration=datetime.timedelta(0,int(sess_form.cleaned_data['requested_duration'])),
+                name=sess_form.cleaned_data['name'],
+                comments=form.cleaned_data['comments'],
+                purpose=sess_form.cleaned_data['purpose'],
+                type=sess_form.cleaned_data['type'],
+            )
+            SchedulingEvent.objects.create(
+                session=new_session,
+                status=SessionStatusName.objects.get(slug=slug),
+                by=login,
+            )
+            if 'resources' in form.data:
+                new_session.resources.set(session_data['resources'])
+            jfs = form.data.get('joint_for_session', '-1')
+            if not jfs: # jfs might be ''
+                jfs = '-1'
+            if int(jfs) == count:
+                groups_split = form.cleaned_data.get('joint_with_groups').replace(',',' ').split()
+                joint = Group.objects.filter(acronym__in=groups_split)
+                new_session.joint_with_groups.set(joint)
+            session_changed(new_session)
 
         # write constraint records
         for conflictname, cfield_id in form.wg_constraint_field_ids():

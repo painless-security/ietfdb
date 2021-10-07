@@ -249,7 +249,7 @@ class SessionForm(forms.Form):
             self.add_error(None, error)
 
         # Verify expected number of session entries are present
-        num_sessions_with_data = len(self.session_forms) - len(self.session_forms.deleted_forms)
+        num_sessions_with_data = len(self.session_forms.forms_to_keep)
         try:
             num_sessions_expected = int(data.get('num_session', ''))
         except ValueError:
