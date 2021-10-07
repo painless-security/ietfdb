@@ -42,8 +42,9 @@ var ietf_sessions; // public interface
     if (document.form_post.joint_for_session) {
       document.form_post.joint_for_session.disabled = only_one_session;
     }
-    if (document.form_post.third_session_row) {
-      document.form_post.third_session_row.hidden = !only_one_session;
+    const third_session_row = document.getElementById('third_session_row');
+    if (third_session_row) {
+      third_session_row.hidden = val < 2;
     }
   }
 
