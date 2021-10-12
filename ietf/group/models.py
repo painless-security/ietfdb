@@ -27,6 +27,7 @@ from ietf.person.models import Email, Person
 from ietf.utils.mail import formataddr, send_mail_text
 from ietf.utils import log
 from ietf.utils.models import ForeignKey, OneToOneField
+from ietf.utils.validators import JSONForeignKeyListValidator
 
 
 class GroupInfo(models.Model):
@@ -294,8 +295,9 @@ class GroupFeatures(models.Model):
     matman_roles            = jsonfield.JSONField(max_length=128, blank=False, default=["ad","chair","delegate","secr"])
     role_order              = jsonfield.JSONField(max_length=128, blank=False, default=["chair","secr","member"],
                                                   help_text="The order in which roles are shown, for instance on photo pages.  Enter valid JSON.")
-    session_purposes        = models.ManyToManyField(SessionPurposeName,
-                                                         help_text="Allowed session purposes for this group type")
+    session_purposes        = jsonfield.JSONField(max_length=256, blank=False, default=[],
+                                                  help_text="Allowed session purposes for this group type",
+                                                  validators=[JSONForeignKeyListValidator(SessionPurposeName)])
 
 
 class GroupHistory(GroupInfo):
