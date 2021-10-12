@@ -1128,6 +1128,13 @@ class SessionQuerySet(models.QuerySet):
         """
         return self.with_current_status().exclude(current_status__in=Session.CANCELED_STATUSES)
 
+    def not_deleted(self):
+        """Queryset containing all sessions not deleted
+
+        Results annotated with current_status
+        """
+        return self.with_current_status().exclude(current_status='deleted')
+
     def that_can_meet(self):
         """Queryset containing sessions that can meet
         

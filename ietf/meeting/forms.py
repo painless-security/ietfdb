@@ -530,22 +530,31 @@ class TimeSlotCreateForm(forms.Form):
         return choices
 
 
-class LengthChoiceField(forms.ChoiceField):
-    length_choices = (('3600','60 minutes'),('7200','120 minutes'))
+class DurationChoiceField(forms.ChoiceField):
+    duration_choices = (('3600', '60 minutes'), ('7200', '120 minutes'))
 
     def __init__(self, *args, **kwargs):
         super().__init__(
-            choices=(('','--Please select'), *self.length_choices),
+            choices=(('','--Please select'), *self.duration_choices),
             *args, **kwargs,
         )
 
+    def prepare_value(self, value):
+        """Converts incoming value into string used for the option value"""
+        if value:
+            return str(int(value.total_seconds())) if hasattr(value, 'total_seconds') else str(value)
+        return ''
 
-class VirtualLengthChoiceField(LengthChoiceField):
-    length_choices = (('3000','50 minutes'),('6000','100 minutes'))
+    def clean(self, value):
+        """Convert option value string back to a timedelta"""
+        val = super().clean(value)
+        if val == '':
+            return None
+        return datetime.timedelta(seconds=int(val))
 
 
 class SessionDetailsForm(forms.ModelForm):
-    requested_duration = LengthChoiceField()
+    requested_duration = DurationChoiceField()
 
     def __init__(self, group, *args, **kwargs):
         session_purposes = group.features.session_purposes
@@ -573,6 +582,7 @@ class SessionDetailsForm(forms.ModelForm):
 class SessionDetailsInlineFormset(forms.BaseInlineFormSet):
     def __init__(self, group, meeting, queryset=None, *args, **kwargs):
         self._meeting = meeting
+        self.created_instances = []
 
         # Restrict sessions to the meeting and group. The instance
         # property handles one of these for free.
@@ -583,12 +593,22 @@ class SessionDetailsInlineFormset(forms.BaseInlineFormSet):
             queryset = queryset.filter(meeting=self._meeting)
         else:
             queryset = queryset.none()
-        kwargs['queryset'] = queryset
+        kwargs['queryset'] = queryset.not_deleted()
 
         kwargs.setdefault('form_kwargs', {})
         kwargs['form_kwargs'].update({'group': group})
 
         super().__init__(*args, **kwargs)
+
+    def save_new(self, form, commit=True):
+        form.instance.meeting = self._meeting
+        super().save_new(form, commit)
+
+    def save(self, commit=True):
+        existing_instances = set(form.instance for form in self.forms if form.instance.pk)
+        saved = super().save(commit)
+        self.created_instances = [inst for inst in saved if inst not in existing_instances]
+        return saved
 
     @property
     def forms_to_keep(self):
