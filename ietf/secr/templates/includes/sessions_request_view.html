@@ -7,7 +7,7 @@
         {% for sess_form in form.session_forms %}{% if sess_form.cleaned_data and not sess_form.cleaned_data.DELETE %}
         <tr class="row2"><td>Session {{ forloop.counter }}:</td><td>
           <dl>
-            <dt>Length</dt><dd>{{ sess_form.cleaned_data.requested_duration|display_duration }}</dd>
+            <dt>Length</dt><dd>{{ sess_form.cleaned_data.requested_duration.total_seconds|display_duration }}</dd>
             {% if sess_form.cleaned_data.name %}<dt>Name</dt><dd>{{ sess_form.cleaned_data.name }}</dd>{% endif %}
             {% if sess_form.cleaned_data.purpose.slug != 'session' %}
               <dt>Purpose</dt>

@@ -250,14 +250,13 @@ class SessionForm(forms.Form):
 
         # Verify expected number of session entries are present
         num_sessions_with_data = len(self.session_forms.forms_to_keep)
+        num_sessions_expected = -1
         try:
             num_sessions_expected = int(data.get('num_session', ''))
         except ValueError:
             self.add_error('num_session', 'Invalid value for number of sessions')
-        else:
-            num_sessions_expected = None
-            if len(self.session_forms.errors) == 0 and num_sessions_with_data < num_sessions_expected:
-                self.add_error('num_session', 'Must provide data for all sessions')
+        if len(self.session_forms.errors) == 0 and num_sessions_with_data < num_sessions_expected:
+            self.add_error('num_session', 'Must provide data for all sessions')
 
         # if default (empty) option is selected, cleaned_data won't include num_session key
         if num_sessions_expected != 2 and num_sessions_expected is not None:
@@ -283,7 +282,7 @@ class SessionForm(forms.Form):
     @property
     def media(self):
         # get media for our formset
-        return self.session_forms.media
+        return super().media + self.session_forms.media
 
 
 class VirtualSessionForm(SessionForm):

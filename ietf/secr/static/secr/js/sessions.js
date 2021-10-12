@@ -37,7 +37,8 @@ var ietf_sessions; // public interface
 
     const only_one_session = (val === 1);
     if (document.form_post.session_time_relation) {
-      document.form_post.session_time_relation = only_one_session;
+      document.form_post.session_time_relation.disabled = only_one_session;
+      document.form_post.session_time_relation.closest('tr').hidden = only_one_session;
     }
     if (document.form_post.joint_for_session) {
       document.form_post.joint_for_session.disabled = only_one_session;

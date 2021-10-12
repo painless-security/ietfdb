@@ -221,7 +221,8 @@ class MiscSessionForm(TimeSlotForm):
             raise forms.ValidationError('ERROR: a group selection is required')
         if type.slug in ('other','plenary','lead') and not short:
             raise forms.ValidationError('ERROR: a short name is required')
-            
+
+        cleaned_data['type'] = type
         return cleaned_data
     
     def clean_group(self):
