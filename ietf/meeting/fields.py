@@ -68,7 +68,7 @@ class SessionPurposeAndTypeWidget(forms.MultiWidget):
     def _allowed_types(self):
         """Map from purpose to allowed type values"""
         return {
-            purpose.slug: list(purpose.timeslot_types.values_list('pk', flat=True))
+            purpose.slug: list(purpose.timeslot_types)
             for purpose in SessionPurposeName.objects.all()
         }
 
@@ -119,7 +119,7 @@ class SessionPurposeAndTypeField(forms.MultiValueField):
 
     def validate(self, value):
         # Additional validation - value has been passed through compress() already
-        if value.type not in value.purpose.timeslot_types.all():
+        if value.type.pk not in value.purpose.timeslot_types:
             raise forms.ValidationError(
                 '"%(type)s" is not an allowed type for the purpose "%(purpose)s"',
                 params={'type': value.type, 'purpose': value.purpose},

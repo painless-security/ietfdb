@@ -559,16 +559,19 @@ class SessionDetailsForm(forms.ModelForm):
     def __init__(self, group, *args, **kwargs):
         session_purposes = group.features.session_purposes
         kwargs.setdefault('initial', {})
-        kwargs['initial'].setdefault('purpose', session_purposes.first())
+        kwargs['initial'].setdefault(
+            'purpose',
+            session_purposes[0] if len(session_purposes) > 0 else None,
+        )
         super().__init__(*args, **kwargs)
 
         self.fields['type'].widget.attrs.update({
             'data-allowed-options': json.dumps({
-                purpose.slug: list(purpose.timeslot_types.values_list('pk', flat=True))
+                purpose.slug: list(purpose.timeslot_types)
                 for purpose in SessionPurposeName.objects.all()
             }),
         })
-        self.fields['purpose'].queryset = session_purposes
+        self.fields['purpose'].queryset = SessionPurposeName.objects.filter(pk__in=session_purposes)
 
     class Meta:
         model = Session

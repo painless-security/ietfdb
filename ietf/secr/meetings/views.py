@@ -406,9 +406,11 @@ def misc_sessions(request, meeting_id, schedule_name):
             name = form.cleaned_data['name']
             short = form.cleaned_data['short']
             type = form.cleaned_data['type']
+            purpose = form.cleaned_data['purpose']
             group = form.cleaned_data['group']
             duration = form.cleaned_data['duration']
             location = form.cleaned_data['location']
+            remote_instructions = form.cleaned_data['remote_instructions']
 
             # create TimeSlot object
             timeslot = TimeSlot.objects.create(type=type,
@@ -427,7 +429,9 @@ def misc_sessions(request, meeting_id, schedule_name):
                                              name=name,
                                              short=short,
                                              group=group,
-                                             type=type)
+                                             type=type,
+                                             purpose=purpose,
+                                             remote_instructions=remote_instructions)
 
             SchedulingEvent.objects.create(
                 session=session,
@@ -537,8 +541,8 @@ def misc_session_edit(request, meeting_id, schedule_name, slot_id):
             name = form.cleaned_data['name']
             short = form.cleaned_data['short']
             duration = form.cleaned_data['duration']
-            session_purpose = form.cleaned_data['purpose'].purpose
-            slot_type = form.cleaned_data['purpose'].type
+            session_purpose = form.cleaned_data['purpose']
+            slot_type = form.cleaned_data['type']
             show_location = form.cleaned_data['show_location']
             remote_instructions = form.cleaned_data['remote_instructions']
             time = get_timeslot_time(form, meeting)
