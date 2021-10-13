@@ -546,23 +546,24 @@ class DurationChoiceField(forms.ChoiceField):
         return ''
 
     def to_python(self, value):
-        return datetime.timedelta(seconds=int(value)) if value not in self.empty_values else None
+        return datetime.timedelta(seconds=round(float(value))) if value not in self.empty_values else None
 
     def valid_value(self, value):
         return super().valid_value(self.prepare_value(value))
 
     def _format_duration_choice(self, dur):
-        seconds = dur.total_seconds() if isinstance(dur, datetime.timedelta) else int(dur)
+        seconds = int(dur.total_seconds()) if isinstance(dur, datetime.timedelta) else int(dur)
         hours = int(seconds / 3600)
         minutes = round((seconds - 3600 * hours) / 60)
         hr_str = '{} hour{}'.format(hours, '' if hours == 1 else 's')
         min_str = '{} minute{}'.format(minutes, '' if minutes == 1 else 's')
         if hours > 0 and minutes > 0:
-            return (str(seconds), ' '.join((hr_str, min_str)))
+            time_str = ' '.join((hr_str, min_str))
         elif hours > 0:
-            return (str(seconds), hr_str)
+            time_str = hr_str
         else:
-            return (str(seconds), min_str)
+            time_str = min_str
+        return (str(seconds), time_str)
 
     def _make_choices(self, durations):
         return (
@@ -642,14 +643,15 @@ class SessionDetailsInlineFormset(forms.BaseInlineFormSet):
         """Get the not-deleted forms"""
         return [f for f in self.forms if f not in self.deleted_forms]
 
-SessionDetailsFormSet = forms.inlineformset_factory(
-    Group,
-    Session,
-    formset=SessionDetailsInlineFormset,
-    form=SessionDetailsForm,
-    can_delete=True,
-    can_order=False,
-    min_num=1,
-    max_num=3,
-    extra=3,
-)
+def sessiondetailsformset_factory(min_num=1, max_num=3):
+    return forms.inlineformset_factory(
+        Group,
+        Session,
+        formset=SessionDetailsInlineFormset,
+        form=SessionDetailsForm,
+        can_delete=True,
+        can_order=False,
+        min_num=min_num,
+        max_num=max_num,
+        extra=max_num,  # only creates up to max_num total
+    )

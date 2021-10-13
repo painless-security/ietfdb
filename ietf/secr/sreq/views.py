@@ -61,7 +61,7 @@ def get_initial_session(sessions, prune_conflicts=False):
     conflicts = constraints.filter(name__is_group_conflict=True)  # only the group conflict constraints
 
     # even if there are three sessions requested, the old form has 2 in this field
-    initial['num_session'] = min(sessions.count(), 2)
+    initial['num_session'] = min(sessions.count(), 2) if group.features.acts_like_wg else sessions.count()
     initial['attendees'] = sessions[0].attendees
 
     def valid_conflict(conflict):
