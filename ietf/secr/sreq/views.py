@@ -259,6 +259,13 @@ def cancel(request, acronym):
     messages.success(request, 'The %s Session Request has been cancelled' % group.acronym)
     return redirect('ietf.secr.sreq.views.main')
 
+
+def status_slug_for_new_session(session, session_number):
+    if session.group.features.acts_like_wg and session_number == 2:
+        return 'apprw'
+    return 'schedw'
+
+
 @role_required(*AUTHORIZED_ROLES)
 def confirm(request, acronym):
     '''
@@ -311,7 +318,6 @@ def confirm(request, acronym):
         # Create new session records
         # Should really use sess_form.save(), but needs data from the main form as well. Need to sort that out properly.
         for count, sess_form in enumerate(form.session_forms[:num_sessions]):
-            slug = 'apprw' if count == 2 else 'schedw'
             new_session = Session.objects.create(
                 meeting=meeting,
                 group=group,
@@ -324,7 +330,7 @@ def confirm(request, acronym):
             )
             SchedulingEvent.objects.create(
                 session=new_session,
-                status=SessionStatusName.objects.get(slug=slug),
+                status=SessionStatusName.objects.get(slug=status_slug_for_new_session(new_session, count)),
                 by=login,
             )
             if 'resources' in form.data:
@@ -446,7 +452,7 @@ def edit(request, acronym, num=None):
                 for n, new_session in enumerate(form.session_forms.created_instances):
                     SchedulingEvent.objects.create(
                         session=new_session,
-                        status_id='apprw' if n == 2 else 'schedw',
+                        status_id=status_slug_for_new_session(new_session, n),
                         by=request.user.person,
                     )
                 for sf in changed_session_forms:
