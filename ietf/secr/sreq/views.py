@@ -412,7 +412,6 @@ def edit(request, acronym, num=None):
     ).filter(
         Q(current_status__isnull=True) | ~Q(current_status__in=['canceled', 'notmeet', 'deleted'])
     ).order_by('id')
-    sessions_count = sessions.count()
     initial = get_initial_session(sessions)
     FormClass = get_session_form_class()
 
@@ -442,68 +441,16 @@ def edit(request, acronym, num=None):
         form = FormClass(group, meeting, request.POST, initial=initial)
         if form.is_valid():
             if form.has_changed():
+                changed_session_forms = [sf for sf in form.session_forms.forms_to_keep if sf.has_changed()]
                 form.session_forms.save()
-                # might be cleaner to simply delete and rewrite all records (but maintain submitter?)
-                # adjust duration or add sessions
-                # session 1
-                # if 'length_session1' in form.changed_data:
-                #     session = sessions[0]
-                #     session.requested_duration = datetime.timedelta(0,int(form.cleaned_data['length_session1']))
-                #     session.save()
-                #     session_changed(session)
-                #
-                # # session 2
-                # if 'length_session2' in form.changed_data:
-                #     length_session2 = form.cleaned_data['length_session2']
-                #     if length_session2 == '':
-                #         sessions[1].delete()
-                #     elif sessions_count < 2:
-                #         duration = datetime.timedelta(0,int(form.cleaned_data['length_session2']))
-                #         new_session = Session.objects.create(
-                #             meeting=meeting,
-                #             group=group,
-                #             attendees=form.cleaned_data['attendees'],
-                #             requested_duration=duration,
-                #             comments=form.cleaned_data['comments'],
-                #             type_id='regular',
-                #         )
-                #         SchedulingEvent.objects.create(
-                #             session=new_session,
-                #             status=SessionStatusName.objects.get(slug='schedw'),
-                #             by=request.user.person,
-                #         )
-                #     else:
-                #         duration = datetime.timedelta(0,int(form.cleaned_data['length_session2']))
-                #         session = sessions[1]
-                #         session.requested_duration = duration
-                #         session.save()
-                #
-                # # session 3
-                # if 'length_session3' in form.changed_data:
-                #     length_session3 = form.cleaned_data['length_session3']
-                #     if length_session3 == '':
-                #         sessions[2].delete()
-                #     elif sessions_count < 3:
-                #         duration = datetime.timedelta(0,int(form.cleaned_data['length_session3']))
-                #         new_session = Session.objects.create(
-                #             meeting=meeting,
-                #             group=group,
-                #             attendees=form.cleaned_data['attendees'],
-                #             requested_duration=duration,
-                #             comments=form.cleaned_data['comments'],
-                #             type_id='regular',
-                #         )
-                #         SchedulingEvent.objects.create(
-                #             session=new_session,
-                #             status=SessionStatusName.objects.get(slug='apprw'),
-                #             by=request.user.person,
-                #         )
-                #     else:
-                #         duration = datetime.timedelta(0,int(form.cleaned_data['length_session3']))
-                #         session = sessions[2]
-                #         session.requested_duration = duration
-                #         session.save()
-                #         session_changed(session)
+                for n, new_session in enumerate(form.session_forms.created_instances):
+                    SchedulingEvent.objects.create(
+                        session=new_session,
+                        status_id='apprw' if n == 3 else 'schedw',
+                        by=request.user.person,
+                    )
+                for sf in changed_session_forms:
+                    session_changed(sf.instance)
 
                 # New sessions may have been created, refresh the sessions list
                 sessions = add_event_info_to_session_qs(
@@ -528,7 +475,8 @@ def edit(request, acronym, num=None):
                             session_changed(sessions[current_joint_for_session_idx])
                         sessions[new_joint_for_session_idx].joint_with_groups.set(new_joint_with_groups)
                         session_changed(sessions[new_joint_for_session_idx])
-                            
+
+                # Update sessions to match changes to shared form fields
                 if 'attendees' in form.changed_data:
                     sessions.update(attendees=form.cleaned_data['attendees'])
                 if 'comments' in form.changed_data:

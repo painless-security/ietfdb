@@ -545,12 +545,11 @@ class DurationChoiceField(forms.ChoiceField):
             return str(int(value.total_seconds())) if hasattr(value, 'total_seconds') else str(value)
         return ''
 
-    def clean(self, value):
-        """Convert option value string back to a timedelta"""
-        val = super().clean(value)
-        if val == '':
-            return None
-        return datetime.timedelta(seconds=int(val))
+    def to_python(self, value):
+        return datetime.timedelta(seconds=int(value)) if value not in self.empty_values else None
+
+    def valid_value(self, value):
+        return super().valid_value(self.prepare_value(value))
 
 
 class SessionDetailsForm(forms.ModelForm):
@@ -605,7 +604,7 @@ class SessionDetailsInlineFormset(forms.BaseInlineFormSet):
 
     def save_new(self, form, commit=True):
         form.instance.meeting = self._meeting
-        super().save_new(form, commit)
+        return super().save_new(form, commit)
 
     def save(self, commit=True):
         existing_instances = set(form.instance for form in self.forms if form.instance.pk)
