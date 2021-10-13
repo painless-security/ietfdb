@@ -531,18 +531,18 @@ class TimeSlotCreateForm(forms.Form):
 
 
 class DurationChoiceField(forms.ChoiceField):
-    duration_choices = (('3600', '60 minutes'), ('7200', '120 minutes'))
-
-    def __init__(self, *args, **kwargs):
+    def __init__(self, durations=None, *args, **kwargs):
+        if durations is None:
+            durations = (3600, 7200)
         super().__init__(
-            choices=(('','--Please select'), *self.duration_choices),
+            choices=self._make_choices(durations),
             *args, **kwargs,
         )
 
     def prepare_value(self, value):
         """Converts incoming value into string used for the option value"""
         if value:
-            return str(int(value.total_seconds())) if hasattr(value, 'total_seconds') else str(value)
+            return str(int(value.total_seconds())) if isinstance(value, datetime.timedelta) else str(value)
         return ''
 
     def to_python(self, value):
@@ -550,6 +550,29 @@ class DurationChoiceField(forms.ChoiceField):
 
     def valid_value(self, value):
         return super().valid_value(self.prepare_value(value))
+
+    def _format_duration_choice(self, dur):
+        seconds = dur.total_seconds() if isinstance(dur, datetime.timedelta) else int(dur)
+        hours = int(seconds / 3600)
+        minutes = round((seconds - 3600 * hours) / 60)
+        hr_str = '{} hour{}'.format(hours, '' if hours == 1 else 's')
+        min_str = '{} minute{}'.format(minutes, '' if minutes == 1 else 's')
+        if hours > 0 and minutes > 0:
+            return (str(seconds), ' '.join((hr_str, min_str)))
+        elif hours > 0:
+            return (str(seconds), hr_str)
+        else:
+            return (str(seconds), min_str)
+
+    def _make_choices(self, durations):
+        return (
+            ('','--Please select'),
+            *[self._format_duration_choice(dur) for dur in durations])
+
+    def _set_durations(self, durations):
+        self.choices = self._make_choices(durations)
+
+    durations = property(None, _set_durations)
 
 
 class SessionDetailsForm(forms.ModelForm):
@@ -571,6 +594,8 @@ class SessionDetailsForm(forms.ModelForm):
             }),
         })
         self.fields['purpose'].queryset = SessionPurposeName.objects.filter(pk__in=session_purposes)
+        if not group.features.acts_like_wg:
+            self.fields['requested_duration'].durations = [datetime.timedelta(minutes=m) for m in range(30, 241, 30)]
 
     class Meta:
         model = Session
