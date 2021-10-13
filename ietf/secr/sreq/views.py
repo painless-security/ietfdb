@@ -311,7 +311,7 @@ def confirm(request, acronym):
         # Create new session records
         # Should really use sess_form.save(), but needs data from the main form as well. Need to sort that out properly.
         for count, sess_form in enumerate(form.session_forms[:num_sessions]):
-            slug = 'apprw' if count == 3 else 'schedw'
+            slug = 'apprw' if count == 2 else 'schedw'
             new_session = Session.objects.create(
                 meeting=meeting,
                 group=group,
@@ -446,7 +446,7 @@ def edit(request, acronym, num=None):
                 for n, new_session in enumerate(form.session_forms.created_instances):
                     SchedulingEvent.objects.create(
                         session=new_session,
-                        status_id='apprw' if n == 3 else 'schedw',
+                        status_id='apprw' if n == 2 else 'schedw',
                         by=request.user.person,
                     )
                 for sf in changed_session_forms:
