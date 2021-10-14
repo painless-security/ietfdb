@@ -614,7 +614,7 @@ def main(request):
      
     # add session status messages for use in template
     for group in scheduled_groups:
-        if len(group.meeting_sessions) < 3:
+        if not group.features.acts_like_wg or (len(group.meeting_sessions) < 3):
             group.status_message = group.meeting_sessions[0].current_status
         else:
             group.status_message = 'First two sessions: %s, Third session: %s' % (group.meeting_sessions[0].current_status, group.meeting_sessions[2].current_status)
