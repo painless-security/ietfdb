@@ -500,6 +500,9 @@ def new_meeting_schedule(request, num, owner=None, name=None):
 
 @ensure_csrf_cookie
 def edit_meeting_schedule(request, num=None, owner=None, name=None):
+    # Need to coordinate this list with types of session requests
+    # that can be created (see, e.g., SessionQuerySet.requests())
+    IGNORE_TIMESLOT_TYPES = ('offagenda', 'reserved', 'unavail')
     meeting = get_meeting(num)
     if name is None:
         schedule = meeting.schedule
@@ -544,7 +547,8 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
     sessions = add_event_info_to_session_qs(
         Session.objects.filter(
             meeting=meeting,
-            # type='regular',
+        ).exclude(
+            type__in=IGNORE_TIMESLOT_TYPES,
         ).order_by('pk'),
         requested_time=True,
         requested_by=True,
@@ -557,7 +561,8 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
 
     timeslots_qs = TimeSlot.objects.filter(
         meeting=meeting,
-        # type='regular',
+    ).exclude(
+        type__in=IGNORE_TIMESLOT_TYPES,
     ).prefetch_related('type').order_by('location', 'time', 'name')
 
     min_duration = min(t.duration for t in timeslots_qs)
@@ -2261,14 +2266,10 @@ def agenda_json(request, num=None):
 
 def meeting_requests(request, num=None):
     meeting = get_meeting(num)
-    sessions = add_event_info_to_session_qs(
-        Session.objects.filter(
-            meeting__number=meeting.number,
-            # type__slug='regular',
-            group__parent__isnull=False
-        ),
-        requested_by=True,
-    ).exclude(
+    sessions = Session.objects.requests().filter(
+        meeting__number=meeting.number,
+        group__parent__isnull=False
+    ).with_current_status().with_requested_by().exclude(
         requested_by=0
     ).order_by(
         "group__parent__acronym", "current_status", "group__acronym"
