@@ -16,6 +16,8 @@
   .edit-meeting-schedule .edit-grid .timeslot.past-hint { filter: brightness(0.9); }
   .edit-meeting-schedule .past-flag { visibility: hidden; font-size: smaller; }
   .edit-meeting-schedule .edit-grid .timeslot.past .past-flag { visibility: visible; color: #aaaaaa; }
+  .edit-meeting-schedule .edit-grid .timeslot.wrong-timeslot-type { background-color: transparent; ); }
+  .edit-meeting-schedule .edit-grid .timeslot.wrong-timeslot-type .time-label { color: transparent; ); }
 {% endblock morecss %}
 
 {% block title %}{{ schedule.name }}: IETF {{ meeting.number }} meeting agenda{% endblock %}
@@ -133,6 +135,7 @@
                            data-end="{{ t.utc_end_time.isoformat }}"
                            data-duration="{{ t.duration.total_seconds }}"
                            data-scheduledatlabel="{{ t.time|date:"l G:i" }}-{{ t.end_time|date:"G:i" }}"
+                           data-type="{{ t.type.slug }}"
                            style="width: {{ t.layout_width }}rem;">
                         <div class="time-label">
                           <div class="past-flag">&nbsp;{# blank div keeps time centered vertically #}</div>

@@ -82,6 +82,7 @@ jQuery(document).ready(function () {
             jQuery(element).addClass("selected");
 
             showConstraintHints(element);
+            showTimeSlotTypeIndicators(element.dataset.type);
 
             let sessionInfoContainer = content.find(".scheduling-panel .session-info-container");
             sessionInfoContainer.html(jQuery(element).find(".session-info").html());
@@ -105,6 +106,7 @@ jQuery(document).ready(function () {
         else {
             sessions.removeClass("selected");
             showConstraintHints();
+            resetTimeSlotTypeIndicators();
             content.find(".scheduling-panel .session-info-container").html("");
         }
     }
@@ -201,6 +203,23 @@ jQuery(document).ready(function () {
                 });
             }
         }
+    }
+
+    /**
+     * Remove timeslot classes indicating timeslot type disagreement
+     */
+    function resetTimeSlotTypeIndicators() {
+        timeslots.removeClass('wrong-timeslot-type');
+    }
+
+    /**
+     * Add timeslot classes indicating timeslot type disagreement
+     *
+     * @param timeslot_type
+     */
+    function showTimeSlotTypeIndicators(timeslot_type) {
+        timeslots.removeClass('wrong-timeslot-type');
+        timeslots.filter('[data-type!="' + timeslot_type + '"]').addClass('wrong-timeslot-type');
     }
 
     /**

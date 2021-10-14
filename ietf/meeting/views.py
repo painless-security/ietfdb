@@ -532,7 +532,7 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
     assignments = SchedTimeSessAssignment.objects.filter(
         schedule__in=[schedule, schedule.base],
         timeslot__location__isnull=False,
-        session__type='regular',
+        # session__type='regular',
     ).order_by('timeslot__time','timeslot__name')
 
     assignments_by_session = defaultdict(list)
@@ -544,7 +544,7 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
     sessions = add_event_info_to_session_qs(
         Session.objects.filter(
             meeting=meeting,
-            type='regular',
+            # type='regular',
         ).order_by('pk'),
         requested_time=True,
         requested_by=True,
@@ -555,7 +555,10 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
         'resources', 'group', 'group__parent', 'group__type', 'joint_with_groups',
     )
 
-    timeslots_qs = TimeSlot.objects.filter(meeting=meeting, type='regular').prefetch_related('type').order_by('location', 'time', 'name')
+    timeslots_qs = TimeSlot.objects.filter(
+        meeting=meeting,
+        # type='regular',
+    ).prefetch_related('type').order_by('location', 'time', 'name')
 
     min_duration = min(t.duration for t in timeslots_qs)
     max_duration = max(t.duration for t in timeslots_qs)
@@ -588,7 +591,7 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
             s.requested_by_person = requested_by_lookup.get(s.requested_by)
 
             s.scheduling_label = "???"
-            if s.group:
+            if (s.purpose is None or s.purpose.slug == 'regular') and s.group:
                 s.scheduling_label = s.group.acronym
             elif s.name:
                 s.scheduling_label = s.name
@@ -2261,7 +2264,7 @@ def meeting_requests(request, num=None):
     sessions = add_event_info_to_session_qs(
         Session.objects.filter(
             meeting__number=meeting.number,
-            type__slug='regular',
+            # type__slug='regular',
             group__parent__isnull=False
         ),
         requested_by=True,
