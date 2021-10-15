@@ -556,7 +556,7 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
         Q(current_status__in=['appr', 'schedw', 'scheda', 'sched'])
         | Q(current_status__in=tombstone_states, pk__in={a.session_id for a in assignments})
     ).prefetch_related(
-        'resources', 'group', 'group__parent', 'group__type', 'joint_with_groups',
+        'resources', 'group', 'group__parent', 'group__type', 'joint_with_groups', 'purpose',
     )
 
     timeslots_qs = TimeSlot.objects.filter(
@@ -990,6 +990,8 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
             p.scheduling_color = "rgb({}, {}, {})".format(*tuple(int(round(x * 255)) for x in rgb_color))
             p.light_scheduling_color = "rgb({}, {}, {})".format(*tuple(int(round((0.9 + 0.1 * x) * 255)) for x in rgb_color))
 
+    session_purposes = sorted(set(s.purpose for s in sessions if s.purpose), key=lambda p: p.name)
+
     return render(request, "meeting/edit_meeting_schedule.html", {
         'meeting': meeting,
         'schedule': schedule,
@@ -1000,6 +1002,7 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
         'timeslot_groups': sorted((d, list(sorted(t_groups))) for d, t_groups in timeslot_groups.items()),
         'unassigned_sessions': unassigned_sessions,
         'session_parents': session_parents,
+        'session_purposes': session_purposes,
         'hide_menu': True,
         'lock_time': lock_time,
     })

@@ -706,7 +706,7 @@ jQuery(document).ready(function () {
     // toggling visible sessions by session parents
     let sessionParentInputs = content.find(".session-parent-toggles input");
 
-    function setSessionHidden(sess, hide) {
+    function setSessionHiddenParent(sess, hide) {
         sess.toggleClass('hidden-parent', hide);
         sess.prop('draggable', !hide);
     }
@@ -717,12 +717,27 @@ jQuery(document).ready(function () {
             checked.push(".parent-" + this.value);
         });
 
-        setSessionHidden(sessions.not(".untoggleable").filter(checked.join(",")), false);
-        setSessionHidden(sessions.not(".untoggleable").not(checked.join(",")), true);
+        setSessionHiddenParent(sessions.not(".untoggleable-by-parent").filter(checked.join(",")), false);
+        setSessionHiddenParent(sessions.not(".untoggleable-by-parent").not(checked.join(",")), true);
     }
 
     sessionParentInputs.on("click", updateSessionParentToggling);
     updateSessionParentToggling();
+
+    // Toggling session purposes
+    let sessionPurposeInputs = content.find('.session-purpose-toggles input');
+    function updateSessionPurposeToggling() {
+        let checked = [];
+        sessionPurposeInputs.filter(":checked").each(function () {
+            checked.push(".purpose-" + this.value);
+        });
+
+        sessions.filter(checked.join(",")).removeClass('hidden-purpose');
+        sessions.not(checked.join(",")).addClass('hidden-purpose');
+    }
+
+    sessionPurposeInputs.on("click", updateSessionPurposeToggling);
+    updateSessionPurposeToggling();
 
     // toggling visible timeslots
     let timeslotGroupInputs = content.find("#timeslot-group-toggles-modal .modal-body input");

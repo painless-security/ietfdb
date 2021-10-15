@@ -16,8 +16,10 @@
   .edit-meeting-schedule .edit-grid .timeslot.past-hint { filter: brightness(0.9); }
   .edit-meeting-schedule .past-flag { visibility: hidden; font-size: smaller; }
   .edit-meeting-schedule .edit-grid .timeslot.past .past-flag { visibility: visible; color: #aaaaaa; }
+  {# type and purpose styling #}
   .edit-meeting-schedule .edit-grid .timeslot.wrong-timeslot-type { background-color: transparent; ); }
   .edit-meeting-schedule .edit-grid .timeslot.wrong-timeslot-type .time-label { color: transparent; ); }
+  .edit-meeting-schedule .session.hidden-purpose { filter: blur(3px); }
 {% endblock morecss %}
 
 {% block title %}{{ schedule.name }}: IETF {{ meeting.number }} meeting agenda{% endblock %}
@@ -184,6 +186,12 @@
             Show:
             {% for p in session_parents %}
               <label class="parent-{{ p.acronym }}"><input type="checkbox" checked value="{{ p.acronym }}"> {{ p.acronym }}</label>
+            {% endfor %}
+          </span>
+
+          <span class="session-purpose-toggles">
+            {% for purpose in session_purposes %}
+              <label class="purpose-{{ purpose.slug }}"><input type="checkbox" checked value="{{ purpose.slug }}"> {{ purpose }}</label>
             {% endfor %}
           </span>
 
