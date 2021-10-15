@@ -35,14 +35,9 @@
     <div class="title">
       <strong>
         <span class="time pull-right"></span>
-        {{ session.scheduling_label }}
-        &middot; {{ session.requested_duration_in_hours }}h
-        {% if session.group %}
-          &middot; {% if session.group.is_bof %}BOF{% else %}{{ session.group.type.name }}{% endif %}
-        {% endif %}
-        {% if session.attendees != None %}
-          &middot; {{ session.attendees }} <i class="fa fa-user-o"></i>
-        {% endif %}
+        {{ session.scheduling_label }} &middot; {{ session.requested_duration_in_hours }}h
+        {% if session.purpose_label  %} &middot; {{ session.purpose_label }} {% endif %}
+        {% if session.attendees != None %} &middot; {{ session.attendees }} <i class="fa fa-user-o"></i> {% endif %}
       </strong>
     </div>
 
