@@ -297,18 +297,41 @@ jQuery(document).ready(function () {
     }
 
     /**
+     * Get the session element being dragged
+     *
+     * @param event drag-related event
+     */
+    function getDraggedSession(event) {
+        if (!isSessionDragEvent(event)) {
+            return null;
+        }
+        const sessionId = event.originalEvent.dataTransfer.getData(dnd_mime_type);
+        const sessionElements = sessions.filter("#" + sessionId);
+        if (sessionElements.length > 0) {
+            return sessionElements[0];
+        }
+        return null;
+    }
+
+    /**
      * Can a session be dropped in this element?
      *
      * Drop is allowed in drop-zones that are in unassigned-session or timeslot containers
      * not marked as 'past'.
      */
-    function sessionDropAllowed(elt) {
-        if (!officialSchedule) {
-            return true;
+    function sessionDropAllowed(dropElement, sessionElement) {
+        const relevant_parent = dropElement.closest('.timeslot, .unassigned-sessions');
+        if (!relevant_parent || !sessionElement) {
+            return false;
         }
 
-        const relevant_parent = elt.closest('.timeslot, .unassigned-sessions');
-        return relevant_parent && !(relevant_parent.classList.contains('past'));
+        if (officialSchedule && relevant_parent.classList.contains('past')) {
+            return false;
+        }
+
+        return !relevant_parent.dataset.type || (
+          relevant_parent.dataset.type === sessionElement.dataset.type
+        );
     }
 
     if (!content.find(".edit-grid").hasClass("read-only")) {
@@ -333,7 +356,7 @@ jQuery(document).ready(function () {
         // dropping
         let dropElements = content.find(".timeslot .drop-target,.unassigned-sessions .drop-target");
         dropElements.on('dragenter', function (event) {
-            if (sessionDropAllowed(this)) {
+            if (sessionDropAllowed(this, getDraggedSession(event))) {
                 event.preventDefault(); // default action is signalling that this is not a valid target
                 jQuery(this).parent().addClass("dropping");
             }
@@ -343,7 +366,7 @@ jQuery(document).ready(function () {
             // we don't actually need this event, except we need to signal
             // that this is a valid drop target, by cancelling the default
             // action
-            if (sessionDropAllowed(this)) {
+            if (sessionDropAllowed(this, getDraggedSession(event))) {
                 event.preventDefault();
             }
         });
@@ -351,7 +374,7 @@ jQuery(document).ready(function () {
         dropElements.on('dragleave', function (event) {
             // skip dragleave events if they are to children
             const leaving_child = event.originalEvent.currentTarget.contains(event.originalEvent.relatedTarget);
-            if (!leaving_child && sessionDropAllowed(this)) {
+            if (!leaving_child && sessionDropAllowed(this, getDraggedSession(event))) {
                 jQuery(this).parent().removeClass('dropping');
             }
         });
@@ -359,30 +382,21 @@ jQuery(document).ready(function () {
         dropElements.on('drop', function (event) {
             let dropElement = jQuery(this);
 
-            if (!isSessionDragEvent(event)) {
-                // event is result of something other than a session drag
+            const sessionElement = getDraggedSession(event);
+            if (!sessionElement) {
+                // not drag event or not from a session we recognize
                 dropElement.parent().removeClass("dropping");
                 return;
             }
 
-            const sessionId = event.originalEvent.dataTransfer.getData(dnd_mime_type);
-            let sessionElement = sessions.filter("#" + sessionId);
-            if (sessionElement.length === 0) {
-                // drag event is not from a session we recognize
-                dropElement.parent().removeClass("dropping");
-                return;
-            }
-
-            // We now know this is a drop of a recognized session
-
-            if (!sessionDropAllowed(this)) {
+            if (!sessionDropAllowed(this, sessionElement)) {
                 dropElement.parent().removeClass("dropping"); // just in case
                 return; // drop not allowed
             }
 
             event.preventDefault(); // prevent opening as link
 
-            let dragParent = sessionElement.parent();
+            let dragParent = jQuery(sessionElement).parent();
             if (dragParent.is(this)) {
                 dropElement.parent().removeClass("dropping");
                 return;
@@ -419,7 +433,7 @@ jQuery(document).ready(function () {
                     timeout: 5 * 1000,
                     data: {
                         action: "unassign",
-                        session: sessionId.slice("session".length)
+                        session: sessionElement.id.slice("session".length)
                     }
                 }).fail(failHandler).done(done);
             }
@@ -429,7 +443,7 @@ jQuery(document).ready(function () {
                     method: "post",
                     data: {
                         action: "assign",
-                        session: sessionId.slice("session".length),
+                        session: sessionElement.id.slice("session".length),
                         timeslot: dropParent.attr("id").slice("timeslot".length)
                     },
                     timeout: 5 * 1000
