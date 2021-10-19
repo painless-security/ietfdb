@@ -6,7 +6,23 @@
 {% block title %}IETF {{ meeting.number }} Meeting Agenda: Timeslots and Room Availability{% endblock %}
 
 {% block morecss %}
-  .tstable { width: 100%;}
+  {% comment %}
+  Put scrollbars on the editor table. Requires fixed height so the scroll bars appear on the div, not the page body.
+  Note that 100vh is viewport height. Using that minus 25rem seems to leave space for the page header/footer.
+  {% endcomment %}
+  .timeslot-edit { overflow: auto; height: max(30rem, calc(100vh - 25rem));}
+  .tstable { width: 100%; border-collapse: separate; } {# "separate" to ensure sticky cells keep their borders #}
+  .tstable thead  { position: sticky; top: 0; z-index: 2; background-color: white;}
+  .tstable th:first-child, .tstable td:first-child {
+    background-color: white; {# needs to match the lighter of the striped-table colors! #}
+    position: sticky;
+    left: 0;
+    z-index: 1.5; {# render above other cells / borders but below thead (z-index 2, above) #}
+  }
+  .tstable tbody > tr:nth-of-type(odd) > th:first-child {
+    background-color: rgb(249, 249, 249); {# needs to match the darker of the striped-table colors! #}
+  }
+
   .tstable th { white-space: nowrap;}
   .tstable td { white-space: nowrap;}
   .capacity { font-size:80%; font-weight: normal;}
