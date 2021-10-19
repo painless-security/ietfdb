@@ -17,9 +17,12 @@
   .edit-meeting-schedule .past-flag { visibility: hidden; font-size: smaller; }
   .edit-meeting-schedule .edit-grid .timeslot.past .past-flag { visibility: visible; color: #aaaaaa; }
   {# type and purpose styling #}
-  .edit-meeting-schedule .edit-grid .timeslot.wrong-timeslot-type { background-color: transparent; ); }
-  .edit-meeting-schedule .edit-grid .timeslot.wrong-timeslot-type .time-label { color: transparent; ); }
-  .edit-meeting-schedule .session.hidden-purpose { filter: blur(3px); }
+  .edit-meeting-schedule .edit-grid .timeslot.wrong-timeslot-type,
+  .edit-meeting-schedule .edit-grid .timeslot.hidden-timeslot-type { background-color: transparent; ); }
+  .edit-meeting-schedule .edit-grid .timeslot.wrong-timeslot-type .time-label,
+  .edit-meeting-schedule .edit-grid .timeslot.hidden-timeslot-type .time-label { color: transparent; ); }
+  .edit-meeting-schedule .session.hidden-purpose,
+  .edit-meeting-schedule .session.hidden-timeslot-type { filter: blur(3px); }
 {% endblock morecss %}
 
 {% block title %}{{ schedule.name }}: IETF {{ meeting.number }} meeting agenda{% endblock %}
@@ -195,6 +198,11 @@
             {% endfor %}
           </span>
 
+        <span class="timeslot-type-toggles">
+          {% for type in timeslot_types %}
+            <label class="timeslot-type-{{ type.slug }}"><input type="checkbox" checked value="{{ type.slug }}"> {{ type }}</label>
+          {% endfor %}
+        </span>
           <span class="timeslot-group-toggles">
             <button class="btn btn-default" data-toggle="modal" data-target="#timeslot-group-toggles-modal"><input type="checkbox" checked="checked" disabled> Timeslots</button>
           </span>
