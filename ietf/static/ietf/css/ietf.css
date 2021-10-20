@@ -1239,6 +1239,9 @@ a.fc-event, .fc-event, .fc-content, .fc-title, .fc-event-container {
 .edit-meeting-schedule .session .session-label {
   flex-grow: 1;
   margin-left: 0.1em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .edit-meeting-schedule .session .session-label .bof-tag {
