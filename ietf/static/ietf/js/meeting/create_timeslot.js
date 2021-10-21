@@ -13,6 +13,9 @@
     const day = params.get('day');
     const date = params.get('date');
     const location = params.get('location');
+    const time = params.get('time');
+    const duration = params.get('duration');
+
     if (day) {
       const inp = form.querySelector('#id_days input[value="' + day +'"]');
       if (inp) {
@@ -25,6 +28,14 @@
     if (location) {
       const inp = form.querySelector('#id_locations input[value="' + location + '"]');
       inp.checked=true;
+    }
+    if (time) {
+      const inp = form.querySelector('input#id_time');
+      inp.value = time;
+    }
+    if (duration) {
+      const inp = form.querySelector('input#id_duration');
+      inp.value = duration;
     }
   }
 

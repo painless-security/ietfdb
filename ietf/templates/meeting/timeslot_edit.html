@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {# Copyright The IETF Trust 2015, All Rights Reserved #}
 {% load origin %}
-{% load agenda_custom_tags %}
+{% load agenda_custom_tags misc_filters %}
 
 {% block title %}IETF {{ meeting.number }} Meeting Agenda: Timeslots and Room Availability{% endblock %}
 
@@ -108,21 +108,21 @@
               <a href="{% url "ietf.meeting.views.create_timeslot" num=meeting.number %}">Create a timeslot.</a>
             </td>
           {% else %}
-            {% for day in time_slices %}
-              {% for slice in date_slices|lookup:day %}{% with cell_ts=ts_list.popleft %}
+            {% for day in time_slices %}{% with slots=slot_slices|lookup:day %}
+              {% for slice in date_slices|lookup:day %}{% with cell_ts=ts_list.popleft slot=slots|index:forloop.counter0 %}
                 <td class="tscell {% if cell_ts|length > 1 %}timeslot-collision {% endif %}{% for ts in cell_ts %}tstype_{{ ts.type.slug }} {% endfor %}">
                 {% if cell_ts %}
                   {% for ts in cell_ts %}
                     {% include 'meeting/timeslot_edit_timeslot.html' with ts=ts in_use=ts_with_any_assignments in_official_use=ts_with_official_assignments only %}
                   {% endfor %}
                 {% else %}
-                  <a class="new-timeslot-link" href="{% url "ietf.meeting.views.create_timeslot" num=meeting.number %}?day={{ day.toordinal }}&date={{ day|date:"Y-m-d" }}&location={{ room.pk }}">
+                  <a class="new-timeslot-link" href="{% url "ietf.meeting.views.create_timeslot" num=meeting.number %}?day={{ day.toordinal }}&date={{ day|date:"Y-m-d" }}&location={{ room.pk }}&time={{ slot.time|date:'H:i' }}&duration={{ slot.duration }}">
                     <span class="fa fa-plus-square"></span>
                   </a>
                 {% endif %}
               {% endwith %}{% endfor %}
               </td>
-            {% endfor %}
+            {% endwith %}{% endfor %}
           {% endif %}
         </tr>
       {% endfor %}
