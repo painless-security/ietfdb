@@ -26,6 +26,8 @@
   .tstable th { white-space: nowrap;}
   .tstable td { white-space: nowrap;}
   .capacity { font-size:80%; font-weight: normal;}
+
+  a.new-timeslot-link { color: lightgray; font-size: large;}
 {% endblock %}
 
 {% block content %}
@@ -109,9 +111,15 @@
             {% for day in time_slices %}
               {% for slice in date_slices|lookup:day %}{% with cell_ts=ts_list.popleft %}
                 <td class="tscell {% if cell_ts|length > 1 %}timeslot-collision {% endif %}{% for ts in cell_ts %}tstype_{{ ts.type.slug }} {% endfor %}">
-                {% for ts in cell_ts %}
-                  {% include 'meeting/timeslot_edit_timeslot.html' with ts=ts in_use=ts_with_any_assignments in_official_use=ts_with_official_assignments only %}
-                {% endfor %}
+                {% if cell_ts %}
+                  {% for ts in cell_ts %}
+                    {% include 'meeting/timeslot_edit_timeslot.html' with ts=ts in_use=ts_with_any_assignments in_official_use=ts_with_official_assignments only %}
+                  {% endfor %}
+                {% else %}
+                  <a class="new-timeslot-link" href="{% url "ietf.meeting.views.create_timeslot" num=meeting.number %}?day={{ day.toordinal }}&date={{ day|date:"Y-m-d" }}&location={{ room.pk }}">
+                    <span class="fa fa-plus-square"></span>
+                  </a>
+                {% endif %}
               {% endwith %}{% endfor %}
               </td>
             {% endfor %}
