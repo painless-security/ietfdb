@@ -274,6 +274,8 @@ def confirm(request, acronym):
     '''
     # FIXME: this should be using form.is_valid/form.cleaned_data - invalid input will make it crash
     group = get_object_or_404(Group,acronym=acronym)
+    if len(group.features.session_purposes) == 0:
+        raise Http404(f'Cannot request sessions for group "{acronym}"')
     meeting = get_meeting(days=14)
     FormClass = get_session_form_class()
 
@@ -412,6 +414,8 @@ def edit(request, acronym, num=None):
     This view allows the user to edit details of the session request
     '''
     meeting = get_meeting(num,days=14)
+    if len(group.features.session_purposes) == 0:
+        raise Http404(f'Cannot request sessions for group "{acronym}"')
     group = get_object_or_404(Group, acronym=acronym)
     sessions = add_event_info_to_session_qs(
         Session.objects.filter(group=group, meeting=meeting)
@@ -638,6 +642,8 @@ def new(request, acronym):
     to create the request.
     '''
     group = get_object_or_404(Group, acronym=acronym)
+    if len(group.features.session_purposes) == 0:
+        raise Http404(f'Cannot request sessions for group "{acronym}"')
     meeting = get_meeting(days=14)
     session_conflicts = dict(inbound=inbound_session_conflicts_as_string(group, meeting))
     is_virtual = meeting.number in settings.SECR_VIRTUAL_MEETINGS,
