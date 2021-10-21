@@ -115,11 +115,11 @@
                   {% for ts in cell_ts %}
                     {% include 'meeting/timeslot_edit_timeslot.html' with ts=ts in_use=ts_with_any_assignments in_official_use=ts_with_official_assignments only %}
                   {% endfor %}
-                {% else %}
-                  <a class="new-timeslot-link" href="{% url "ietf.meeting.views.create_timeslot" num=meeting.number %}?day={{ day.toordinal }}&date={{ day|date:"Y-m-d" }}&location={{ room.pk }}&time={{ slot.time|date:'H:i' }}&duration={{ slot.duration }}">
-                    <span class="fa fa-plus-square"></span>
-                  </a>
                 {% endif %}
+                <a class="new-timeslot-link {% if cell_ts %}hidden{% endif %}"
+                   href="{% url "ietf.meeting.views.create_timeslot" num=meeting.number %}?day={{ day.toordinal }}&date={{ day|date:"Y-m-d" }}&location={{ room.pk }}&time={{ slot.time|date:'H:i' }}&duration={{ slot.duration }}">
+                  <span class="fa fa-plus-square"></span>
+                </a>
               {% endwith %}{% endfor %}
               </td>
             {% endwith %}{% endfor %}
@@ -402,7 +402,12 @@
       .error(function(jqXHR, textStatus) {
         displayError('Error deleting timeslot: ' + jqXHR.responseText)
       })
-      .done(function () {timeslotElts.forEach(tse => tse.parentNode.removeChild(tse))})
+      .done(function () {timeslotElts.forEach(
+        tse => {
+          tse.closest('td.tscell').querySelector('.new-timeslot-link').classList.remove('hidden');
+          tse.parentNode.removeChild(tse);
+        }
+      )})
       .always(function () {deleteModal.modal('hide')});
     }
 
