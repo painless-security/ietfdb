@@ -12,7 +12,7 @@ def forward(apps, schema_editor):
     for order, (slug, name, desc, tstypes) in enumerate((
             ('regular', 'Regular', 'Regular group session', ['regular']),
             ('tutorial', 'Tutorial', 'Tutorial or training session', ['other']),
-            ('officehours', 'Office hours', 'Office hours session', ['other']),
+            ('office_hours', 'Office hours', 'Office hours session', ['other']),
             ('coding', 'Coding', 'Coding session', ['other']),
             ('admin', 'Administrative', 'Meeting administration', ['other', 'reg']),
             ('social', 'Social', 'Social event or activity', ['break', 'other']),
