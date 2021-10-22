@@ -78,6 +78,8 @@ class SessionPurposeName(NameModel):
         help_text='Allowed TimeSlotTypeNames',
         validators=[JSONForeignKeyListValidator('name.TimeSlotTypeName')],
     )
+    on_agenda = models.BooleanField(default=True, help_text='Are sessions of this purpose visible on the agenda by default?')
+
 class TimeSlotTypeName(NameModel):
     """Session, Break, Registration, Other, Reserved, unavail"""
     private = models.BooleanField(default=False, help_text="Whether sessions of this type should be kept off the public agenda")
