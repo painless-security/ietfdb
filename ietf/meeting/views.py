@@ -1584,6 +1584,7 @@ def get_assignments_for_agenda(schedule):
     return SchedTimeSessAssignment.objects.filter(
         schedule__in=[schedule, schedule.base],
         timeslot__type__private=False,
+        session__on_agenda=True,
     )
 
 

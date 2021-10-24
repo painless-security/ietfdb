@@ -600,8 +600,20 @@ class SessionDetailsForm(forms.ModelForm):
 
     class Meta:
         model = Session
-        fields = ('name', 'short', 'purpose', 'type', 'requested_duration', 'remote_instructions')
+        fields = (
+            'name', 'short', 'purpose', 'type', 'requested_duration',
+            'on_agenda', 'remote_instructions', 'attendees',
+        )
         labels = {'requested_duration': 'Length'}
+
+    def clean(self):
+        super().clean()
+        if 'purpose' in self.cleaned_data and (
+        'purpose' in self.changed_data or self.instance.pk is None
+        ):
+            self.cleaned_data['on_agenda'] = self.cleaned_data['purpose'].on_agenda
+
+        return self.cleaned_data
 
     class Media:
         js = ('ietf/js/meeting/session_details_form.js',)

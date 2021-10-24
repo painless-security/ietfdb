@@ -318,18 +318,9 @@ def confirm(request, acronym):
         add_event_info_to_session_qs(Session.objects.filter(group=group, meeting=meeting)).filter(current_status__in=['canceled', 'notmeet']).delete()
         num_sessions = int(form.cleaned_data['num_session']) + (1 if form.cleaned_data['third_session'] else 0)
         # Create new session records
-        # Should really use sess_form.save(), but needs data from the main form as well. Need to sort that out properly.
+        form.session_forms.save()
         for count, sess_form in enumerate(form.session_forms[:num_sessions]):
-            new_session = Session.objects.create(
-                meeting=meeting,
-                group=group,
-                attendees=form.cleaned_data['attendees'],
-                requested_duration=sess_form.cleaned_data['requested_duration'],
-                name=sess_form.cleaned_data['name'],
-                comments=form.cleaned_data['comments'],
-                purpose=sess_form.cleaned_data['purpose'],
-                type=sess_form.cleaned_data['type'],
-            )
+            new_session = sess_form.instance
             SchedulingEvent.objects.create(
                 session=new_session,
                 status=SessionStatusName.objects.get(slug=status_slug_for_new_session(new_session, count)),
@@ -344,6 +335,7 @@ def confirm(request, acronym):
                 groups_split = form.cleaned_data.get('joint_with_groups').replace(',',' ').split()
                 joint = Group.objects.filter(acronym__in=groups_split)
                 new_session.joint_with_groups.set(joint)
+            new_session.save()
             session_changed(new_session)
 
         # write constraint records
@@ -414,9 +406,9 @@ def edit(request, acronym, num=None):
     This view allows the user to edit details of the session request
     '''
     meeting = get_meeting(num,days=14)
+    group = get_object_or_404(Group, acronym=acronym)
     if len(group.features.session_purposes) == 0:
         raise Http404(f'Cannot request sessions for group "{acronym}"')
-    group = get_object_or_404(Group, acronym=acronym)
     sessions = add_event_info_to_session_qs(
         Session.objects.filter(group=group, meeting=meeting)
     ).filter(
