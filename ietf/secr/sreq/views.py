@@ -60,8 +60,13 @@ def get_initial_session(sessions, prune_conflicts=False):
     constraints = group.constraint_source_set.filter(meeting=meeting)  # all constraints with this group as source
     conflicts = constraints.filter(name__is_group_conflict=True)  # only the group conflict constraints
 
-    # even if there are three sessions requested, the old form has 2 in this field
-    initial['num_session'] = min(sessions.count(), 2) if group.features.acts_like_wg else sessions.count()
+    if group.features.acts_like_wg:
+        # even if there are three sessions requested, the old form has 2 in this field
+        initial['num_session'] = min(sessions.count(), 2)
+        initial['third_session'] = sessions.count() > 2
+    else:
+        initial['num_session'] = sessions.count()
+        initial['third_session'] = False
     initial['attendees'] = sessions[0].attendees
 
     def valid_conflict(conflict):
