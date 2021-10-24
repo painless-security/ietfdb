@@ -450,12 +450,14 @@ def edit(request, acronym, num=None):
             if form.has_changed():
                 changed_session_forms = [sf for sf in form.session_forms.forms_to_keep if sf.has_changed()]
                 form.session_forms.save()
-                for n, new_session in enumerate(form.session_forms.created_instances):
-                    SchedulingEvent.objects.create(
-                        session=new_session,
-                        status_id=status_slug_for_new_session(new_session, n),
-                        by=request.user.person,
-                    )
+                for n, subform in enumerate(form.session_forms):
+                    session = subform.instance
+                    if session in form.session_forms.created_instances:
+                        SchedulingEvent.objects.create(
+                            session=session,
+                            status_id=status_slug_for_new_session(session, n),
+                            by=request.user.person,
+                        )
                 for sf in changed_session_forms:
                     session_changed(sf.instance)
 
