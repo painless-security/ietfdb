@@ -619,6 +619,15 @@ class SessionDetailsForm(forms.ModelForm):
         js = ('ietf/js/meeting/session_details_form.js',)
 
 
+class SessionEditForm(SessionDetailsForm):
+    """Form to edit an existing session"""
+    def __init__(self, instance, *args, **kwargs):
+        kw_group = kwargs.pop('group', None)
+        if kw_group is not None and kw_group != instance.group:
+            raise ValueError('Session group does not match group keyword')
+        super().__init__(instance=instance, group=instance.group, *args, **kwargs)
+
+
 class SessionDetailsInlineFormset(forms.BaseInlineFormSet):
     def __init__(self, group, meeting, queryset=None, *args, **kwargs):
         self._meeting = meeting

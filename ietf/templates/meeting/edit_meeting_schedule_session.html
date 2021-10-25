@@ -84,5 +84,7 @@
     {% for s in session.other_sessions %}
       <div class="other-session" data-othersessionid="{{ s.pk }}"><i class="fa fa-calendar"></i> Other session <span class="time" data-scheduled="scheduled: {time}" data-notscheduled="not yet scheduled"></span></div>
     {% endfor %}
+
+    <a href="{% url 'ietf.meeting.views.edit_session' session_id=session.pk %}">Edit session</a>
   </div>
 </div>

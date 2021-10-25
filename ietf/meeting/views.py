@@ -58,7 +58,7 @@ from ietf.mailtrigger.utils import gather_address_lists
 from ietf.meeting.models import Meeting, Session, Schedule, FloorPlan, SessionPresentation, TimeSlot, SlideSubmission
 from ietf.meeting.models import SessionStatusName, SchedulingEvent, SchedTimeSessAssignment, Room, TimeSlotTypeName
 from ietf.meeting.forms import ( CustomDurationField, SwapDaysForm, SwapTimeslotsForm,
-                                 TimeSlotCreateForm, TimeSlotEditForm )
+                                 TimeSlotCreateForm, TimeSlotEditForm, SessionEditForm )
 from ietf.meeting.helpers import get_areas, get_person_by_email, get_schedule_by_name
 from ietf.meeting.helpers import build_all_agenda_slices, get_wg_name_list
 from ietf.meeting.helpers import get_all_assignments_from_schedule
@@ -4098,6 +4098,24 @@ def create_timeslot(request, num):
         status=400 if form.errors else 200,
     )
 
+
+@role_required('Secretariat')
+def edit_session(request, session_id):
+    session = get_object_or_404(Session, pk=session_id)
+    if request.method == 'POST':
+        form = SessionEditForm(instance=session, data=request.POST)
+        if form.is_valid():
+            form.save()
+            return HttpResponseRedirect(
+                reverse('ietf.meeting.views.edit_meeting_schedule',
+                        kwargs={'num': form.instance.meeting.number}))
+    else:
+        form = SessionEditForm(instance=session)
+    return render(
+        request,
+        'meeting/edit_session.html',
+        {'session': session, 'form': form},
+    )
 
 @role_required('Secretariat')
 def request_minutes(request, num=None):
