@@ -387,13 +387,15 @@ class PersonalApiKey(models.Model):
         assert isinstance(s, bytes)
         try:
             key = base64.urlsafe_b64decode(s)
+            id, salt, hash = struct.unpack(KEY_STRUCT, key)
         except Exception:
             return None
-        id, salt, hash = struct.unpack(KEY_STRUCT, key)
         k = cls.objects.filter(id=id)
         if not k.exists():
             return None
         k = k.first()
+        if not k.valid:
+            return None
         check = hashlib.sha256()
         for v in (str(id), str(k.person.id), k.created.isoformat(), k.endpoint, str(k.valid), salt, settings.SECRET_KEY):
             v = smart_bytes(v)
