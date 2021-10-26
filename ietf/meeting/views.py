@@ -1583,7 +1583,6 @@ def get_assignments_for_agenda(schedule):
     """Get queryset containing assignments to show on the agenda"""
     return SchedTimeSessAssignment.objects.filter(
         schedule__in=[schedule, schedule.base],
-        timeslot__type__private=False,
         session__on_agenda=True,
     )
 
@@ -1939,7 +1938,7 @@ def week_view(request, num=None, name=None, owner=None):
 
     filtered_assignments = SchedTimeSessAssignment.objects.filter(
         schedule__in=[schedule, schedule.base],
-        timeslot__type__private=False,
+        session__on_agenda=True,
     )
     filtered_assignments = preprocess_assignments_for_agenda(filtered_assignments, meeting)
     AgendaKeywordTagger(assignments=filtered_assignments).apply()
@@ -2122,7 +2121,7 @@ def agenda_ical(request, num=None, name=None, acronym=None, session_id=None):
 
     assignments = SchedTimeSessAssignment.objects.filter(
         schedule__in=[schedule, schedule.base],
-        timeslot__type__private=False,
+        session__on_agenda=True,
     )
     assignments = preprocess_assignments_for_agenda(assignments, meeting)
     AgendaKeywordTagger(assignments=assignments).apply()
@@ -2160,7 +2159,7 @@ def agenda_json(request, num=None):
     parent_acronyms = set()
     assignments = SchedTimeSessAssignment.objects.filter(
         schedule__in=[meeting.schedule, meeting.schedule.base if meeting.schedule else None],
-        timeslot__type__private=False,
+        session__on_agenda=True,
     ).exclude(
         session__type__in=['break', 'reg']
     )
