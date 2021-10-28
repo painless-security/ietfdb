@@ -12,7 +12,7 @@ def forward(apps, schema_editor):
     for order, (slug, name, desc, tstypes, on_agenda) in enumerate((
             ('regular', 'Regular', 'Regular group session', ['regular'], True),
             ('tutorial', 'Tutorial', 'Tutorial or training session', ['other'], True),
-            ('office_hours', 'Office hours', 'Office hours session', ['other'], True),
+            ('officehours', 'Office hours', 'Office hours session', ['other'], True),
             ('coding', 'Coding', 'Coding session', ['other'], True),
             ('admin', 'Administrative', 'Meeting administration', ['other', 'reg'], True),
             ('social', 'Social', 'Social event or activity', ['break', 'other'], True),
@@ -44,7 +44,7 @@ def reverse(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('name', '0035_sessionpurposename'),
+        ('name', '0034_sessionpurposename'),
     ]
 
     operations = [

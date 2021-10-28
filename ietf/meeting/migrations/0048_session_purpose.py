@@ -8,7 +8,7 @@ import ietf.utils.models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('name', '0036_populate_sessionpurposename'),
+        ('name', '0035_populate_sessionpurposename'),
         ('meeting', '0047_auto_20210906_0702'),
     ]
 
