@@ -642,8 +642,7 @@ class AgendaKeywordTagger(AgendaKeywordTool):
         Keywords are all lower case.
         """
         for a in self.assignments:
-            a.filter_keywords = {a.slot_type().slug.lower()}
-            a.filter_keywords.update(self._filter_keywords_for_assignment(a))
+            a.filter_keywords = self._filter_keywords_for_assignment(a)
             a.filter_keywords = sorted(list(a.filter_keywords))
 
     def _tag_sessions_with_filter_keywords(self):
@@ -654,14 +653,17 @@ class AgendaKeywordTagger(AgendaKeywordTool):
     @staticmethod
     def _legacy_extra_session_keywords(session):
         """Get extra keywords for a session at a legacy meeting"""
+        extra = []
+        if session.type_id == 'plenary':
+            extra.append('plenary')
         office_hours_match = re.match(r'^ *\w+(?: +\w+)* +office hours *$', session.name, re.IGNORECASE)
         if office_hours_match is not None:
             suffix = 'officehours'
-            return [
+            extra.extend([
                 'officehours',
                 session.name.lower().replace(' ', '')[:-len(suffix)] + '-officehours',
-            ]
-        return []
+            ])
+        return extra
 
     def _filter_keywords_for_session(self, session):
         keywords = set()

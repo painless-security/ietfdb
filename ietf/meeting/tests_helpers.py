@@ -9,7 +9,6 @@ from ietf.group.models import Group
 from ietf.meeting.factories import SessionFactory, MeetingFactory, TimeSlotFactory
 from ietf.meeting.helpers import AgendaFilterOrganizer, AgendaKeywordTagger
 from ietf.meeting.test_data import make_meeting_test_data
-from ietf.name.models import SessionPurposeName
 from ietf.utils.test_utils import TestCase
 
 
@@ -24,7 +23,6 @@ class AgendaKeywordTaggerTests(TestCase):
         """
         # decide whether meeting should use legacy keywords (for office hours)
         legacy_keywords = meeting_num <= 111
-        session_purposes = ['none'] if legacy_keywords else ['regular', 'plenary']
 
         # create meeting and groups
         meeting = MeetingFactory(type_id='ietf', number=meeting_num)
@@ -45,73 +43,83 @@ class AgendaKeywordTaggerTests(TestCase):
             expected_group = group
             expected_area = group.parent
 
-        # create the ordinary sessions
-        for purpose in session_purposes:
-            for tstype in SessionPurposeName.objects.get(pk=purpose).timeslot_types:
-                sess = SessionFactory(
-                    group=group,
-                    meeting=meeting,
-                    purpose_id=purpose,
-                    type_id=tstype,
-                    add_to_schedule=False
-                )
-                sess.timeslotassignments.create(
-                    timeslot=TimeSlotFactory(meeting=meeting, type_id=tstype),
-                    schedule=meeting.schedule,
-                )
-
-        # Create an office hours session in the group's area (i.e., parent). Handle this separately
-        # from other session creation to test legacy office hours naming.
-        office_hours = SessionFactory(
-            name='some office hours',
-            group=Group.objects.get(acronym='iesg') if legacy_keywords else expected_area,
-            meeting=meeting,
-            purpose_id='none' if legacy_keywords else 'officehours',
-            type_id='other',
-            add_to_schedule=False,
-        )
-        office_hours.timeslotassignments.create(
-            timeslot=TimeSlotFactory(meeting=meeting, type_id=office_hours.type_id),
-            schedule=meeting.schedule,
-        )
+        # create sessions, etc
+        session_data = [
+            {
+                'description': 'regular wg session',
+                'session': SessionFactory(
+                    group=group, meeting=meeting, add_to_schedule=False,
+                    purpose_id='none' if legacy_keywords else 'regular',
+                    type_id='regular',
+                ),
+                'expected_keywords': {
+                    expected_group.acronym,
+                    expected_area.acronym,
+                    f'{expected_group.acronym}-sessa',
+                },
+            },
+            {
+                'description': 'plenary session',
+                'session': SessionFactory(
+                    group=group, meeting=meeting, add_to_schedule=False,
+                    name=f'{group.acronym} plenary',
+                    purpose_id='none' if legacy_keywords else 'plenary',
+                    type_id='plenary',
+                ),
+                'expected_keywords': {
+                    expected_group.acronym,
+                    expected_area.acronym,
+                    f'{expected_group.acronym}-sessb',
+                    'plenary',
+                    f'{group.acronym}-plenary',
+                },
+            },
+            {
+                'description': 'office hours session',
+                'session': SessionFactory(
+                    group=group, meeting=meeting, add_to_schedule=False,
+                    name=f'{group.acronym} office hours',
+                    purpose_id='none' if legacy_keywords else 'officehours',
+                    type_id='other',
+                ),
+                'expected_keywords': {
+                    expected_group.acronym,
+                    expected_area.acronym,
+                    f'{expected_group.acronym}-sessc',
+                    'officehours',
+                    f'{group.acronym}-officehours' if legacy_keywords else 'officehours',
+                    # officehours in prev line is a repeated value - since this is a set, it will be ignored
+                    f'{group.acronym}-office-hours',
+                },
+            }
+        ]
+        for sd in session_data:
+            sd['session'].timeslotassignments.create(
+                timeslot=TimeSlotFactory(meeting=meeting, type=sd['session'].type),
+                schedule=meeting.schedule,
+            )
 
         assignments = meeting.schedule.assignments.all()
-        orig_num_assignments = len(assignments)
 
-        # Set up historic groups if needed. We've already set the office hours group properly
-        # so skip that session. The expected_group will already have its historic_parent set
-        # if historic == 'parent'
+        # Set up historic groups if needed.
         if historic:
             for a in assignments:
-                if a.session != office_hours:
-                    a.session.historic_group = expected_group
+                a.session.historic_group = expected_group
 
         # Execute the method under test
         AgendaKeywordTagger(assignments=assignments).apply()
 
         # Assert expected results
-        self.assertEqual(len(assignments), orig_num_assignments, 'Should not change number of assignments')
 
-        for assignment in assignments:
-            expected_filter_keywords = {assignment.slot_type().slug, assignment.session.type.slug}
+        # check the assignment count - paranoid, but the method mutates its input so let's be careful
+        self.assertEqual(len(assignments), len(session_data), 'Should not change number of assignments')
 
-            if assignment.session == office_hours:
-                expected_filter_keywords.update([
-                    office_hours.group.acronym,
-                    'officehours',
-                    'some-officehours' if legacy_keywords else '{}-officehours'.format(expected_area.acronym),
-                ])
-            else:
-                expected_filter_keywords.update([
-                    expected_group.acronym,
-                    expected_area.acronym
-                ])
-                if bof:
-                    expected_filter_keywords.add('bof')
-                token = assignment.session.docname_token_only_for_multiple()
-                if token is not None:
-                    expected_filter_keywords.update([expected_group.acronym + "-" + token])
-
+        assignment_by_session_pk = {a.session.pk: a for a in assignments}
+        for sd in session_data:
+            assignment = assignment_by_session_pk[sd['session'].pk]
+            expected_filter_keywords = sd['expected_keywords']
+            if bof:
+                expected_filter_keywords.add('bof')
             self.assertCountEqual(
                 assignment.filter_keywords,
                 expected_filter_keywords,
