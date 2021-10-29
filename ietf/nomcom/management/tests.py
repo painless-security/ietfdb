@@ -4,7 +4,6 @@
 import mock
 
 from collections import namedtuple
-from textwrap import dedent
 
 from django.core.management import call_command
 from django.test.utils import override_settings

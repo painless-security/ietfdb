@@ -3,11 +3,11 @@
 
 import mock
 
-from django.core.management import call_command
+from django.core.management import call_command, CommandError
 from django.test import override_settings
 
 from ietf.utils.mail import outbox, empty_outbox
-from ietf.utils.management.base import EmailOnFailureCommand, CommandError
+from ietf.utils.management.base import EmailOnFailureCommand
 from ietf.utils.test_utils import TestCase
 
 

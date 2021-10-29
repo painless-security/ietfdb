@@ -6,8 +6,9 @@ import io
 import sys
 from textwrap import dedent
 
-from ietf.utils.management.base import EmailOnFailureCommand, CommandError
+from django.core.management import CommandError
 
+from ietf.utils.management.base import EmailOnFailureCommand
 from ietf.ipr.mail import process_response_email
 
 import debug                            # pyflakes:ignore

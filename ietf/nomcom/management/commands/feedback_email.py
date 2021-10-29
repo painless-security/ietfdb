@@ -6,8 +6,10 @@ import io
 import sys
 from textwrap import dedent
 
+from django.core.management import CommandError
+
 from ietf.utils.log import log
-from ietf.utils.management.base import EmailOnFailureCommand, CommandError
+from ietf.utils.management.base import EmailOnFailureCommand
 from ietf.nomcom.models import NomCom
 from ietf.nomcom.utils import create_feedback_email
 from ietf.nomcom.fields import EncryptedException

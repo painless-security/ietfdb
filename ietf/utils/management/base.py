@@ -6,7 +6,7 @@ from textwrap import dedent
 from traceback import format_exception, extract_tb
 
 from django.conf import settings
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand
 
 from ietf.utils.mail import send_smtp
 
