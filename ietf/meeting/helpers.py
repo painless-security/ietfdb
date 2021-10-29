@@ -336,7 +336,7 @@ class AgendaFilterOrganizer(AgendaKeywordTool):
     # group acronyms in this list will never be used as filter buttons
     exclude_acronyms = ('iesg', 'ietf', 'secretariat')
     # extra keywords to include in the no-heading column if they apply to any sessions
-    extra_labels = ('BoF', 'Plenary')
+    extra_labels = ('BoF',)
     # group types whose acronyms should be word-capitalized
     capitalized_group_types = ('team',)
     # group types whose acronyms should be all-caps
@@ -352,6 +352,8 @@ class AgendaFilterOrganizer(AgendaKeywordTool):
         # filled in when _organize_filters() is called
         self.filter_categories = None
         self.special_filters = None
+        if self._use_legacy_keywords():
+            self.extra_labels += ('Plenary',)  # need this when not using session purpose
 
     def get_non_area_keywords(self):
         """Get list of any 'non-area' (aka 'special') keywords
