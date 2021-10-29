@@ -256,7 +256,7 @@
             <div class="session-purpose-toggles">
               {% for purpose in session_purposes %}
                 <div>
-                  <label class="purpose-{{ purpose.slug }}"><input type="checkbox" checked value="{{ purpose.slug }}"> {{ purpose }}</label>
+                  <label class="purpose-{{ purpose.slug }}"><input type="checkbox" checked value="{% firstof purpose.slug 'none' %}"> {{ purpose }}</label>
                 </div>
               {% endfor %}
               <button type="button" class="btn btn-default select-all">Select all</button>
