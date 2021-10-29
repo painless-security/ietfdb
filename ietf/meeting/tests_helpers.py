@@ -9,6 +9,7 @@ from ietf.group.models import Group
 from ietf.meeting.factories import SessionFactory, MeetingFactory, TimeSlotFactory
 from ietf.meeting.helpers import AgendaFilterOrganizer, AgendaKeywordTagger
 from ietf.meeting.test_data import make_meeting_test_data
+from ietf.name.models import SessionPurposeName
 from ietf.utils.test_utils import TestCase
 
 
@@ -21,9 +22,9 @@ class AgendaKeywordTaggerTests(TestCase):
         The historic param can be None, group, or parent, to specify whether to test
         with no historic_group, a historic_group but no historic_parent, or both.
         """
-        session_types = ['regular', 'plenary']
         # decide whether meeting should use legacy keywords (for office hours)
         legacy_keywords = meeting_num <= 111
+        session_purposes = ['none'] if legacy_keywords else ['regular', 'plenary']
 
         # create meeting and groups
         meeting = MeetingFactory(type_id='ietf', number=meeting_num)
@@ -45,12 +46,19 @@ class AgendaKeywordTaggerTests(TestCase):
             expected_area = group.parent
 
         # create the ordinary sessions
-        for session_type in session_types:
-            sess = SessionFactory(group=group, meeting=meeting, type_id=session_type, add_to_schedule=False)
-            sess.timeslotassignments.create(
-                timeslot=TimeSlotFactory(meeting=meeting, type_id=session_type),
-                schedule=meeting.schedule,
-            )
+        for purpose in session_purposes:
+            for tstype in SessionPurposeName.objects.get(pk=purpose).timeslot_types:
+                sess = SessionFactory(
+                    group=group,
+                    meeting=meeting,
+                    purpose_id=purpose,
+                    type_id=tstype,
+                    add_to_schedule=False
+                )
+                sess.timeslotassignments.create(
+                    timeslot=TimeSlotFactory(meeting=meeting, type_id=tstype),
+                    schedule=meeting.schedule,
+                )
 
         # Create an office hours session in the group's area (i.e., parent). Handle this separately
         # from other session creation to test legacy office hours naming.
@@ -58,7 +66,8 @@ class AgendaKeywordTaggerTests(TestCase):
             name='some office hours',
             group=Group.objects.get(acronym='iesg') if legacy_keywords else expected_area,
             meeting=meeting,
-            type_id='other' if legacy_keywords else 'officehours',
+            purpose_id='none' if legacy_keywords else 'officehours',
+            type_id='other',
             add_to_schedule=False,
         )
         office_hours.timeslotassignments.create(
