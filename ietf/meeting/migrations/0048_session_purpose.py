@@ -16,6 +16,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='session',
             name='purpose',
-            field=ietf.utils.models.ForeignKey(help_text='Purpose of the session', null=True, on_delete=django.db.models.deletion.CASCADE, to='name.SessionPurposeName'),
+            field=ietf.utils.models.ForeignKey(default='none', help_text='Purpose of the session', on_delete=django.db.models.deletion.CASCADE, to='name.SessionPurposeName'),
+            preserve_default=False,
         ),
     ]

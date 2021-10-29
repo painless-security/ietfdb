@@ -621,7 +621,7 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
 
             s.scheduling_label = "???"
             s.purpose_label = None
-            if (s.purpose is None or s.purpose.slug == 'regular') and s.group:
+            if (s.purpose.slug in ('none', 'regular')) and s.group:
                 s.scheduling_label = s.group.acronym
                 s.purpose_label = 'BoF' if s.group.is_bof() else s.group.type.name
             else:
@@ -1021,9 +1021,6 @@ def edit_meeting_schedule(request, num=None, owner=None, name=None):
             p.light_scheduling_color = "rgb({}, {}, {})".format(*tuple(int(round((0.9 + 0.1 * x) * 255)) for x in rgb_color))
 
     session_purposes = sorted(set(s.purpose for s in sessions if s.purpose), key=lambda p: p.name)
-    if any(s.purpose is None for s in sessions):
-        session_purposes.append(None)
-
     timeslot_types = sorted(
         set(
             s.type for s in sessions if s.type

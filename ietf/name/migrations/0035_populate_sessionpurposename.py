@@ -9,17 +9,18 @@ def forward(apps, schema_editor):
     SessionPurposeName = apps.get_model('name', 'SessionPurposeName')
     TimeSlotTypeName = apps.get_model('name', 'TimeSlotTypeName')
 
-    for order, (slug, name, desc, tstypes, on_agenda) in enumerate((
-            ('regular', 'Regular', 'Regular group session', ['regular'], True),
-            ('tutorial', 'Tutorial', 'Tutorial or training session', ['other'], True),
-            ('officehours', 'Office hours', 'Office hours session', ['other'], True),
-            ('coding', 'Coding', 'Coding session', ['other'], True),
-            ('admin', 'Administrative', 'Meeting administration', ['other', 'reg'], True),
-            ('social', 'Social', 'Social event or activity', ['break', 'other'], True),
-            ('plenary', 'Plenary', 'Plenary session', ['plenary'], True),
-            ('presentation', 'Presentation', 'Presentation session', ['other', 'regular'], True),
-            ('open_meeting', 'Open meeting', 'Open meeting', ['other'], True),
-            ('closed_meeting', 'Closed meeting', 'Closed meeting', ['other', 'regular'], False),
+    for order, (slug, name, desc, tstypes, on_agenda, used) in enumerate((
+            ('none', 'None', 'Value not set (do not use for new sessions)', [], True, False),
+            ('regular', 'Regular', 'Regular group session', ['regular'], True, True),
+            ('tutorial', 'Tutorial', 'Tutorial or training session', ['other'], True, True),
+            ('officehours', 'Office hours', 'Office hours session', ['other'], True, True),
+            ('coding', 'Coding', 'Coding session', ['other'], True, True),
+            ('admin', 'Administrative', 'Meeting administration', ['other', 'reg'], True, True),
+            ('social', 'Social', 'Social event or activity', ['break', 'other'], True, True),
+            ('plenary', 'Plenary', 'Plenary session', ['plenary'], True, True),
+            ('presentation', 'Presentation', 'Presentation session', ['other', 'regular'], True, True),
+            ('open_meeting', 'Open meeting', 'Open meeting', ['other'], True, True),
+            ('closed_meeting', 'Closed meeting', 'Closed meeting', ['other', 'regular'], False, True),
     )):
         # verify that we're not about to use an invalid type
         for ts_type in tstypes:
@@ -29,7 +30,7 @@ def forward(apps, schema_editor):
             slug=slug,
             name=name,
             desc=desc,
-            used=True,
+            used=used,
             order=order,
             timeslot_types = tstypes,
             on_agenda=on_agenda,
