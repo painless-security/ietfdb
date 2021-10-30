@@ -28,7 +28,7 @@ def make_interim_meeting(group,date,status='sched'):
         attendees=10,
         requested_duration=datetime.timedelta(minutes=20),
         remote_instructions='http://webex.com',
-        type_id='regular')
+        type_id='regular', purpose_id='regular')
     SchedulingEvent.objects.create(session=session, status_id=status, by=system_person)
     slot = TimeSlot.objects.create(
         meeting=meeting,
@@ -123,7 +123,7 @@ def make_meeting_test_data(meeting=None, create_interims=False):
     mars = Group.objects.get(acronym='mars')
     mars_session = Session.objects.create(meeting=meeting, group=mars,
                                           attendees=10, requested_duration=datetime.timedelta(minutes=50),
-                                          type_id='regular')
+                                          type_id='regular', purpose_id='regular')
     SchedulingEvent.objects.create(session=mars_session, status_id='schedw', by=system_person)
     SchedTimeSessAssignment.objects.create(timeslot=slot1, session=mars_session, schedule=schedule)
     SchedTimeSessAssignment.objects.create(timeslot=slot2, session=mars_session, schedule=unofficial_schedule)
@@ -132,7 +132,7 @@ def make_meeting_test_data(meeting=None, create_interims=False):
     ames_session = Session.objects.create(meeting=meeting, group=Group.objects.get(acronym="ames"),
                                           attendees=10,
                                           requested_duration=datetime.timedelta(minutes=60),
-                                          type_id='regular')
+                                          type_id='regular', purpose_id='regular')
     SchedulingEvent.objects.create(session=ames_session, status_id='schedw', by=system_person)
     SchedTimeSessAssignment.objects.create(timeslot=slot2, session=ames_session, schedule=schedule)
     SchedTimeSessAssignment.objects.create(timeslot=slot1, session=ames_session, schedule=unofficial_schedule)
@@ -141,7 +141,7 @@ def make_meeting_test_data(meeting=None, create_interims=False):
     iesg_session = Session.objects.create(meeting=meeting, group=Group.objects.get(acronym="iesg"),
                                           name="IESG Breakfast", attendees=25,
                                           requested_duration=datetime.timedelta(minutes=60),
-                                          type_id="lead")
+                                          type_id="lead", purpose_id='closed_meeting')
     SchedulingEvent.objects.create(session=iesg_session, status_id='schedw', by=system_person)
     SchedTimeSessAssignment.objects.create(timeslot=breakfast_slot, session=iesg_session, schedule=schedule)
     # No breakfast on unofficial schedule
@@ -150,7 +150,7 @@ def make_meeting_test_data(meeting=None, create_interims=False):
     reg_session = Session.objects.create(meeting=meeting, group=Group.objects.get(acronym="secretariat"),
                                          name="Registration", attendees=250,
                                          requested_duration=datetime.timedelta(minutes=480),
-                                         type_id="reg")
+                                         type_id="reg", purpose_id='admin')
     SchedulingEvent.objects.create(session=reg_session, status_id='schedw', by=system_person)
     SchedTimeSessAssignment.objects.create(timeslot=reg_slot, session=reg_session, schedule=base_schedule)
     
@@ -158,7 +158,7 @@ def make_meeting_test_data(meeting=None, create_interims=False):
     break_session = Session.objects.create(meeting=meeting, group=Group.objects.get(acronym="secretariat"),
                                            name="Morning Break", attendees=250,
                                            requested_duration=datetime.timedelta(minutes=30),
-                                           type_id="break")
+                                           type_id="break", purpose_id='social')
     SchedulingEvent.objects.create(session=break_session, status_id='schedw', by=system_person)
     SchedTimeSessAssignment.objects.create(timeslot=break_slot, session=break_session, schedule=base_schedule)
 
@@ -166,7 +166,7 @@ def make_meeting_test_data(meeting=None, create_interims=False):
     plenary_session = Session.objects.create(meeting=meeting, group=Group.objects.get(acronym="ietf"),
                                              name="IETF Plenary", attendees=250,
                                              requested_duration=datetime.timedelta(minutes=60),
-                                             type_id="plenary")
+                                             type_id="plenary", purpose_id='plenary')
     SchedulingEvent.objects.create(session=plenary_session, status_id='schedw', by=system_person)
     SchedTimeSessAssignment.objects.create(timeslot=plenary_slot, session=plenary_session, schedule=schedule)
     

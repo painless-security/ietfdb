@@ -2,12 +2,14 @@
 # -*- coding: utf-8 -*-
 import copy
 
+from django.conf import settings
 from django.test import override_settings
 
 from ietf.group.factories import GroupFactory
 from ietf.group.models import Group
 from ietf.meeting.factories import SessionFactory, MeetingFactory, TimeSlotFactory
 from ietf.meeting.helpers import AgendaFilterOrganizer, AgendaKeywordTagger
+from ietf.meeting.models import SchedTimeSessAssignment
 from ietf.meeting.test_data import make_meeting_test_data
 from ietf.utils.test_utils import TestCase
 
@@ -148,8 +150,19 @@ class AgendaKeywordTaggerTests(TestCase):
 
 class AgendaFilterOrganizerTests(TestCase):
     def test_get_filter_categories(self):
+        self.do_get_filter_categories_test(False)
+
+    def test_get_legacy_filter_categories(self):
+        self.do_get_filter_categories_test(True)
+
+    def do_get_filter_categories_test(self, legacy):
         # set up
         meeting = make_meeting_test_data()
+        if legacy:
+            meeting.session_set.all().update(purpose_id='none')  # legacy meetings did not have purposes
+        else:
+            meeting.number = str(settings.MEETING_LEGACY_OFFICE_HOURS_END + 1)
+            meeting.save()
 
         # create extra groups for testing
         iab = Group.objects.get(acronym='iab')
@@ -164,55 +177,97 @@ class AgendaFilterOrganizerTests(TestCase):
         # office hours session
         SessionFactory(
             group=Group.objects.get(acronym='farfut'),
+            purpose_id='officehours' if not legacy else 'none',
+            type_id='other',
             name='FARFUT office hours',
             meeting=meeting
         )
 
-        expected = [
-            [
-                # area category
-                {'label': 'FARFUT', 'keyword': 'farfut', 'is_bof': False,
-                 'children': [
-                     {'label': 'ames', 'keyword': 'ames', 'is_bof': False},
-                     {'label': 'mars', 'keyword': 'mars', 'is_bof': False},
-                 ]},
-            ],
-            [
-                # non-area category
-                {'label': 'IAB', 'keyword': 'iab', 'is_bof': False,
-                 'children': [
-                     {'label': iab_child.acronym, 'keyword': iab_child.acronym, 'is_bof': False},
-                 ]},
-                {'label': 'IRTF', 'keyword': 'irtf', 'is_bof': False,
-                 'children': [
-                     {'label': irtf_child.acronym, 'keyword': irtf_child.acronym, 'is_bof': True},
-                 ]},
-            ],
-            [
-                # non-group category
-                {'label': 'Office Hours', 'keyword': 'officehours', 'is_bof': False,
-                 'children': [
-                     {'label': 'FARFUT', 'keyword': 'farfut-officehours', 'is_bof': False}
-                 ]},
-                {'label': None, 'keyword': None,'is_bof': False,
-                 'children': [
-                     {'label': 'BoF', 'keyword': 'bof', 'is_bof': False},
-                     {'label': 'Plenary', 'keyword': 'plenary', 'is_bof': False},
-                 ]},
-            ],
-        ]
-
-        # when using sessions instead of assignments, won't get timeslot-type based filters
-        expected_with_sessions = copy.deepcopy(expected)
-        expected_with_sessions[-1].pop(0)  # pops 'office hours' column
-
+        if legacy:
+            expected = [
+                [
+                    # area category
+                    {'label': 'FARFUT', 'keyword': 'farfut', 'is_bof': False, 'toggled_by': [],
+                     'children': [
+                         {'label': 'ames', 'keyword': 'ames', 'is_bof': False, 'toggled_by': ['farfut']},
+                         {'label': 'mars', 'keyword': 'mars', 'is_bof': False, 'toggled_by': ['farfut']},
+                     ]},
+                ],
+                [
+                    # non-area category
+                    {'label': 'IAB', 'keyword': 'iab', 'is_bof': False, 'toggled_by': [],
+                     'children': [
+                         {'label': iab_child.acronym, 'keyword': iab_child.acronym, 'is_bof': False, 'toggled_by': ['iab']},
+                     ]},
+                    {'label': 'IRTF', 'keyword': 'irtf', 'is_bof': False, 'toggled_by': [],
+                     'children': [
+                         {'label': irtf_child.acronym, 'keyword': irtf_child.acronym, 'is_bof': True, 'toggled_by': ['bof', 'irtf']},
+                     ]},
+                ],
+                [
+                    # non-group category
+                    {'label': 'Office Hours', 'keyword': 'officehours', 'is_bof': False, 'toggled_by': [],
+                     'children': [
+                         {'label': 'FARFUT', 'keyword': 'farfut-officehours', 'is_bof': False, 'toggled_by': ['officehours', 'farfut']}
+                     ]},
+                    {'label': None, 'keyword': None,'is_bof': False, 'toggled_by': [],
+                     'children': [
+                         {'label': 'BoF', 'keyword': 'bof', 'is_bof': False, 'toggled_by': []},
+                         {'label': 'Plenary', 'keyword': 'plenary', 'is_bof': False, 'toggled_by': []},
+                     ]},
+                ],
+            ]
+        else:
+            expected = [
+                [
+                    # area category
+                    {'label': 'FARFUT', 'keyword': 'farfut', 'is_bof': False, 'toggled_by': [],
+                     'children': [
+                         {'label': 'ames', 'keyword': 'ames', 'is_bof': False, 'toggled_by': ['farfut']},
+                         {'label': 'mars', 'keyword': 'mars', 'is_bof': False, 'toggled_by': ['farfut']},
+                     ]},
+                ],
+                [
+                    # non-area category
+                    {'label': 'IAB', 'keyword': 'iab', 'is_bof': False, 'toggled_by': [],
+                     'children': [
+                         {'label': iab_child.acronym, 'keyword': iab_child.acronym, 'is_bof': False, 'toggled_by': ['iab']},
+                     ]},
+                    {'label': 'IRTF', 'keyword': 'irtf', 'is_bof': False, 'toggled_by': [],
+                     'children': [
+                         {'label': irtf_child.acronym, 'keyword': irtf_child.acronym, 'is_bof': True, 'toggled_by': ['bof', 'irtf']},
+                     ]},
+                ],
+                [
+                    # non-group category
+                    {'label': 'Administrative', 'keyword': 'admin', 'is_bof': False, 'toggled_by': [],
+                     'children': [
+                         {'label': 'Registration', 'keyword': 'registration', 'is_bof': False, 'toggled_by': ['admin', 'secretariat']},
+                     ]},
+                    {'label': 'Closed meeting', 'keyword': 'closed_meeting', 'is_bof': False, 'toggled_by': [],
+                     'children': [
+                         {'label': 'IESG Breakfast', 'keyword': 'iesg-breakfast', 'is_bof': False, 'toggled_by': ['closed_meeting', 'iesg']},
+                     ]},
+                    {'label': 'Office hours', 'keyword': 'officehours', 'is_bof': False, 'toggled_by': [],
+                     'children': [
+                         {'label': 'FARFUT office hours', 'keyword': 'farfut-office-hours', 'is_bof': False, 'toggled_by': ['officehours', 'farfut']}
+                     ]},
+                    {'label': 'Plenary', 'keyword': 'plenary', 'is_bof': False, 'toggled_by': [],
+                     'children': [
+                         {'label': 'IETF Plenary', 'keyword': 'ietf-plenary', 'is_bof': False, 'toggled_by': ['plenary', 'ietf']},
+                     ]},
+                    {'label': 'Social', 'keyword': 'social', 'is_bof': False, 'toggled_by': [],
+                     'children': [
+                         {'label': 'Morning Break', 'keyword': 'morning-break', 'is_bof': False, 'toggled_by': ['social', 'secretariat']},
+                     ]},
+                    {'label': None, 'keyword': None,'is_bof': False, 'toggled_by': [],
+                     'children': [
+                         {'label': 'BoF', 'keyword': 'bof', 'is_bof': False, 'toggled_by': []},
+                     ]},
+                ],
+            ]
         # put all the above together for single-column tests
-        expected_single_category = [
-            sorted(sum(expected, []), key=lambda col: col['label'] or 'zzzzz')
-        ]
-        expected_single_category_with_sessions = [
-            sorted(sum(expected_with_sessions, []), key=lambda col: col['label'] or 'zzzzz')
-        ]
+        expected_single_category = [sum(expected, [])]
 
         ###
         # test using sessions
@@ -221,15 +276,17 @@ class AgendaFilterOrganizerTests(TestCase):
 
         # default
         filter_organizer = AgendaFilterOrganizer(sessions=sessions)
-        self.assertEqual(filter_organizer.get_filter_categories(), expected_with_sessions)
+        self.assertEqual(filter_organizer.get_filter_categories(), expected)
 
         # single-column
         filter_organizer = AgendaFilterOrganizer(sessions=sessions, single_category=True)
-        self.assertEqual(filter_organizer.get_filter_categories(), expected_single_category_with_sessions)
+        self.assertEqual(filter_organizer.get_filter_categories(), expected_single_category)
 
         ###
         # test again using assignments
-        assignments = meeting.schedule.assignments.all()
+        assignments = SchedTimeSessAssignment.objects.filter(
+            schedule__in=(meeting.schedule, meeting.schedule.base)
+        )
         AgendaKeywordTagger(assignments=assignments).apply()
 
         # default

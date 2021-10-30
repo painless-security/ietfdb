@@ -104,7 +104,8 @@ class SessionFactory(factory.django.DjangoModelFactory):
         model = Session
 
     meeting = factory.SubFactory(MeetingFactory)
-    type_id='regular'
+    purpose_id = 'regular'
+    type_id = 'regular'
     group = factory.SubFactory(GroupFactory)
     requested_duration = datetime.timedelta(hours=1)
 

@@ -467,7 +467,7 @@ class AgendaFilterOrganizer(AgendaKeywordTool):
 
         # Call legacy version for older meetings
         if self._use_legacy_keywords():
-            return self._legacy_non_group_filters()
+            return self._legacy_non_group_filters(sessions)
 
         # Not using legacy version
         filter_cols = []
@@ -499,19 +499,16 @@ class AgendaFilterOrganizer(AgendaKeywordTool):
 
         return filter_cols
 
-    def _legacy_non_group_filters(self):
+    def _legacy_non_group_filters(self, sessions):
         """Get list of non-group filters for older meetings
 
         Returns a list of filter columns
         """
-        if self.assignments is None:
-            return []  # can only use timeslot type when we have assignments
-
         office_hours_items = set()
         suffix = ' office hours'
-        for a in self.assignments:
-            if a.session.name.lower().endswith(suffix):
-                office_hours_items.add((a.session.name[:-len(suffix)].strip(), a.session.group))
+        for s in sessions:
+            if s.name.lower().endswith(suffix):
+                office_hours_items.add((s.name[:-len(suffix)].strip(), s.group))
 
         headings = []
         # currently we only do office hours
