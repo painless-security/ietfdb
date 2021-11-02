@@ -257,6 +257,7 @@ class InterimSessionModelForm(forms.ModelForm):
         session = super(InterimSessionModelForm, self).save(commit=False)
         session.group = self.group
         session.type_id = 'regular'
+        session.purpose_id = 'regular'
         if kwargs.get('commit', True) is True:
             super(InterimSessionModelForm, self).save(commit=True)
         return session

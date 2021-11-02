@@ -1,6 +1,5 @@
 # Copyright The IETF Trust 2020, All Rights Reserved
 # -*- coding: utf-8 -*-
-import copy
 
 from django.conf import settings
 from django.test import override_settings
@@ -57,6 +56,8 @@ class AgendaKeywordTaggerTests(TestCase):
                 'expected_keywords': {
                     expected_group.acronym,
                     expected_area.acronym,
+                    # if legacy_keywords, next line repeats a previous entry to avoid adding anything to the set
+                    expected_group.acronym if legacy_keywords else 'regular',
                     f'{expected_group.acronym}-sessa',
                 },
             },
@@ -125,9 +126,10 @@ class AgendaKeywordTaggerTests(TestCase):
             self.assertCountEqual(
                 assignment.filter_keywords,
                 expected_filter_keywords,
-                'Assignment has incorrect filter keywords'
+                f'Assignment for "{sd["description"]}" has incorrect filter keywords'
             )
 
+    @override_settings(MEETING_LEGACY_OFFICE_HOURS_END=111)
     def test_tag_assignments_with_filter_keywords(self):
         # use distinct meeting numbers > 111 for non-legacy keyword tests
         self.do_test_tag_assignments_with_filter_keywords(112)
@@ -138,6 +140,7 @@ class AgendaKeywordTaggerTests(TestCase):
         self.do_test_tag_assignments_with_filter_keywords(117, bof=True, historic='parent')
 
 
+    @override_settings(MEETING_LEGACY_OFFICE_HOURS_END=111)
     def test_tag_assignments_with_filter_keywords_legacy(self):
         # use distinct meeting numbers <= 111 for legacy keyword tests
         self.do_test_tag_assignments_with_filter_keywords(101)

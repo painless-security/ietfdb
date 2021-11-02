@@ -310,7 +310,7 @@ class AgendaKeywordTool:
 
     @property
     def filterable_purposes(self):
-        return SessionPurposeName.objects.exclude(slug__in=('regular', 'none')).order_by('name')
+        return SessionPurposeName.objects.exclude(slug='none').order_by('name')
 
 
 class AgendaFilterOrganizer(AgendaKeywordTool):
@@ -472,6 +472,9 @@ class AgendaFilterOrganizer(AgendaKeywordTool):
         # Not using legacy version
         filter_cols = []
         for purpose in self.filterable_purposes:
+            if purpose.slug == 'regular':
+                continue
+
             # Map label to its keyword, discarding duplicate labels.
             # This does what we want as long as sessions with the same
             # name and purpose belong to the same group.
