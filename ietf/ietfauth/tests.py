@@ -58,6 +58,7 @@ else:
 
 class IetfAuthTests(TestCase):
     def setUp(self):
+        super().setUp()
         self.saved_use_python_htdigest = getattr(settings, "USE_PYTHON_HTDIGEST", None)
         settings.USE_PYTHON_HTDIGEST = True
 
@@ -74,6 +75,7 @@ class IetfAuthTests(TestCase):
         settings.USE_PYTHON_HTDIGEST = self.saved_use_python_htdigest
         settings.HTPASSWD_FILE = self.saved_htpasswd_file
         settings.HTDIGEST_REALM = self.saved_htdigest_realm
+        super().tearDown()
 
     def test_index(self):
         self.assertEqual(self.client.get(urlreverse(ietf.ietfauth.views.index)).status_code, 200)
@@ -149,7 +151,7 @@ class IetfAuthTests(TestCase):
         empty_outbox()
         r = self.client.post(url, { 'email': email })
         self.assertEqual(r.status_code, 200)
-        self.assertContains(r, "Account creation failed")
+        self.assertContains(r, "Additional Assistance Required")
 
     def register_and_verify(self, email):
         url = urlreverse(ietf.ietfauth.views.create_account)
@@ -810,7 +812,8 @@ class OpenIDConnectTests(TestCase):
 
             # Get a user for which we want to get access
             person = PersonFactory(with_bio=True)
-            RoleFactory(name_id='chair', person=person)
+            active_group = RoleFactory(name_id='chair', person=person).group
+            closed_group = RoleFactory(name_id='chair', person=person, group__state_id='conclude').group
             # an additional email
             EmailFactory(person=person)
             email_list = person.email_set.all().values_list('address', flat=True)
@@ -826,7 +829,7 @@ class OpenIDConnectTests(TestCase):
             session["nonce"] = rndstr()
             args = {
                 "response_type": "code",
-                "scope": ['openid', 'profile', 'email', 'roles', 'registration', ],
+                "scope": ['openid', 'profile', 'email', 'roles', 'registration', 'dots' ],
                 "nonce": session["nonce"],
                 "redirect_uri": redirect_uris[0],
                 "state": session["state"]
@@ -875,11 +878,13 @@ class OpenIDConnectTests(TestCase):
             # Get userinfo, check keys present
             userinfo = client.do_user_info_request(state=params["state"], scope=args['scope'])
             for key in [ 'email', 'family_name', 'given_name', 'meeting', 'name', 'roles',
-                         'ticket_type', 'reg_type', 'affiliation', 'picture', ]:
+                         'ticket_type', 'reg_type', 'affiliation', 'picture', 'dots', ]:
                 self.assertIn(key, userinfo)
                 self.assertTrue(userinfo[key])
             self.assertIn('remote', set(userinfo['reg_type'].split()))
             self.assertNotIn('hackathon', set(userinfo['reg_type'].split()))
+            self.assertIn(active_group.acronym, [i[1] for i in userinfo['roles']])
+            self.assertNotIn(closed_group.acronym, [i[1] for i in userinfo['roles']])
 
             # Create another registration, with a different email
             MeetingRegistration.objects.create(

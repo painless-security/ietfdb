@@ -7,7 +7,6 @@ import email
 import io
 import os
 import re
-import shutil
 import sys
 import mock
 
@@ -42,6 +41,40 @@ from ietf.utils.mail import outbox, empty_outbox, get_payload_text
 from ietf.utils.models import VersionInfo
 from ietf.utils.test_utils import login_testing_unauthorized, TestCase
 from ietf.utils.draft import Draft
+
+
+class BaseSubmitTestCase(TestCase):
+    settings_temp_path_overrides = TestCase.settings_temp_path_overrides + [
+        'IDSUBMIT_STAGING_PATH',
+        'SUBMIT_YANG_RFC_MODEL_DIR',
+        'SUBMIT_YANG_DRAFT_MODEL_DIR',
+        'SUBMIT_YANG_IANA_MODEL_DIR',
+        'SUBMIT_YANG_CATALOG_DIR',
+    ]
+
+    def setUp(self):
+        super().setUp()
+
+        # The system apparently relies on these paths being equal. If they are not,
+        # old drafts may not be moved out of the way properly.
+        self.saved_repository_path = settings.IDSUBMIT_REPOSITORY_PATH
+        settings.IDSUBMIT_REPOSITORY_PATH = settings.INTERNET_DRAFT_PATH
+
+    def tearDown(self):
+        settings.IDSUBMIT_REPOSITORY_PATH = self.saved_repository_path
+        super().tearDown()
+
+    @property
+    def staging_dir(self):
+        return settings.IDSUBMIT_STAGING_PATH
+
+    @property
+    def repository_dir(self):
+        return settings.IDSUBMIT_REPOSITORY_PATH
+
+    @property
+    def archive_dir(self):
+        return settings.INTERNET_DRAFT_ARCHIVE_DIR
 
 def submission_file(name, rev, group, format, templatename, author=None, email=None, title=None, year=None, ascii=True):
     # construct appropriate text draft
@@ -112,57 +145,11 @@ def create_draft_submission_with_rev_mismatch(rev='01'):
     return draft, sub
 
 
-class SubmitTests(TestCase):
+class SubmitTests(BaseSubmitTestCase):
     def setUp(self):
-        self.saved_idsubmit_staging_path = settings.IDSUBMIT_STAGING_PATH
-        self.staging_dir = self.tempdir('submit-staging')
-        settings.IDSUBMIT_STAGING_PATH = self.staging_dir
-
-        self.saved_internet_draft_path = settings.INTERNET_DRAFT_PATH
-        self.saved_idsubmit_repository_path = settings.IDSUBMIT_REPOSITORY_PATH
-        self.repository_dir = self.tempdir('submit-repository')
-        settings.INTERNET_DRAFT_PATH = settings.IDSUBMIT_REPOSITORY_PATH = self.repository_dir
-
-        self.saved_archive_dir = settings.INTERNET_DRAFT_ARCHIVE_DIR
-        self.archive_dir = self.tempdir('submit-archive')
-        settings.INTERNET_DRAFT_ARCHIVE_DIR = self.archive_dir
-        
-        self.saved_yang_rfc_model_dir = settings.SUBMIT_YANG_RFC_MODEL_DIR
-        self.yang_rfc_model_dir = self.tempdir('yang-rfc-model')
-        settings.SUBMIT_YANG_RFC_MODEL_DIR = self.yang_rfc_model_dir
-
-        self.saved_yang_draft_model_dir = settings.SUBMIT_YANG_DRAFT_MODEL_DIR
-        self.yang_draft_model_dir = self.tempdir('yang-draft-model')
-        settings.SUBMIT_YANG_DRAFT_MODEL_DIR = self.yang_draft_model_dir
-
-        self.saved_yang_iana_model_dir = settings.SUBMIT_YANG_IANA_MODEL_DIR
-        self.yang_iana_model_dir = self.tempdir('yang-iana-model')
-        settings.SUBMIT_YANG_IANA_MODEL_DIR = self.yang_iana_model_dir
-
-        self.saved_yang_catalog_model_dir = settings.SUBMIT_YANG_CATALOG_MODEL_DIR
-        self.yang_catalog_model_dir = self.tempdir('yang-catalog-model')
-        settings.SUBMIT_YANG_CATALOG_MODEL_DIR = self.yang_catalog_model_dir
-
+        super().setUp()
         # Submit views assume there is a "next" IETF to look for cutoff dates against
         MeetingFactory(type_id='ietf', date=datetime.date.today()+datetime.timedelta(days=180))
-
-    def tearDown(self):
-        shutil.rmtree(self.staging_dir)
-        shutil.rmtree(self.repository_dir)
-        shutil.rmtree(self.archive_dir)
-        shutil.rmtree(self.yang_rfc_model_dir)
-        shutil.rmtree(self.yang_draft_model_dir)
-        shutil.rmtree(self.yang_iana_model_dir)
-        shutil.rmtree(self.yang_catalog_model_dir)
-        settings.IDSUBMIT_STAGING_PATH = self.saved_idsubmit_staging_path
-        settings.INTERNET_DRAFT_PATH = self.saved_internet_draft_path
-        settings.IDSUBMIT_REPOSITORY_PATH = self.saved_idsubmit_repository_path
-        settings.INTERNET_DRAFT_ARCHIVE_DIR = self.saved_archive_dir
-        settings.SUBMIT_YANG_RFC_MODEL_DIR = self.saved_yang_rfc_model_dir
-        settings.SUBMIT_YANG_DRAFT_MODEL_DIR = self.saved_yang_draft_model_dir
-        settings.SUBMIT_YANG_IANA_MODEL_DIR = self.saved_yang_iana_model_dir
-        settings.SUBMIT_YANG_CATALOG_MODEL_DIR = self.saved_yang_catalog_model_dir
-
 
     def create_and_post_submission(self, name, rev, author, group=None, formats=("txt",), base_filename=None):
         """Helper to create and post a submission
@@ -1492,7 +1479,7 @@ class SubmitTests(TestCase):
         rev = "00"
         group = "mars"
 
-        self.do_submission(name, rev, group, ["txt", "xml", "ps", "pdf"])
+        self.do_submission(name, rev, group, ["txt", "xml", "pdf"])
 
         self.assertEqual(Submission.objects.filter(name=name).count(), 1)
 
@@ -1503,8 +1490,6 @@ class SubmitTests(TestCase):
         self.assertTrue('<?xml version="1.0" encoding="UTF-8"?>' in io.open(os.path.join(self.staging_dir, "%s-%s.xml" % (name, rev))).read())
         self.assertTrue(os.path.exists(os.path.join(self.staging_dir, "%s-%s.pdf" % (name, rev))))
         self.assertTrue('This is PDF' in io.open(os.path.join(self.staging_dir, "%s-%s.pdf" % (name, rev))).read())
-        self.assertTrue(os.path.exists(os.path.join(self.staging_dir, "%s-%s.ps" % (name, rev))))
-        self.assertTrue('This is PostScript' in io.open(os.path.join(self.staging_dir, "%s-%s.ps" % (name, rev))).read())
 
     def test_expire_submissions(self):
         s = Submission.objects.create(name="draft-ietf-mars-foo",
@@ -1534,9 +1519,6 @@ class SubmitTests(TestCase):
         self.assertEqual(s.state_id, "cancel")
 
     def test_help_pages(self):
-        r = self.client.get(urlreverse("ietf.submit.views.note_well"))
-        self.assertEqual(r.status_code, 200)
-
         r = self.client.get(urlreverse("ietf.submit.views.tool_instructions"))
         self.assertEqual(r.status_code, 200)
         
@@ -1666,12 +1648,6 @@ class SubmitTests(TestCase):
         self.assertIn('Invalid characters were found in the name', m)
         self.assertIn('Expected the PDF file to have extension ".pdf"', m)
         self.assertIn('Expected an PDF file of type "application/pdf"', m)
-
-    def test_submit_bad_file_ps(self):
-        r, q, m = self.submit_bad_file("some name", ["ps"])
-        self.assertIn('Invalid characters were found in the name', m)
-        self.assertIn('Expected the PS file to have extension ".ps"', m)
-        self.assertIn('Expected an PS file of type "application/postscript"', m)
 
     def test_submit_file_in_archive(self):
         name = "draft-authorname-testing-file-exists"
@@ -2107,7 +2083,7 @@ class SubmitTests(TestCase):
         self.assertEqual(len(kept_div('span.label:contains("Removed")')), 0)
         self.assertEqual(len(kept_div('span.label:contains("New")')), 0)
         
-class ApprovalsTestCase(TestCase):
+class ApprovalsTestCase(BaseSubmitTestCase):
     def test_approvals(self):
         RoleFactory(name_id='chair',
                     group__acronym='mars',
@@ -2278,7 +2254,7 @@ class ApprovalsTestCase(TestCase):
 
         self.assertEqual(len(Preapproval.objects.filter(name=preapproval.name)), 0)
 
-class ManualPostsTestCase(TestCase):
+class ManualPostsTestCase(BaseSubmitTestCase):
     def test_manual_posts(self):
         GroupFactory(acronym='mars')
 
@@ -2723,59 +2699,12 @@ Subject: test
 
         return r
 
-class ApiSubmitTests(TestCase):
+class ApiSubmitTests(BaseSubmitTestCase):
     def setUp(self):
+        super().setUp()
         # break early in case of missing configuration
         self.assertTrue(os.path.exists(settings.IDSUBMIT_IDNITS_BINARY))
-
-        self.saved_idsubmit_staging_path = settings.IDSUBMIT_STAGING_PATH
-        self.staging_dir = self.tempdir('submit-staging')
-        settings.IDSUBMIT_STAGING_PATH = self.staging_dir
-
-        self.saved_internet_draft_path = settings.INTERNET_DRAFT_PATH
-        self.saved_idsubmit_repository_path = settings.IDSUBMIT_REPOSITORY_PATH
-        self.repository_dir = self.tempdir('submit-repository')
-        settings.INTERNET_DRAFT_PATH = settings.IDSUBMIT_REPOSITORY_PATH = self.repository_dir
-
-        self.saved_archive_dir = settings.INTERNET_DRAFT_ARCHIVE_DIR
-        self.archive_dir = self.tempdir('submit-archive')
-        settings.INTERNET_DRAFT_ARCHIVE_DIR = self.archive_dir
-
-        self.saved_yang_rfc_model_dir = settings.SUBMIT_YANG_RFC_MODEL_DIR
-        self.rfc_model_dir = self.tempdir('yang-rfcmod')
-        settings.SUBMIT_YANG_RFC_MODEL_DIR = self.rfc_model_dir
-
-        self.saved_yang_draft_model_dir = settings.SUBMIT_YANG_DRAFT_MODEL_DIR
-        self.draft_model_dir = self.tempdir('yang-draftmod')
-        settings.SUBMIT_YANG_DRAFT_MODEL_DIR = self.draft_model_dir
-
-        self.saved_yang_iana_model_dir = settings.SUBMIT_YANG_IANA_MODEL_DIR
-        self.iana_model_dir = self.tempdir('yang-ianamod')
-        settings.SUBMIT_YANG_IANA_MODEL_DIR = self.iana_model_dir
-
-        self.saved_yang_catalog_model_dir = settings.SUBMIT_YANG_CATALOG_MODEL_DIR
-        self.catalog_model_dir = self.tempdir('yang-catalogmod')
-        settings.SUBMIT_YANG_CATALOG_MODEL_DIR = self.catalog_model_dir
-
         MeetingFactory(type_id='ietf', date=datetime.date.today()+datetime.timedelta(days=60))
-
-    def tearDown(self):
-        shutil.rmtree(self.staging_dir)
-        shutil.rmtree(self.repository_dir)
-        shutil.rmtree(self.archive_dir)
-        shutil.rmtree(self.rfc_model_dir)
-        shutil.rmtree(self.draft_model_dir)
-        shutil.rmtree(self.iana_model_dir)
-        shutil.rmtree(self.catalog_model_dir)
-
-        settings.IDSUBMIT_STAGING_PATH = self.saved_idsubmit_staging_path
-        settings.INTERNET_DRAFT_PATH = self.saved_internet_draft_path
-        settings.IDSUBMIT_REPOSITORY_PATH = self.saved_idsubmit_repository_path
-        settings.INTERNET_DRAFT_ARCHIVE_DIR = self.saved_archive_dir
-        settings.SUBMIT_YANG_RFC_MODEL_DIR = self.saved_yang_rfc_model_dir
-        settings.SUBMIT_YANG_DRAFT_MODEL_DIR = self.saved_yang_draft_model_dir
-        settings.SUBMIT_YANG_IANA_MODEL_DIR = self.saved_yang_iana_model_dir
-        settings.SUBMIT_YANG_CATALOG_MODEL_DIR = self.saved_yang_catalog_model_dir
 
     def do_post_submission(self, rev, author=None, name=None, group=None, email=None, title=None, year=None):
         url = urlreverse('ietf.submit.views.api_submit')
@@ -2904,7 +2833,7 @@ class ApiSubmitTests(TestCase):
         )
 
         
-class RefsTests(TestCase):
+class RefsTests(BaseSubmitTestCase):
 
     def test_draft_refs_identification(self):
 

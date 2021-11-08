@@ -6,7 +6,7 @@ import datetime
 import debug                            # pyflakes:ignore
 
 from ietf.doc.models import Document, DocAlias, RelatedDocument, DocEvent, TelechatDocEvent, BallotDocEvent
-from ietf.doc.expire import expirable_draft
+from ietf.doc.expire import expirable_drafts
 from ietf.doc.utils import augment_docs_and_user_with_user_info
 from ietf.meeting.models import SessionPresentation, Meeting, Session
 
@@ -24,8 +24,8 @@ def fill_in_telechat_date(docs, doc_dict=None, doc_ids=None):
     seen = set()
     for e in TelechatDocEvent.objects.filter(doc__id__in=doc_ids, type="scheduled_for_telechat").order_by('-time'):
         if e.doc_id not in seen:
-            d = doc_dict[e.doc_id]
-            d.telechat_date = wrap_value(d.telechat_date(e))
+            #d = doc_dict[e.doc_id]
+            #d.telechat_date = wrap_value(d.telechat_date(e))
             seen.add(e.doc_id)
 
 def fill_in_document_sessions(docs, doc_dict, doc_ids):
@@ -80,9 +80,10 @@ def fill_in_document_table_attributes(docs, have_telechat_date=False):
     fill_in_document_sessions(docs, doc_dict, doc_ids)
 
     # misc
+    expirable_pks = expirable_drafts(Document.objects.filter(pk__in=doc_ids)).values_list('pk', flat=True)
     for d in docs:
         # emulate canonical name which is used by a lot of the utils
-        d.canonical_name = wrap_value(rfc_aliases[d.pk] if d.pk in rfc_aliases else d.name)
+        # d.canonical_name = wrap_value(rfc_aliases[d.pk] if d.pk in rfc_aliases else d.name)
 
         if d.rfc_number() != None and d.latest_event_cache["published_rfc"]:
             d.latest_revision_date = d.latest_event_cache["published_rfc"].time
@@ -102,7 +103,7 @@ def fill_in_document_table_attributes(docs, have_telechat_date=False):
             else:
                 d.search_heading = "%s Internet-Draft" % d.get_state()
                 if state_slug == "active":
-                    d.expirable = expirable_draft(d)
+                    d.expirable = d.pk in expirable_pks
                 else:
                     d.expirable = False
         else:
@@ -150,16 +151,16 @@ def prepare_document_table(request, docs, query=None, max_results=200):
     displaying a full table of information about the documents, plus
     dict with information about the columns."""
 
-    if docs.count() > max_results:
-        docs = docs[:max_results]
-
     if not isinstance(docs, list):
         # evaluate and fill in attribute results immediately to decrease
         # the number of queries
         docs = docs.select_related("ad", "std_level", "intended_std_level", "group", "stream", "shepherd", )
         docs = docs.prefetch_related("states__type", "tags", "groupmilestone_set__group", "reviewrequest_set__team",
-                                     "submission_set__checks", "ad__email_set", "docalias__iprdocrel_set")
+                                     "ad__email_set", "docalias__iprdocrel_set")
+        docs = docs[:max_results] # <- that is still a queryset, but with a LIMIT now
         docs = list(docs)
+    else:
+        docs = docs[:max_results]
 
     fill_in_document_table_attributes(docs)
     augment_docs_and_user_with_user_info(docs, request.user)
