@@ -5,7 +5,7 @@
 {% origin %}
 
 {% with slug=item.slug %}{% with session=item.session %}{% with timeslot=item.timeslot %}{% with meeting=schedule.meeting %}
-<span id="session-buttons-{{session.pk}}" class="text-nowrap">
+<div id="session-buttons-{{session.pk}}" class="text-nowrap">
   {% with acronym=session.historic_group.acronym %}
   {% if session.agenda and show_agenda %}
     {# Note: if called with show_agenda=True, calling template must load agenda_materials.js, needed by session_agenda_include.html #}
@@ -18,18 +18,12 @@
     <a class="" href="/meeting/{{ meeting.number }}/agenda/{{acronym}}-drafts.pdf" title="Download meeting materials as PDF file"><span class="fa fa-fw fa-file-pdf-o"></span></a>
   {% endif %}
 
-  <!-- etherpad -->
+  <!-- HedgeDoc -->
   {% if use_codimd %}
     {% if timeslot.type.slug == 'plenary' %}
-      <a class="" href="https://codimd.ietf.org/notes-ietf-{{ meeting.number }}-plenary" title="Etherpad for note-takers"><span class="fa fa-fw fa-edit"></span></a>
+      <a class="" href="https://notes.ietf.org/notes-ietf-{{ meeting.number }}-plenary" title="Notepad for note-takers"><span class="fa fa-fw fa-edit"></span></a>
     {% else %}
-      <a class="" href="https://codimd.ietf.org/notes-ietf-{{ meeting.number }}-{{acronym}}" title="Etherpad for note-takers"><span class="fa fa-fw fa-edit"></span></a>
-    {% endif %}
-  {% else %}
-    {% if timeslot.type.slug == 'plenary' %}
-      <a class="" href="https://etherpad.ietf.org:9009/p/notes-ietf-{{ meeting.number }}-plenary?useMonospaceFont=true" title="Etherpad for note-takers"><span class="fa fa-fw fa-edit"></span></a>
-    {% else %}
-      <a class="" href="https://etherpad.ietf.org:9009/p/notes-ietf-{{ meeting.number }}-{{acronym}}?useMonospaceFont=true" title="Etherpad for note-takers"><span class="fa fa-fw fa-edit"></span></a>
+      <a class="" href="https://notes.ietf.org/notes-ietf-{{ meeting.number }}-{{acronym}}" title="Notepad for note-takers"><span class="fa fa-fw fa-edit"></span></a>
     {% endif %}
   {% endif %}
 
@@ -38,12 +32,12 @@
     <!-- Jabber -->
     <a class=""
       href="xmpp:{{session.jabber_room_name}}@jabber.ietf.org?join"
-      title="Jabber room for {{session.jabber_room_name}}"><span class="fa fa-fw fa-lightbulb-o"></span></a>
+      title="Chat room for {{session.jabber_room_name}}"><span class="fa fa-fw fa-comment-o"></span></a>
     <!-- Video stream (meetecho) -->
     {% if timeslot.location.video_stream_url %}
       <a class=""
         href="{{timeslot.location.video_stream_url|format:session }}"
-        title="Meetecho video stream"><span class="fa fa-fw fa-video-camera"></span>
+        title="Video stream"><span class="fa fa-fw fa-video-camera"></span>
       </a>
     {% endif %}
     <!-- Audio stream -->
@@ -79,8 +73,8 @@
   {% else %}
     <!-- Jabber logs -->
     {% if meeting.number|add:"0" >= 60 %}
-      <a class="" href="https://www.ietf.org/jabber/logs/{{session.jabber_room_name}}?C=M;O=D" title="Jabber logs for {{session.jabber_room_name}}">
-        <span class="fa-stack-1"><i class="fa fa-fw fa-file-o fa-stack-1x"></i><i class="fa fa-fw fa-lightbulb-o fa-stack-sm"></i></span>
+      <a class="" href="https://www.ietf.org/jabber/logs/{{session.jabber_room_name}}?C=M;O=D" title="Chat logs for {{session.jabber_room_name}}">
+        <span class="fa-stack-1"><i class="fa fa-fw fa-file-o fa-stack-1x"></i><i class="fa fa-fw fa-comment-o fa-stack-sm"></i></span>
       </a>
     {% endif %}
     <!-- Recordings -->
@@ -111,10 +105,10 @@
       {% if timeslot.location.video_stream_url %}
         <a class=""
           href="http://www.meetecho.com/ietf{{meeting.number}}/recordings#{{acronym.upper}}"
-         title="Meetecho session recording"><span class="fd fa-fw fd-meetecho"></span></a>
+         title="Session recording"><span class="fd fa-fw fd-meetecho"></span></a>
       {% endif %}
     {% endif %}
   {% endif %}
   {% endwith %}
-</span>
+</div>
 {% endwith %}{% endwith %}{% endwith %}{% endwith %}

@@ -38,12 +38,15 @@ import os
 import re
 import email
 import html5lib
+import shutil
 import sys
 
 from urllib.parse import unquote
-
 from unittest.util import strclass
 from bs4 import BeautifulSoup
+from contextlib import contextmanager
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 import django.test
 from django.conf import settings
@@ -100,6 +103,16 @@ def reload_db_objects(*objects):
     else:
         return t
 
+@contextmanager
+def name_of_file_containing(contents):
+    """Get a context with the name of an email file"""
+    f = NamedTemporaryFile('w', delete=False)
+    f.write(contents)
+    f.close()
+    yield f.name  # hand the filename to the context
+    Path(f.name).unlink()  # clean up after context exits
+
+
 def assert_ical_response_is_valid(test_inst, response, expected_event_summaries=None,
                                   expected_event_uids=None, expected_event_count=None):
     """Validate an HTTP response containing iCal data
@@ -139,9 +152,27 @@ class ReverseLazyTest(django.test.TestCase):
         self.assertRedirects(response, "/ipr/", status_code=301)
 
 class TestCase(django.test.TestCase):
+    """IETF TestCase class
+
+    Based on django.test.TestCase, but adds a few things:
+      * asserts for html5 validation.
+      * tempdir() convenience method
+      * setUp() and tearDown() that override settings paths with temp directories
+
+    The setUp() and tearDown() methods create / remove temporary paths and override
+    Django's settings with the temp dir names. Subclasses of this class must
+    be sure to call the superclass methods if they are overridden. These are created
+    anew for each test to avoid risk of cross-talk between test cases. Overriding
+    the settings_temp_path_overrides class value will modify which path settings are
+    replaced with temp test dirs.
     """
-    Does basically the same as django.test.TestCase, but adds asserts for html5 validation.
-    """
+    # These settings will be overridden with empty temporary directories
+    settings_temp_path_overrides = [
+        'RFC_PATH',
+        'INTERNET_ALL_DRAFTS_ARCHIVE_DIR',
+        'INTERNET_DRAFT_ARCHIVE_DIR',
+        'INTERNET_DRAFT_PATH',
+    ]
 
     parser = html5lib.HTMLParser(strict=True)
 
@@ -226,4 +257,18 @@ class TestCase(django.test.TestCase):
     def __str__(self):
         return u"%s (%s.%s)" % (self._testMethodName, strclass(self.__class__),self._testMethodName)
 
-        
+
+    def setUp(self):
+        # Replace settings paths with temporary directories.
+        super().setUp()
+        self._ietf_temp_dirs = {}  # trashed during tearDown, DO NOT put paths you care about in this
+        for setting in self.settings_temp_path_overrides:
+            self._ietf_temp_dirs[setting] = self.tempdir(slugify(setting))
+        self._ietf_saved_context = django.test.utils.override_settings(**self._ietf_temp_dirs)
+        self._ietf_saved_context.enable()
+
+    def tearDown(self):
+        self._ietf_saved_context.disable()
+        for dir in self._ietf_temp_dirs.values():
+            shutil.rmtree(dir)
+        super().tearDown()
