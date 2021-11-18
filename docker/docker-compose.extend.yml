@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+    app:
+        ports:
+            - '8000:8000'
+        volumes:
+            - ..:/root/src  
+    db:
+        ports:
+            - '3306'

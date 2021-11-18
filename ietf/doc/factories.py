@@ -87,6 +87,19 @@ class BaseDocumentFactory(factory.django.DjangoModelFactory):
                     continue
                 obj.relateddocument_set.create(relationship_id=rel_id, target=docalias)
 
+    @factory.post_generation
+    def create_revisions(obj, create, extracted, **kwargs):  # pylint: disable=no-self-argument
+        """Create additional revisions of the document
+
+        Argument should be an iterable of revisions. Remember that range() is exclusive on the end
+        index, so range(1, 10) stops at 9.
+        """
+        if create and extracted:
+            for rev in extracted:
+                e = NewRevisionDocEventFactory(doc=obj, rev=f'{rev:02d}')
+                obj.rev = f'{rev:02d}'
+                obj.save_with_history([e])
+
     @classmethod
     def _after_postgeneration(cls, obj, create, results=None):
         """Save again the instance if creating and at least one hook ran."""
@@ -230,6 +243,33 @@ class CharterFactory(BaseDocumentFactory):
             return
         obj.group.charter = extracted or obj
         obj.group.save()
+
+class StatusChangeFactory(BaseDocumentFactory):
+    type_id='statchg'
+
+    group = factory.SubFactory('ietf.group.factories.GroupFactory',acronym='iesg',type_id='ietf')
+    name = factory.Sequence(lambda n: f'status-change-{n}-factoried')
+
+    @factory.post_generation
+    def changes_status_of(obj, create, extracted, **kwargs):
+        if not create:
+            return
+        if extracted:
+            for (rel, target) in extracted:
+                obj.relateddocument_set.create(relationship_id=rel,target=extracted)
+        else:
+            obj.relateddocument_set.create(relationship_id='tobcp', target=WgRfcFactory().docalias.first())
+
+    @factory.post_generation
+    def states(obj, create, extracted, **kwargs):
+        if not create:
+            return
+        if extracted:
+            for state in extracted:
+                obj.set_state(state)
+        else:
+            obj.set_state(State.objects.get(type_id='statchg',slug='appr-sent'))
+
 
 class ConflictReviewFactory(BaseDocumentFactory):
     type_id='conflrev'
