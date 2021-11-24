@@ -2,11 +2,19 @@
 # -*- coding: utf-8 -*-
 """Tests of forms in the Meeting application"""
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 
 from ietf.meeting.forms import FileUploadForm, ApplyToAllFileUploadForm
 from ietf.utils.test_utils import TestCase
 
 
+@override_settings(
+    MEETING_APPLICATION_OCTET_STREAM_OVERRIDES={'.md': 'text/markdown'},  # test relies on .txt not mapping
+    MEETING_VALID_UPLOAD_EXTENSIONS={'minutes': ['.txt', '.md']},  # test relies on .exe being absent
+    MEETING_VALID_UPLOAD_MIME_TYPES={'minutes': ['text/plain', 'text/markdown']},
+    MEETING_VALID_MIME_TYPE_EXTENSIONS={'text/plain': ['.txt'], 'text/markdown': ['.md']},
+    MEETING_VALID_UPLOAD_MIME_FOR_OBSERVED_MIME={'text/plain': ['text/plain', 'text/markdown']},
+)
 class FileUploadFormTests(TestCase):
     class TestClass(FileUploadForm):
         doc_type = 'minutes'

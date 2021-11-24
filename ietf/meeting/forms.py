@@ -336,7 +336,7 @@ class FileUploadForm(forms.Form):
     """
     file = forms.FileField(label='File to upload')
 
-    doc_type = None  # subclasses must set this
+    doc_type = ''  # subclasses must set this
 
     def __init__(self, *args, **kwargs):
         assert self.doc_type in settings.MEETING_VALID_UPLOAD_EXTENSIONS
@@ -356,11 +356,12 @@ class FileUploadForm(forms.Form):
         ext = validate_file_extension(file, self.extensions)
 
         # override the Content-Type if needed
-        content_type_map = settings.MEETING_APPLICATION_OCTET_STREAM_OVERRIDES
-        filename = Path(file.name)
-        if file.content_type in 'application/octet-stream' and filename.suffix in content_type_map:
-            file.content_type = content_type_map[filename.suffix]
-            self.cleaned_data['file'] = file
+        if file.content_type in 'application/octet-stream':
+            content_type_map = settings.MEETING_APPLICATION_OCTET_STREAM_OVERRIDES
+            filename = Path(file.name)
+            if filename.suffix in content_type_map:
+                file.content_type = content_type_map[filename.suffix]
+                self.cleaned_data['file'] = file
 
         mime_type, encoding = validate_mime_type(file, self.mime_types)
         if not hasattr(self, 'file_encoding'):
@@ -369,10 +370,14 @@ class FileUploadForm(forms.Form):
         if self.mime_types:
             if not file.content_type in settings.MEETING_VALID_UPLOAD_MIME_FOR_OBSERVED_MIME[mime_type]:
                 raise ValidationError('Upload Content-Type (%s) is different from the observed mime-type (%s)' % (file.content_type, mime_type))
-            if mime_type in settings.MEETING_VALID_MIME_TYPE_EXTENSIONS:
-                if not ext in settings.MEETING_VALID_MIME_TYPE_EXTENSIONS[mime_type]:
+            # We just validated that file.content_type is safe to accept despite being identified
+            # as a different MIME type by the validator. Check extension based on file.content_type
+            # because that better reflects the intention of the upload client.
+            if file.content_type in settings.MEETING_VALID_MIME_TYPE_EXTENSIONS:
+                if not ext in settings.MEETING_VALID_MIME_TYPE_EXTENSIONS[file.content_type]:
                     raise ValidationError('Upload Content-Type (%s) does not match the extension (%s)' % (file.content_type, ext))
-        if mime_type in ['text/html', ] or ext in settings.MEETING_VALID_MIME_TYPE_EXTENSIONS['text/html']:
+        if (file.content_type in ['text/html', ]
+                or ext in settings.MEETING_VALID_MIME_TYPE_EXTENSIONS.get('text/html', [])):
             # We'll do html sanitization later, but for frames, we fail here,
             # as the sanitized version will most likely be useless.
             validate_no_html_frame(file)
@@ -404,7 +409,7 @@ class ApplyToAllFileUploadForm(FileUploadForm):
                 )
             )
 
-class UploadMinutesForm(FileUploadForm):
+class UploadMinutesForm(ApplyToAllFileUploadForm):
     doc_type = 'minutes'
 
 
