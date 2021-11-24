@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 """Tests of forms in the Meeting application"""
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.conf import settings
 
 from ietf.meeting.forms import FileUploadForm, ApplyToAllFileUploadForm
 from ietf.utils.test_utils import TestCase
@@ -85,10 +84,13 @@ class FileUploadFormTests(TestCase):
 
 
 class ApplyToAllFileUploadFormTests(TestCase):
+    class TestClass(ApplyToAllFileUploadForm):
+        doc_type = 'minutes'
+
     def test_has_apply_to_all_field_by_default(self):
-        form = ApplyToAllFileUploadForm(show_apply_to_all_checkbox=True)
+        form = ApplyToAllFileUploadFormTests.TestClass(show_apply_to_all_checkbox=True)
         self.assertIn('apply_to_all', form.fields)
 
     def test_no_show_apply_to_all_field(self):
-        form = ApplyToAllFileUploadForm(show_apply_to_all_checkbox=False)
+        form = ApplyToAllFileUploadFormTests.TestClass(show_apply_to_all_checkbox=False)
         self.assertNotIn('apply_to_all', form.fields)
