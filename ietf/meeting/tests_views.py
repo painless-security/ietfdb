@@ -5937,6 +5937,127 @@ class MaterialsTests(TestCase):
         self.assertIn('third version', contents)
 
 
+@override_settings(IETF_NOTES_URL='https://notes.ietf.org/')
+class ImportNotesTests(TestCase):
+    settings_temp_path_overrides = TestCase.settings_temp_path_overrides + ['AGENDA_PATH']
+
+    def setUp(self):
+        super().setUp()
+        self.session = SessionFactory(meeting__type_id='ietf')
+        self.meeting = self.session.meeting
+
+    @patch('ietf.meeting.views.Note')
+    def test_retrieves_note(self, note_mock):
+        """Can import and preview a note from notes.ietf.org"""
+        url = urlreverse('ietf.meeting.views.import_session_minutes',
+                         kwargs={'num': self.meeting.number, 'session_id': self.session.pk})
+
+        self.client.login(username='secretary', password='secretary+password')
+        with requests_mock.Mocker() as mock:
+            mock.get(f'https://notes.ietf.org/{self.session.notes_id()}/download', text='markdown text')
+            mock.get(f'https://notes.ietf.org/{self.session.notes_id()}/info',
+                     text=json.dumps({"title": "title", "updatetime": "2021-12-02T11:22:33z"}))
+            r = self.client.get(url)
+            self.assertEqual(r.status_code, 200)
+            q = PyQuery(r.content)
+            iframe = q('iframe#preview')
+            self.assertEqual('<p>markdown text</p>', iframe.attr('srcdoc'))
+            markdown_text_input = q('form #id_markdown_text')
+            self.assertEqual(markdown_text_input.val(), 'markdown text')
+
+    def test_retrieves_with_broken_metadata(self):
+        """Can import and preview a note even if it has a metadata problem"""
+        url = urlreverse('ietf.meeting.views.import_session_minutes',
+                         kwargs={'num': self.meeting.number, 'session_id': self.session.pk})
+
+        self.client.login(username='secretary', password='secretary+password')
+        with requests_mock.Mocker() as mock:
+            mock.get(f'https://notes.ietf.org/{self.session.notes_id()}/download', text='markdown text')
+            mock.get(f'https://notes.ietf.org/{self.session.notes_id()}/info', text='this is not valid json {]')
+            r = self.client.get(url)
+            self.assertEqual(r.status_code, 200)
+            q = PyQuery(r.content)
+            iframe = q('iframe#preview')
+            self.assertEqual('<p>markdown text</p>', iframe.attr('srcdoc'))
+            markdown_text_input = q('form #id_markdown_text')
+            self.assertEqual(markdown_text_input.val(), 'markdown text')
+
+    def test_redirects_on_success(self):
+        """Redirects to session details page after import"""
+        url = urlreverse('ietf.meeting.views.import_session_minutes',
+                         kwargs={'num': self.meeting.number, 'session_id': self.session.pk})
+
+        self.client.login(username='secretary', password='secretary+password')
+        r = self.client.post(url, {'markdown_text': 'markdown text'})
+        self.assertRedirects(
+            r,
+            urlreverse(
+                'ietf.meeting.views.session_details',
+                kwargs={
+                    'num': self.meeting.number,
+                    'acronym': self.session.group.acronym,
+                },
+            ),
+        )
+
+    def test_imports_previewed_text(self):
+        """Import text that was shown as preview even if notes site is updated"""
+        url = urlreverse('ietf.meeting.views.import_session_minutes',
+                         kwargs={'num': self.meeting.number, 'session_id': self.session.pk})
+
+        self.client.login(username='secretary', password='secretary+password')
+        with requests_mock.Mocker() as mock:
+            mock.get(f'https://notes.ietf.org/{self.session.notes_id()}/download', text='updated markdown text')
+            mock.get(f'https://notes.ietf.org/{self.session.notes_id()}/info',
+                     text=json.dumps({"title": "title", "updatetime": "2021-12-02T11:22:33z"}))
+            r = self.client.post(url, {'markdown_text': 'original markdown text'})
+        self.assertEqual(r.status_code, 302)
+        minutes_path = Path(self.meeting.get_materials_path()) / 'minutes'
+        with (minutes_path / self.session.minutes().uploaded_filename).open() as f:
+            self.assertEqual(f.read(), 'original markdown text')
+
+    def test_refuses_identical_import(self):
+        """Should not be able to import text identical to the current revision"""
+        url = urlreverse('ietf.meeting.views.import_session_minutes',
+                         kwargs={'num': self.meeting.number, 'session_id': self.session.pk})
+
+        self.client.login(username='secretary', password='secretary+password')
+        r = self.client.post(url, {'markdown_text': 'original markdown text'})  # create a rev
+        self.assertEqual(r.status_code, 302)
+        with requests_mock.Mocker() as mock:
+            mock.get(f'https://notes.ietf.org/{self.session.notes_id()}/download', text='original markdown text')
+            mock.get(f'https://notes.ietf.org/{self.session.notes_id()}/info',
+                     text=json.dumps({"title": "title", "updatetime": "2021-12-02T11:22:33z"}))
+            r = self.client.get(url)  # try to import the same text
+            self.assertContains(r, "This document is identical", status_code=200)
+            q = PyQuery(r.content)
+            self.assertEqual(len(q('button:disabled[type="submit"]')), 1)
+            self.assertEqual(len(q('button:not(:disabled)[type="submit"]')), 0)
+
+    def test_handles_note_does_not_exist(self):
+        """Should not try to import a note that does not exist"""
+        url = urlreverse('ietf.meeting.views.import_session_minutes',
+                         kwargs={'num': self.meeting.number, 'session_id': self.session.pk})
+
+        self.client.login(username='secretary', password='secretary+password')
+        with requests_mock.Mocker() as mock:
+            mock.get(requests_mock.ANY, status_code=404)
+            r = self.client.get(url, follow=True)
+        self.assertContains(r, 'Could not import', status_code=200)
+
+    def test_handles_notes_server_failure(self):
+        """Problems communicating with the notes server should be handled gracefully"""
+        url = urlreverse('ietf.meeting.views.import_session_minutes',
+                         kwargs={'num': self.meeting.number, 'session_id': self.session.pk})
+        self.client.login(username='secretary', password='secretary+password')
+
+        with requests_mock.Mocker() as mock:
+            mock.get(re.compile(r'.+/download'), exc=requests.exceptions.ConnectTimeout)
+            mock.get(re.compile(r'.+//info'), text='{}')
+            r = self.client.get(url, follow=True)
+        self.assertContains(r, 'Could not reach the notes server', status_code=200)
+
+
 class SessionTests(TestCase):
 
     def test_meeting_requests(self):

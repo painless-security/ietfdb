@@ -56,7 +56,7 @@ from ietf.ietfauth.utils import role_required, has_role, user_is_person
 from ietf.mailtrigger.utils import gather_address_lists
 from ietf.meeting.models import Meeting, Session, Schedule, FloorPlan, SessionPresentation, TimeSlot, SlideSubmission
 from ietf.meeting.models import SessionStatusName, SchedulingEvent, SchedTimeSessAssignment, Room, TimeSlotTypeName
-from ietf.meeting.forms import ( CustomDurationField, SwapDaysForm, SwapTimeslotsForm,
+from ietf.meeting.forms import ( CustomDurationField, SwapDaysForm, SwapTimeslotsForm, ImportMinutesForm,
                                  TimeSlotCreateForm, TimeSlotEditForm, SessionEditForm )
 from ietf.meeting.helpers import get_person_by_email, get_schedule_by_name
 from ietf.meeting.helpers import get_meeting, get_ietf_meeting, get_current_ietf_meeting_num
@@ -88,6 +88,7 @@ from ietf.secr.proceedings.proc_utils import (get_progress_stats, post_process, 
     create_recording)
 from ietf.utils import markdown
 from ietf.utils.decorators import require_api_key
+from ietf.utils.hedgedoc import Note, NoteError
 from ietf.utils.history import find_history_replacements_active_at
 from ietf.utils.log import assertion
 from ietf.utils.mail import send_mail_message, send_mail_text
@@ -4089,3 +4090,84 @@ def approve_proposed_slides(request, slidesubmission_id, num):
                    'existing_doc' : existing_doc,
                    'form': form,
                   })
+
+
+def import_session_minutes(request, session_id, num):
+    """Import session minutes from the ietf.notes.org site
+
+    A GET pulls in the markdown for a session's notes using the HedgeDoc API. An HTML preview of how
+    the datatracker will render the result is sent back. The confirmation form presented to the user
+    contains a hidden copy of the markdown source that will be submitted back if approved.
+
+    A POST accepts the hidden source and creates a new revision of the notes. This step does *not*
+    retrieve the note from the HedgeDoc API again - it posts the hidden source from the form. Any
+    changes to the HedgeDoc site after the preview was retrieved will be ignored. We could also pull
+    the source again and re-display the updated preview with an explanatory message, but there will
+    always be a race condition. Rather than add that complication, we assume that the user previewing
+    the imported minutes will be aware of anyone else changing the notes and coordinate with them.
+
+    A consequence is that the user could tamper with the hidden form and it would be accepted. This is
+    ok, though, because they could more simply upload whatever they want through the upload form with
+    the same effect so no exploit is introduced.
+    """
+    session = get_object_or_404(Session, pk=session_id)
+    note = Note(session.notes_id())
+
+    if not session.can_manage_materials(request.user):
+        permission_denied(request, "You don't have permission to import minutes for this session.")
+    if session.is_material_submission_cutoff() and not has_role(request.user, "Secretariat"):
+        permission_denied(request, "The materials cutoff for this session has passed. Contact the secretariat for further action.")
+
+    if request.method == 'POST':
+        form = ImportMinutesForm(request.POST)
+        if not form.is_valid():
+            import_contents = form.data['markdown_text']
+        else:
+            import_contents = form.cleaned_data['markdown_text']
+            try:
+                save_session_minutes_revision(
+                    session=session,
+                    file=io.BytesIO(import_contents.encode('utf8')),
+                    ext='.md',
+                    request=request,
+                )
+            except SessionNotScheduledError:
+                return HttpResponseGone(
+                    "Cannot import minutes for an unscheduled session. Please check the session ID.",
+                    content_type="text/plain",
+                )
+            except SaveMaterialsError as err:
+                form.add_error(None, str(err))
+            else:
+                messages.success(request, f'Successfully imported minutes as revision {session.minutes().rev}.')
+                return redirect('ietf.meeting.views.session_details', num=num, acronym=session.group.acronym)
+    else:
+        try:
+            import_contents = note.get_source()
+        except NoteError as err:
+            messages.error(request, f'Could not import notes with id {note.id}: {err}.')
+            return redirect('ietf.meeting.views.session_details', num=num, acronym=session.group.acronym)
+        form = ImportMinutesForm(initial={'markdown_text': import_contents})
+
+    # Try to prevent pointless revision creation. Note that we do not block replacing
+    # a document with an identical copy in the validation above. We cannot entirely
+    # avoid a race condition and the likelihood/amount of damage is very low so no
+    # need to complicate things further.
+    current_minutes = session.minutes()
+    contents_changed = True
+    if current_minutes:
+        with open(current_minutes.get_file_name()) as f:
+            if import_contents == Note.preprocess_source(f.read()):
+                contents_changed = False
+                messages.warning(request, 'This document is identical to the current revision, no need to import.')
+
+    return render(
+        request,
+        'meeting/import_minutes.html',
+        {
+            'form': form,
+            'note': note,
+            'session': session,
+            'contents_changed': contents_changed,
+        },
+    )
