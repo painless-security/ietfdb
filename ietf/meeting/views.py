@@ -75,16 +75,15 @@ from ietf.meeting.helpers import send_interim_announcement_request
 from ietf.meeting.utils import finalize, sort_accept_tuple, condition_slide_order
 from ietf.meeting.utils import add_event_info_to_session_qs
 from ietf.meeting.utils import session_time_for_sorting
-from ietf.meeting.utils import session_requested_by
-from ietf.meeting.utils import current_session_status
-from ietf.meeting.utils import data_for_meetings_overview
+from ietf.meeting.utils import session_requested_by, SaveMaterialsError
+from ietf.meeting.utils import current_session_status, get_meeting_sessions, SessionNotScheduledError
+from ietf.meeting.utils import data_for_meetings_overview, handle_upload_file, save_session_minutes_revision
 from ietf.meeting.utils import preprocess_constraints_for_meeting_schedule_editor
 from ietf.meeting.utils import diff_meeting_schedules, prefetch_schedule_diff_objects
 from ietf.meeting.utils import swap_meeting_schedule_timeslot_assignments, bulk_create_timeslots
 from ietf.meeting.utils import preprocess_meeting_important_dates
 from ietf.message.utils import infer_message
 from ietf.name.models import SlideSubmissionStatusName, ProceedingsMaterialTypeName, SessionPurposeName
-from ietf.secr.proceedings.utils import handle_upload_file
 from ietf.secr.proceedings.proc_utils import (get_progress_stats, post_process, import_audio_files,
     create_recording)
 from ietf.utils import markdown
@@ -2201,16 +2200,13 @@ def meeting_requests(request, num=None):
         {"meeting": meeting, "sessions":sessions,
          "groups_not_meeting": groups_not_meeting})
 
+
 def get_sessions(num, acronym):
-    meeting = get_meeting(num=num,type_in=None)
-    sessions = Session.objects.filter(meeting=meeting,group__acronym=acronym,type__in=['regular','plenary','other'])
+    return sorted(
+        get_meeting_sessions(num, acronym).with_current_status(),
+        key=lambda s: session_time_for_sorting(s, use_meeting_date=False)
+    )
 
-    if not sessions:
-        sessions = Session.objects.filter(meeting=meeting,short=acronym,type__in=['regular','plenary','other']) 
-
-    sessions = sessions.with_current_status()
-
-    return sorted(sessions, key=lambda s: session_time_for_sorting(s, use_meeting_date=False))
 
 def session_details(request, num, acronym):
     meeting = get_meeting(num=num,type_in=None)
@@ -2455,62 +2451,29 @@ def upload_session_minutes(request, session_id, num):
             apply_to_all = session.type_id == 'regular'
             if show_apply_to_all_checkbox:
                 apply_to_all = form.cleaned_data['apply_to_all']
-            if minutes_sp:
-                doc = minutes_sp.document
-                doc.rev = '%02d' % (int(doc.rev)+1)
-                minutes_sp.rev = doc.rev
-                minutes_sp.save()
+
+            # Set up the new revision
+            try:
+                save_session_minutes_revision(
+                    session=session,
+                    apply_to_all=apply_to_all,
+                    file=file,
+                    ext=ext,
+                    encoding=form.file_encoding[file.name],
+                    request=request,
+                )
+            except SessionNotScheduledError:
+                return HttpResponseGone(
+                    "Cannot receive uploads for an unscheduled session. Please check the session ID.",
+                    content_type="text/plain",
+                )
+            except SaveMaterialsError as err:
+                form.add_error(None, str(err))
             else:
-                ota = session.official_timeslotassignment()
-                sess_time = ota and ota.timeslot.time
-                if not sess_time:
-                    return HttpResponse("Cannot receive uploads for an unscheduled session.  Please check the session ID.", status=410, content_type="text/plain")
-                if session.meeting.type_id=='ietf':
-                    name = 'minutes-%s-%s' % (session.meeting.number, 
-                                                 session.group.acronym) 
-                    title = 'Minutes IETF%s: %s' % (session.meeting.number, 
-                                                         session.group.acronym) 
-                    if not apply_to_all:
-                        name += '-%s' % (sess_time.strftime("%Y%m%d%H%M"),)
-                        title += ': %s' % (sess_time.strftime("%a %H:%M"),)
-                else:
-                    name = 'minutes-%s-%s' % (session.meeting.number, sess_time.strftime("%Y%m%d%H%M"))
-                    title = 'Minutes %s: %s' % (session.meeting.number, sess_time.strftime("%a %H:%M"))
-                if Document.objects.filter(name=name).exists():
-                    doc = Document.objects.get(name=name)
-                    doc.rev = '%02d' % (int(doc.rev)+1)
-                else:
-                    doc = Document.objects.create(
-                              name = name,
-                              type_id = 'minutes',
-                              title = title,
-                              group = session.group,
-                              rev = '00',
-                          )
-                    DocAlias.objects.create(name=doc.name).docs.add(doc)
-                doc.states.add(State.objects.get(type_id='minutes',slug='active'))
-                if session.sessionpresentation_set.filter(document=doc).exists():
-                    sp = session.sessionpresentation_set.get(document=doc)
-                    sp.rev = doc.rev
-                    sp.save()
-                else:
-                    session.sessionpresentation_set.create(document=doc,rev=doc.rev)
-            if apply_to_all:
-                for other_session in sessions:
-                    if other_session != session:
-                        other_session.sessionpresentation_set.filter(document__type='minutes').delete()
-                        other_session.sessionpresentation_set.create(document=doc,rev=doc.rev)
-            filename = '%s-%s%s'% ( doc.name, doc.rev, ext)
-            doc.uploaded_filename = filename
-            e = NewRevisionDocEvent.objects.create(doc=doc, by=request.user.person, type='new_revision', desc='New revision available: %s'%doc.rev, rev=doc.rev)
-            # The way this function builds the filename it will never trigger the file delete in handle_file_upload.
-            save_error = handle_upload_file(file, filename, session.meeting, 'minutes', request=request, encoding=form.file_encoding[file.name])
-            if save_error:
-                form.add_error(None, save_error)
-            else:
-                doc.save_with_history([e])
-                return redirect('ietf.meeting.views.session_details',num=num,acronym=session.group.acronym)
-    else: 
+                # no exception -- success!
+                messages.success(request, f'Successfully uploaded minutes as revision {session.minutes().rev}.')
+                return redirect('ietf.meeting.views.session_details', num=num, acronym=session.group.acronym)
+    else:
         form = UploadMinutesForm(show_apply_to_all_checkbox)
 
     return render(request, "meeting/upload_session_minutes.html", 
@@ -2532,7 +2495,7 @@ def upload_session_agenda(request, session_id, num):
 
     session_number = None
     sessions = get_sessions(session.meeting.number,session.group.acronym)
-    show_apply_to_all_checkbox = len(sessions) > 1 if session.type_id == 'regular' else False
+    show_apply_to_all_checkbox = len(sessions) > 1 if session.type.slug == 'regular' else False
     if len(sessions) > 1:
        session_number = 1 + sessions.index(session)
 
@@ -2543,7 +2506,7 @@ def upload_session_agenda(request, session_id, num):
         if form.is_valid():
             file = request.FILES['file']
             _, ext = os.path.splitext(file.name)
-            apply_to_all = session.type_id == 'regular'
+            apply_to_all = session.type.slug == 'regular'
             if show_apply_to_all_checkbox:
                 apply_to_all = form.cleaned_data['apply_to_all']
             if agenda_sp:
