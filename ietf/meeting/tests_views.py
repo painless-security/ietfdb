@@ -8,6 +8,8 @@ import random
 import re
 import shutil
 import pytz
+import requests.exceptions
+import requests_mock
 
 from unittest import skipIf
 from mock import patch, PropertyMock
@@ -18,7 +20,6 @@ from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urlsplit
 from PIL import Image
 from pathlib import Path
-
 
 from django.urls import reverse as urlreverse
 from django.conf import settings
@@ -5405,12 +5406,16 @@ class IphoneAppJsonTests(TestCase):
             self.assertTrue(msessions.filter(group__acronym=s['group']['acronym']).exists())
 
 class FinalizeProceedingsTests(TestCase):
-    @patch('urllib.request.urlopen')
-    def test_finalize_proceedings(self, mock_urlopen):
-        mock_urlopen.return_value = BytesIO(b'[{"LastName":"Smith","FirstName":"John","Company":"ABC","Country":"US"}]')
+    @override_settings(STATS_REGISTRATION_ATTENDEES_JSON_URL='https://ietf.example.com/{number}')
+    @requests_mock.Mocker()
+    def test_finalize_proceedings(self, mock):
         make_meeting_test_data()
         meeting = Meeting.objects.filter(type_id='ietf').order_by('id').last()
         meeting.session_set.filter(group__acronym='mars').first().sessionpresentation_set.create(document=Document.objects.filter(type='draft').first(),rev=None)
+        mock.get(
+            settings.STATS_REGISTRATION_ATTENDEES_JSON_URL.format(number=meeting.number),
+            text=json.dumps([{"LastName": "Smith", "FirstName": "John", "Company": "ABC", "Country": "US"}]),
+        )
 
         url = urlreverse('ietf.meeting.views.finalize_proceedings',kwargs={'num':meeting.number})
         login_testing_unauthorized(self,"secretary",url)
@@ -5605,8 +5610,10 @@ class MaterialsTests(TestCase):
             self.assertEqual(doc.rev,'02')
 
             # Verify that we don't have dead links
-            url = url=urlreverse('ietf.meeting.views.session_details', kwargs={'num':session.meeting.number, 'acronym': session.group.acronym})
+            url = urlreverse('ietf.meeting.views.session_details', kwargs={'num':session.meeting.number, 'acronym': session.group.acronym})
             top = '/meeting/%s/' % session.meeting.number
+            self.requests_mock.get(f'{session.notes_url()}/download', text='markdown notes')
+            self.requests_mock.get(f'{session.notes_url()}/info', text=json.dumps({'title': 'title', 'updatetime': '2021-12-01T17:11:00z'}))
             self.crawl_materials(url=url, top=top)
 
     def test_upload_minutes_agenda_unscheduled(self):
@@ -5653,8 +5660,10 @@ class MaterialsTests(TestCase):
             self.assertEqual(doc.rev,'00')
 
             # Verify that we don't have dead links
-            url = url=urlreverse('ietf.meeting.views.session_details', kwargs={'num':session.meeting.number, 'acronym': session.group.acronym})
+            url = urlreverse('ietf.meeting.views.session_details', kwargs={'num':session.meeting.number, 'acronym': session.group.acronym})
             top = '/meeting/%s/' % session.meeting.number
+            self.requests_mock.get(f'{session.notes_url()}/download', text='markdown notes')
+            self.requests_mock.get(f'{session.notes_url()}/info', text=json.dumps({'title': 'title', 'updatetime': '2021-12-01T17:11:00z'}))
             self.crawl_materials(url=url, top=top)
 
     def test_upload_slides(self):
@@ -6911,12 +6920,15 @@ class ProceedingsTests(BaseMeetingTestCase):
             0,
         )
 
-    @patch('ietf.meeting.utils.requests.get')
-    def test_proceedings_attendees(self, mockobj):
-        mockobj.return_value.text = b'[{"LastName":"Smith","FirstName":"John","Company":"ABC","Country":"US"}]'
-        mockobj.return_value.json = lambda: json.loads(b'[{"LastName":"Smith","FirstName":"John","Company":"ABC","Country":"US"}]')
+    @override_settings(STATS_REGISTRATION_ATTENDEES_JSON_URL='https://ietf.example.com/{number}')
+    @requests_mock.Mocker()
+    def test_proceedings_attendees(self, mock):
         make_meeting_test_data()
         meeting = MeetingFactory(type_id='ietf', date=datetime.date(2016,7,14), number="97")
+        mock.get(
+            settings.STATS_REGISTRATION_ATTENDEES_JSON_URL.format(number=meeting.number),
+            text=json.dumps([{"LastName": "Smith", "FirstName": "John", "Company": "ABC", "Country": "US"}]),
+        )
         finalize(meeting)
         url = urlreverse('ietf.meeting.views.proceedings_attendees',kwargs={'num':97})
         response = self.client.get(url)
@@ -6924,14 +6936,18 @@ class ProceedingsTests(BaseMeetingTestCase):
         q = PyQuery(response.content)
         self.assertEqual(1,len(q("#id_attendees tbody tr")))
 
-    @patch('urllib.request.urlopen')
-    def test_proceedings_overview(self, mock_urlopen):
+    @override_settings(STATS_REGISTRATION_ATTENDEES_JSON_URL='https://ietf.example.com/{number}')
+    @requests_mock.Mocker()
+    def test_proceedings_overview(self, mock):
         '''Test proceedings IETF Overview page.
         Note: old meetings aren't supported so need to add a new meeting then test.
         '''
-        mock_urlopen.return_value = BytesIO(b'[{"LastName":"Smith","FirstName":"John","Company":"ABC","Country":"US"}]')
         make_meeting_test_data()
         meeting = MeetingFactory(type_id='ietf', date=datetime.date(2016,7,14), number="97")
+        mock.get(
+            settings.STATS_REGISTRATION_ATTENDEES_JSON_URL.format(number=meeting.number),
+            text=json.dumps([{"LastName": "Smith", "FirstName": "John", "Company": "ABC", "Country": "US"}]),
+        )
         finalize(meeting)
         url = urlreverse('ietf.meeting.views.proceedings_overview',kwargs={'num':97})
         response = self.client.get(url)
