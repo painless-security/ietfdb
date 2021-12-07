@@ -25,7 +25,7 @@ from django import forms
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import (HttpResponse, HttpResponseRedirect, HttpResponseForbidden,
                          HttpResponseNotFound, Http404, HttpResponseBadRequest,
-                         JsonResponse)
+                         JsonResponse, HttpResponseGone)
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -2363,13 +2363,14 @@ def upload_session_bluesheets(request, session_id, num):
             ota = session.official_timeslotassignment()
             sess_time = ota and ota.timeslot.time
             if not sess_time:
-                return HttpResponse("Cannot receive uploads for an unscheduled session.  Please check the session ID.", status=410, content_type="text/plain")
+                return HttpResponseGone("Cannot receive uploads for an unscheduled session.  Please check the session ID.", content_type="text/plain")
 
 
             save_error = save_bluesheet(request, session, file, encoding=form.file_encoding[file.name])
             if save_error:
                 form.add_error(None, save_error)
             else:
+                messages.success(request, 'Successfully uploaded bluesheets.')
                 return redirect('ietf.meeting.views.session_details',num=num,acronym=session.group.acronym)
     else: 
         form = UploadBlueSheetForm()
@@ -2518,7 +2519,7 @@ def upload_session_agenda(request, session_id, num):
                 ota = session.official_timeslotassignment()
                 sess_time = ota and ota.timeslot.time
                 if not sess_time:
-                    return HttpResponse("Cannot receive uploads for an unscheduled session.  Please check the session ID.", status=410, content_type="text/plain")
+                    return HttpResponseGone("Cannot receive uploads for an unscheduled session.  Please check the session ID.", content_type="text/plain")
                 if session.meeting.type_id=='ietf':
                     name = 'agenda-%s-%s' % (session.meeting.number, 
                                                  session.group.acronym) 
@@ -2566,6 +2567,7 @@ def upload_session_agenda(request, session_id, num):
                 form.add_error(None, save_error)
             else:
                 doc.save_with_history([e])
+                messages.success(request, f'Successfully uploaded agenda as revision {doc.rev}.')
                 return redirect('ietf.meeting.views.session_details',num=num,acronym=session.group.acronym)
     else: 
         form = UploadAgendaForm(show_apply_to_all_checkbox, initial={'apply_to_all':session.type_id=='regular'})
@@ -2661,6 +2663,9 @@ def upload_session_slides(request, session_id, num, name):
             else:
                 doc.save_with_history([e])
                 post_process(doc)
+                messages.success(
+                    request,
+                    f'Successfully uploaded slides as revision {doc.rev} of {doc.name}.')
                 return redirect('ietf.meeting.views.session_details',num=num,acronym=session.group.acronym)
     else: 
         initial = {}
@@ -2727,6 +2732,7 @@ def propose_session_slides(request, session_id, num):
             msg.by = request.user.person
             msg.save()
             send_mail_message(request, msg)
+            messages.success(request, 'Successfully submitted proposed slides.')
             return redirect('ietf.meeting.views.session_details',num=num,acronym=session.group.acronym)
     else: 
         initial = {}
@@ -2750,6 +2756,7 @@ def remove_sessionpresentation(request, session_id, num, name):
         c = DocEvent(type="added_comment", doc=sp.document, rev=sp.document.rev, by=request.user.person)
         c.desc = "Removed from session: %s" % (session)
         c.save()
+        messages.success(request, f'Successfully removed {name}.')
         return redirect('ietf.meeting.views.session_details', num=session.meeting.number, acronym=session.group.acronym)
 
     return render(request,'meeting/remove_sessionpresentation.html', {'sp': sp })
