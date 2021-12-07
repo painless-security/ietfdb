@@ -14,7 +14,6 @@ import pytz
 import re
 import tarfile
 import tempfile
-import markdown
 
 from calendar import timegm
 from collections import OrderedDict, Counter, deque, defaultdict
@@ -88,6 +87,7 @@ from ietf.name.models import SlideSubmissionStatusName, ProceedingsMaterialTypeN
 from ietf.secr.proceedings.utils import handle_upload_file
 from ietf.secr.proceedings.proc_utils import (get_progress_stats, post_process, import_audio_files,
     create_recording)
+from ietf.utils import markdown
 from ietf.utils.decorators import require_api_key
 from ietf.utils.history import find_history_replacements_active_at
 from ietf.utils.log import assertion
@@ -259,7 +259,7 @@ def materials_document(request, document, num=None, ext=None):
                     content_type = content_type.replace('plain', 'markdown', 1)
                     break;
                 elif atype[0] == 'text/html':
-                    bytes = "<html>\n<head></head>\n<body>\n%s\n</body>\n</html>\n" % markdown.markdown(bytes.decode(),extensions=['extra'])
+                    bytes = "<html>\n<head></head>\n<body>\n%s\n</body>\n</html>\n" % markdown.markdown(bytes.decode())
                     content_type = content_type.replace('plain', 'html', 1)
                     break;
                 elif atype[0] == 'text/plain':
