@@ -6033,6 +6033,31 @@ class ImportNotesTests(TestCase):
             self.assertEqual(len(q('button:disabled[type="submit"]')), 1)
             self.assertEqual(len(q('button:not(:disabled)[type="submit"]')), 0)
 
+    def test_handles_missing_previous_revision_file(self):
+        """Should still allow import if the file for the previous revision is missing"""
+        url = urlreverse('ietf.meeting.views.import_session_minutes',
+                         kwargs={'num': self.meeting.number, 'session_id': self.session.pk})
+
+        self.client.login(username='secretary', password='secretary+password')
+        r = self.client.post(url, {'markdown_text': 'original markdown text'})  # create a rev
+        # remove the file uploaded for the first rev
+        minutes_docs = self.session.sessionpresentation_set.filter(document__type='minutes')
+        self.assertEqual(minutes_docs.count(), 1)
+        Path(minutes_docs.first().document.get_file_name()).unlink()
+
+        self.assertEqual(r.status_code, 302)
+        with requests_mock.Mocker() as mock:
+            mock.get(f'https://notes.ietf.org/{self.session.notes_id()}/download', text='original markdown text')
+            mock.get(f'https://notes.ietf.org/{self.session.notes_id()}/info',
+                     text=json.dumps({"title": "title", "updatetime": "2021-12-02T11:22:33z"}))
+            r = self.client.get(url)
+            self.assertEqual(r.status_code, 200)
+            q = PyQuery(r.content)
+            iframe = q('iframe#preview')
+            self.assertEqual('<p>original markdown text</p>', iframe.attr('srcdoc'))
+            markdown_text_input = q('form #id_markdown_text')
+            self.assertEqual(markdown_text_input.val(), 'original markdown text')
+
     def test_handles_note_does_not_exist(self):
         """Should not try to import a note that does not exist"""
         url = urlreverse('ietf.meeting.views.import_session_minutes',
