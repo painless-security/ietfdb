@@ -5946,8 +5946,7 @@ class ImportNotesTests(TestCase):
         self.session = SessionFactory(meeting__type_id='ietf')
         self.meeting = self.session.meeting
 
-    @patch('ietf.meeting.views.Note')
-    def test_retrieves_note(self, note_mock):
+    def test_retrieves_note(self):
         """Can import and preview a note from notes.ietf.org"""
         url = urlreverse('ietf.meeting.views.import_session_minutes',
                          kwargs={'num': self.meeting.number, 'session_id': self.session.pk})

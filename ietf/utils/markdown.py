@@ -8,7 +8,7 @@ the datatracker.
 import bleach
 import markdown as python_markdown
 
-from django.utils.html import mark_safe
+from django.utils.safestring import mark_safe
 from markdown.extensions.extra import ExtraExtension
 
 ALLOWED_TAGS = bleach.ALLOWED_TAGS + ['p', 'h1', 'h2', 'h3', 'h4', 'br']

@@ -2,8 +2,6 @@
 # -*- coding: utf-8 -*-
 """HedgeDoc API utilities tests"""
 import requests_mock
-from textwrap import dedent
-
 
 from ietf.utils.tests import TestCase
 from ietf.utils.hedgedoc import Note
