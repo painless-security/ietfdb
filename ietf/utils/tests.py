@@ -44,6 +44,8 @@ from ietf.utils.mail import send_mail_preformatted, send_mail_text, send_mail_mi
 from ietf.utils.test_runner import get_template_paths, set_coverage_checking
 from ietf.utils.test_utils import TestCase
 from ietf.utils.text import parse_unicode
+from ietf.utils.xmldraft import XMLDraft
+
 
 skip_wiki_glue_testing = False
 skip_message_svn = ""
@@ -449,6 +451,36 @@ class PlaintextDraftTests(TestCase):
             file.write(self.draft.text)
         self.assertEqual(getmeta(filename)['docdeststatus'],'Informational')
         shutil.rmtree(tempdir)
+
+
+class XMLDraftTests(TestCase):
+    def test_get_refs_v3(self):
+        draft = XMLDraft('ietf/utils/test_draft_with_references_v3.xml')
+        self.assertEqual(
+            draft.get_refs(),
+            {
+                'rfc1': XMLDraft.REF_TYPE_NORMATIVE,
+                'rfc255': XMLDraft.REF_TYPE_INFORMATIVE,
+                'rfc1930': XMLDraft.REF_TYPE_INFORMATIVE,
+                'rfc6996': XMLDraft.REF_TYPE_INFORMATIVE,
+                'rfc7300': XMLDraft.REF_TYPE_INFORMATIVE,
+                'rfc1207': XMLDraft.REF_TYPE_UNKNOWN,
+            }
+        )
+
+    def test_get_refs_v2(self):
+        draft = XMLDraft('ietf/utils/test_draft_with_references_v2.xml')
+        self.assertEqual(
+            draft.get_refs(),
+            {
+                'rfc1': XMLDraft.REF_TYPE_NORMATIVE,
+                'rfc255': XMLDraft.REF_TYPE_INFORMATIVE,
+                'rfc1930': XMLDraft.REF_TYPE_INFORMATIVE,
+                'rfc6996': XMLDraft.REF_TYPE_INFORMATIVE,
+                'rfc7300': XMLDraft.REF_TYPE_INFORMATIVE,
+                'rfc1207': XMLDraft.REF_TYPE_UNKNOWN,
+            }
+        )
 
 
 class NameTests(TestCase):
