@@ -39,7 +39,7 @@ from ietf.submit.models import ( Submission, SubmissionEvent, Preapproval, Draft
     SubmissionCheck, SubmissionExtResource )
 from ietf.utils import log
 from ietf.utils.accesstoken import generate_random_key
-from ietf.utils.draft import Draft
+from ietf.utils.draft import PlaintextDraft
 from ietf.utils.mail import is_valid_email
 from ietf.utils.text import parse_unicode
 from ietf.person.name import unidecode_name
@@ -717,7 +717,7 @@ def get_draft_meta(form, saved_files):
         file_name['txt'] = os.path.join(settings.IDSUBMIT_STAGING_PATH, '%s-%s.txt' % (form.filename, form.revision))
         file_size = os.stat(file_name['txt']).st_size
         with io.open(file_name['txt']) as txt_file:
-            form.parsed_draft = Draft(txt_file.read(), txt_file.name)
+            form.parsed_draft = PlaintextDraft(txt_file.read(), txt_file.name)
     else:
         file_size = form.cleaned_data['txt'].size
 

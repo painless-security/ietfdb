@@ -38,7 +38,7 @@ from ietf.group.models import Group
 from ietf.person.name import name_parts, unidecode_name
 from ietf.submit.tests import submission_file
 from ietf.utils.bower_storage import BowerStorageFinder
-from ietf.utils.draft import Draft, getmeta
+from ietf.utils.draft import PlaintextDraft, getmeta
 from ietf.utils.log import unreachable, assertion
 from ietf.utils.mail import send_mail_preformatted, send_mail_text, send_mail_mime, outbox, get_payload_text
 from ietf.utils.test_runner import get_template_paths, set_coverage_checking
@@ -423,12 +423,12 @@ class TestBowerStaticFiles(TestCase):
         self.assertNotEqual(files,[])
 
 
-class DraftTests(TestCase):
+class PlaintextDraftTests(TestCase):
 
     def setUp(self):
         super().setUp()
         file,_ = submission_file(name='draft-test-draft-class',rev='00',format='txt',templatename='test_submission.txt',group=None)
-        self.draft = Draft(text=file.getvalue(),source='draft-test-draft-class-00.txt',name_from_source=False)
+        self.draft = PlaintextDraft(text=file.getvalue(), source='draft-test-draft-class-00.txt', name_from_source=False)
 
     def test_get_status(self):
         self.assertEqual(self.draft.get_status(),'Informational')
