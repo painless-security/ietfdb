@@ -15,9 +15,7 @@
                 Text here.
                 <xref target="RFC0001">RFC0001</xref>
                 <xref target="RFC0255">RFC0255</xref>
-                <xref target="RFC1930">BCP6</xref>
-                <xref target="RFC6996">BCP6</xref>
-                <xref target="RFC7300">BCP6</xref>
+                <xref target="bcp6">BCP6</xref>
                 <xref target="RFC1207">FYI7</xref>
             </t>
         </section>
@@ -48,7 +46,7 @@
                 <seriesInfo name='RFC' value='255'/>
                 <seriesInfo name='DOI' value='10.17487/RFC0255'/>
             </reference>
-            <reference anchor='RFC1930' target='https://www.rfc-editor.org/info/rfc1930'>
+            <reference anchor='bcp6' target='https://www.rfc-editor.org/info/rfc1930'>
                 <front>
                     <title>Guidelines for creation, selection, and registration of an Autonomous System (AS)</title>
                     <author initials='J.' surname='Hawkinson' fullname='J. Hawkinson'>
@@ -69,48 +67,6 @@
                 <seriesInfo name='BCP' value='6'/>
                 <seriesInfo name='RFC' value='1930'/>
                 <seriesInfo name='DOI' value='10.17487/RFC1930'/>
-            </reference>
-            <reference anchor='RFC6996' target='https://www.rfc-editor.org/info/rfc6996'>
-                <front>
-                    <title>Autonomous System (AS) Reservation for Private Use</title>
-                    <author initials='J.' surname='Mitchell' fullname='J. Mitchell'>
-                        <organization/>
-                    </author>
-                    <date year='2013' month='July'/>
-                    <abstract>
-                        <t>This document describes the reservation of Autonomous System Numbers (ASNs) that are for
-                            Private Use only, known as Private Use ASNs, and provides operational guidance on their
-                            use. This document enlarges the total space available for Private Use ASNs by
-                            documenting the reservation of a second, larger range and updates RFC 1930 by replacing
-                            Section 10 of that document.
-                        </t>
-                    </abstract>
-                </front>
-                <seriesInfo name='BCP' value='6'/>
-                <seriesInfo name='RFC' value='6996'/>
-                <seriesInfo name='DOI' value='10.17487/RFC6996'/>
-            </reference>
-            <reference anchor='RFC7300' target='https://www.rfc-editor.org/info/rfc7300'>
-                <front>
-                    <title>Reservation of Last Autonomous System (AS) Numbers</title>
-                    <author initials='J.' surname='Haas' fullname='J. Haas'>
-                        <organization/>
-                    </author>
-                    <author initials='J.' surname='Mitchell' fullname='J. Mitchell'>
-                        <organization/>
-                    </author>
-                    <date year='2014' month='July'/>
-                    <abstract>
-                        <t>This document reserves two Autonomous System Numbers (ASNs) at the end of the 16-bit and
-                            32-bit ranges, described in this document as &quot;Last ASNs&quot;, and provides
-                            guidance to implementers and operators on their use. This document updates Section 10 of
-                            RFC 1930.
-                        </t>
-                    </abstract>
-                </front>
-                <seriesInfo name='BCP' value='6'/>
-                <seriesInfo name='RFC' value='7300'/>
-                <seriesInfo name='DOI' value='10.17487/RFC7300'/>
             </reference>
         </references>
         <references title="Mysterious References">

@@ -461,9 +461,7 @@ class XMLDraftTests(TestCase):
             {
                 'rfc1': XMLDraft.REF_TYPE_NORMATIVE,
                 'rfc255': XMLDraft.REF_TYPE_INFORMATIVE,
-                'rfc1930': XMLDraft.REF_TYPE_INFORMATIVE,
-                'rfc6996': XMLDraft.REF_TYPE_INFORMATIVE,
-                'rfc7300': XMLDraft.REF_TYPE_INFORMATIVE,
+                'bcp6': XMLDraft.REF_TYPE_INFORMATIVE,
                 'rfc1207': XMLDraft.REF_TYPE_UNKNOWN,
             }
         )
@@ -475,9 +473,7 @@ class XMLDraftTests(TestCase):
             {
                 'rfc1': XMLDraft.REF_TYPE_NORMATIVE,
                 'rfc255': XMLDraft.REF_TYPE_INFORMATIVE,
-                'rfc1930': XMLDraft.REF_TYPE_INFORMATIVE,
-                'rfc6996': XMLDraft.REF_TYPE_INFORMATIVE,
-                'rfc7300': XMLDraft.REF_TYPE_INFORMATIVE,
+                'bcp6': XMLDraft.REF_TYPE_INFORMATIVE,
                 'rfc1207': XMLDraft.REF_TYPE_UNKNOWN,
             }
         )

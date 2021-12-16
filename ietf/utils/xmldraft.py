@@ -55,37 +55,33 @@ class XMLDraft(Draft):
                 tree.tree = v2v3.convert2to3()
         return tree
 
+    def _document_name(self, anchor):
+        """Guess document name from reference anchor
+
+        Looks for series numbers and removes leading 0s from the number.
+        """
+        anchor = anchor.lower()  # always give back lowercase
+        label = anchor.rstrip('0123456789')  # remove trailing digits
+        if label in ['rfc', 'bcp', 'fyi', 'std']:
+            number = int(anchor[len(label):])
+            return f'{label}{number}'
+        return anchor
+
+    def _reference_section_type(self, section_name):
+        """Determine reference type from name of references section"""
+        section_name = section_name.lower()
+        if 'normative' in section_name:
+            return self.REF_TYPE_NORMATIVE
+        elif 'informative' in section_name:
+            return self.REF_TYPE_INFORMATIVE
+        return self.REF_TYPE_UNKNOWN
+
     def get_refs(self):
         """Extract references from the draft"""
-        # map string appearing in <references> name to REF_TYPE_*
-        known_ref_types = {
-            'normative': self.REF_TYPE_NORMATIVE,
-            'informative': self.REF_TYPE_INFORMATIVE,
-        }
-
         refs = {}
         # accept nested <references> sections
-        ref_sections = self.xmlroot.findall('back//references')
-        for section in ref_sections:
-            # figure out what type of references are in this section
-            ref_type = self.REF_TYPE_UNKNOWN
-            name = section.findtext('name').lower()
-            for substr in known_ref_types:
-                if substr in name:
-                    ref_type = known_ref_types[substr]
-                    break
-
-            # collect the references
-            for ref in section.findall('.//reference'):
-                for series_info in ref.findall('seriesInfo'):
-                    series_name = series_info.get('name').lower()
-                    if series_name == 'rfc':
-                        rfc_number = int(series_info.get('value'))
-                        ref_name = f'rfc{rfc_number}'
-                    elif series_name == 'internet-draft':
-                        ref_name = series_info.get('value')
-                    else:
-                        ref_name = None
-                    if ref_name is not None:
-                        refs[ref_name] = ref_type
+        for section in self.xmlroot.findall('back//references'):
+            ref_type = self._reference_section_type(section.findtext('name'))
+            for ref in (section.findall('./reference') + section.findall('./referencegroup')):
+                refs[self._document_name(ref.get('anchor'))] = ref_type
         return refs
