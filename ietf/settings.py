@@ -148,6 +148,7 @@ IETF_ID_URL = IETF_HOST_URL + 'id/' # currently unused
 IETF_ID_ARCHIVE_URL = IETF_HOST_URL + 'archive/id/'
 IETF_AUDIO_URL = IETF_HOST_URL + 'audio/'
 
+IETF_NOTES_URL = 'https://notes.ietf.org/'  # HedgeDoc base URL
 
 # Absolute path to the directory static files should be collected to.
 # Example: "/var/www/example.com/static/"
@@ -743,6 +744,13 @@ CACHES = {
             'MAX_ENTRIES': 100000,      # 100,000
         },
     },
+    'pdfized': {
+        'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+        'LOCATION': '/a/cache/datatracker/pdfized',
+        'OPTIONS': {
+            'MAX_ENTRIES': 100000,      # 100,000
+        },
+    },
     'slowpages': {
         'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
         'LOCATION': '/a/cache/datatracker/slowpages',
@@ -755,6 +763,8 @@ CACHES = {
 HTMLIZER_VERSION = 1
 HTMLIZER_URL_PREFIX = "/doc/html"
 HTMLIZER_CACHE_TIME = 60*60*24*14       # 14 days
+PDFIZER_CACHE_TIME = HTMLIZER_CACHE_TIME
+PDFIZER_URL_PREFIX = IDTRACKER_BASE_URL+"/doc/pdf"
 
 # Email settings
 IPR_EMAIL_FROM = 'ietf-ipr@ietf.org'
@@ -996,6 +1006,7 @@ DOT_BINARY = '/usr/bin/dot'
 UNFLATTEN_BINARY= '/usr/bin/unflatten'
 RSYNC_BINARY = '/usr/bin/rsync'
 YANGLINT_BINARY = '/usr/bin/yanglint'
+DE_GFM_BINARY = '/usr/bin/de-gfm.ruby2.5'
 
 # Account settings
 DAYS_TO_EXPIRE_REGISTRATION_LINK = 3
@@ -1269,6 +1280,14 @@ if SERVER_MODE != 'production':
             'BACKEND': 'django.core.cache.backends.dummy.DummyCache',
             #'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
             'LOCATION': '/var/cache/datatracker/htmlized',
+            'OPTIONS': {
+                'MAX_ENTRIES': 1000,
+            },
+        },
+        'pdfized': {
+            'BACKEND': 'django.core.cache.backends.dummy.DummyCache',
+            #'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+            'LOCATION': '/var/cache/datatracker/pdfized',
             'OPTIONS': {
                 'MAX_ENTRIES': 1000,
             },

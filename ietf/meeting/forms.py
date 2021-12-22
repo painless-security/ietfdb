@@ -61,21 +61,18 @@ def duration_string(duration):
     '''Custom duration_string to return HH:MM (no seconds)'''
     days = duration.days
     seconds = duration.seconds
-    microseconds = duration.microseconds
 
     minutes = seconds // 60
-    seconds = seconds % 60
-
     hours = minutes // 60
     minutes = minutes % 60
 
     string = '{:02d}:{:02d}'.format(hours, minutes)
     if days:
         string = '{} '.format(days) + string
-    if microseconds:
-        string += '.{:06d}'.format(microseconds)
 
     return string
+
+
 # -------------------------------------------------
 # Forms
 # -------------------------------------------------
@@ -269,6 +266,7 @@ class InterimSessionModelForm(forms.ModelForm):
         if self.instance.agenda():
             doc = self.instance.agenda()
             doc.rev = str(int(doc.rev) + 1).zfill(2)
+            doc.uploaded_filename = doc.filename_with_rev()
             e = NewRevisionDocEvent.objects.create(
                 type='new_revision',
                 by=self.user.person,
@@ -434,6 +432,10 @@ class UploadSlidesForm(ApplyToAllFileUploadForm):
             if re.search(r'-\d{2}$', title):
                 raise forms.ValidationError("Interim slides currently may not have a title that ends with something that looks like a revision number (-nn)")
         return title
+
+
+class ImportMinutesForm(forms.Form):
+    markdown_text = forms.CharField(strip=False, widget=forms.HiddenInput)
 
 
 class RequestMinutesForm(forms.Form):
@@ -621,7 +623,11 @@ class DurationChoiceField(forms.ChoiceField):
         return ''
 
     def to_python(self, value):
-        return datetime.timedelta(seconds=round(float(value))) if value not in self.empty_values else None
+        if value in self.empty_values or (isinstance(value, str) and not value.isnumeric()):
+            return None  # treat non-numeric values as empty
+        else:
+            # noinspection PyTypeChecker
+            return datetime.timedelta(seconds=round(float(value)))
 
     def valid_value(self, value):
         return super().valid_value(self.prepare_value(value))
@@ -683,11 +689,15 @@ class SessionDetailsForm(forms.ModelForm):
 
     def clean(self):
         super().clean()
+        # Fill in on_agenda. If this is a new instance or we have changed its purpose, then use
+        # the on_agenda value for the purpose. Otherwise, keep the value of an existing instance (if any)
+        # or leave it blank.
         if 'purpose' in self.cleaned_data and (
-        'purpose' in self.changed_data or self.instance.pk is None
+                self.instance.pk is None or (self.instance.purpose != self.cleaned_data['purpose'])
         ):
             self.cleaned_data['on_agenda'] = self.cleaned_data['purpose'].on_agenda
-
+        elif self.instance.pk is not None:
+            self.cleaned_data['on_agenda'] = self.instance.on_agenda
         return self.cleaned_data
 
     class Media:
@@ -703,10 +713,9 @@ class SessionEditForm(SessionDetailsForm):
         super().__init__(instance=instance, group=instance.group, *args, **kwargs)
 
 
-class SessionDetailsInlineFormset(forms.BaseInlineFormSet):
+class SessionDetailsInlineFormSet(forms.BaseInlineFormSet):
     def __init__(self, group, meeting, queryset=None, *args, **kwargs):
         self._meeting = meeting
-        self.created_instances = []
 
         # Restrict sessions to the meeting and group. The instance
         # property handles one of these for free.
@@ -728,12 +737,6 @@ class SessionDetailsInlineFormset(forms.BaseInlineFormSet):
         form.instance.meeting = self._meeting
         return super().save_new(form, commit)
 
-    def save(self, commit=True):
-        existing_instances = set(form.instance for form in self.forms if form.instance.pk)
-        saved = super().save(commit)
-        self.created_instances = [inst for inst in saved if inst not in existing_instances]
-        return saved
-
     @property
     def forms_to_keep(self):
         """Get the not-deleted forms"""
@@ -743,7 +746,7 @@ def sessiondetailsformset_factory(min_num=1, max_num=3):
     return forms.inlineformset_factory(
         Group,
         Session,
-        formset=SessionDetailsInlineFormset,
+        formset=SessionDetailsInlineFormSet,
         form=SessionDetailsForm,
         can_delete=True,
         can_order=False,
