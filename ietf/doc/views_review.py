@@ -621,7 +621,7 @@ class CompleteReviewForm(forms.Form):
         url = self.cleaned_data['review_url']
         #scheme, netloc, path, parameters, query, fragment = urlparse(url)
         if url:
-            r = requests.get(url)
+            r = requests.get(url, timeout=settings.DEFAULT_REQUESTS_TIMEOUT)
             if r.status_code != 200:
                 raise forms.ValidationError("Trying to retrieve the URL resulted in status code %s: %s.  Please provide an URL that can be retrieved." % (r.status_code, r.reason))
         return url

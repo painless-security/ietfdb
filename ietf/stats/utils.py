@@ -230,7 +230,10 @@ def get_meeting_registration_data(meeting):
     """
     num_created = 0
     num_processed = 0
-    response = requests.get(settings.STATS_REGISTRATION_ATTENDEES_JSON_URL.format(number=meeting.number))
+    response = requests.get(
+        settings.STATS_REGISTRATION_ATTENDEES_JSON_URL.format(number=meeting.number),
+        timeout=settings.DEFAULT_REQUESTS_TIMEOUT,
+    )
     if response.status_code == 200:
         decoded = []
         try:

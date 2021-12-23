@@ -39,7 +39,11 @@ class Note:
         """
         if self._source is None:
             try:
-                r = requests.get(urljoin(self.base_url, f'{self.id}/download'), allow_redirects=True)
+                r = requests.get(
+                    urljoin(self.base_url, f'{self.id}/download'),
+                    allow_redirects=True,
+                    timeout=settings.DEFAULT_REQUESTS_TIMEOUT,
+                )
             except requests.RequestException:
                 raise ServerNoteError
             if r.status_code != 200:
@@ -69,7 +73,11 @@ class Note:
     def _retrieve_metadata(self):
         if self._metadata is None:
             try:
-                r = requests.get(urljoin(self.base_url, f'{self.id}/info'), allow_redirects=True)
+                r = requests.get(
+                    urljoin(self.base_url, f'{self.id}/info'),
+                    allow_redirects=True,
+                    timeout=settings.DOC_HREFS,
+                )
             except requests.RequestException:
                 raise ServerNoteError
             if r.status_code != 200:

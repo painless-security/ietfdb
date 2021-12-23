@@ -123,7 +123,7 @@ def create_proceedings_templates(meeting):
     # Get meeting attendees from registration system
     url = settings.STATS_REGISTRATION_ATTENDEES_JSON_URL.format(number=meeting.number)
     try:
-        attendees = requests.get(url).json()
+        attendees = requests.get(url, timeout=settings.DEFAULT_REQUESTS_TIMEOUT).json()
     except (ValueError, HTTPError):
         attendees = []
 
