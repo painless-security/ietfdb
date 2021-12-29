@@ -389,6 +389,16 @@ def expires_soon(x,request):
 def startswith(x, y):
     return str(x).startswith(y)
 
+
+@register.filter(name='removesuffix', is_safe=True)
+def removesuffix(value, suffix):
+    base = str(value)
+    if base.endswith(suffix):
+        return base[:-len(suffix)]
+    else:
+        return base
+
+
 @register.filter
 def has_role(user, role_names):
     from ietf.ietfauth.utils import has_role
