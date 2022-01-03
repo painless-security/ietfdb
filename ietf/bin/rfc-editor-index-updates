@@ -46,17 +46,27 @@ if options.skip_date:
 log("Updating document metadata from RFC index going back to %s, from %s" % (skip_date, settings.RFC_EDITOR_INDEX_URL))
 
 
-response = requests.get(
-    settings.RFC_EDITOR_INDEX_URL,
-    timeout=30,  # seconds
-)
+try:
+    response = requests.get(
+        settings.RFC_EDITOR_INDEX_URL,
+        timeout=30,  # seconds
+    )
+except requests.Timeout as exc:
+    log(f'GET request timed out retrieving RFC editor index: {exc}')
+    sys.exit(1)
+
+
 rfc_index_xml = response.text
 index_data = ietf.sync.rfceditor.parse_index(io.StringIO(rfc_index_xml))
 
-response = requests.get(
-    settings.RFC_EDITOR_ERRATA_JSON_URL,
-    timeout=30,  # seconds
-)
+try:
+    response = requests.get(
+        settings.RFC_EDITOR_ERRATA_JSON_URL,
+        timeout=30,  # seconds
+    )
+except requests.Timeout as exc:
+    log(f'GET request timed out retrieving RFC editor errata: {exc}')
+    sys.exit(1)
 errata_data = response.json()
 
 if len(index_data) < ietf.sync.rfceditor.MIN_INDEX_RESULTS:

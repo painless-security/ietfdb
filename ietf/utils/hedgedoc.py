@@ -44,8 +44,8 @@ class Note:
                     allow_redirects=True,
                     timeout=settings.DEFAULT_REQUESTS_TIMEOUT,
                 )
-            except requests.RequestException:
-                raise ServerNoteError
+            except requests.RequestException as exc:
+                raise ServerNoteError from exc
             if r.status_code != 200:
                 raise NoteNotFound
             self._source = self.preprocess_source(r.text)
@@ -78,8 +78,8 @@ class Note:
                     allow_redirects=True,
                     timeout=settings.DOC_HREFS,
                 )
-            except requests.RequestException:
-                raise ServerNoteError
+            except requests.RequestException as exc:
+                raise ServerNoteError from exc
             if r.status_code != 200:
                 raise NoteNotFound
             try:
@@ -116,6 +116,7 @@ class NoteError(Exception):
 
 class ServerNoteError(NoteError):
     default_message = 'Could not reach the notes server'
+
 
 class NoteNotFound(NoteError):
     default_message = 'Note did not exist or could not be loaded'

@@ -20,10 +20,14 @@ from ietf.utils.log import log
 
 log("Updating RFC Editor queue states from %s" % settings.RFC_EDITOR_QUEUE_URL)
 
-response = requests.get(
-    settings.RFC_EDITOR_QUEUE_URL,
-    timeout=30,  # seconds
-)
+try:
+    response = requests.get(
+        settings.RFC_EDITOR_QUEUE_URL,
+        timeout=30,  # seconds
+    )
+except requests.Timeout as exc:
+    log(f'GET request timed out retrieving RFC editor queue: {exc}')
+    sys.exit(1)
 drafts, warnings = parse_queue(io.StringIO(response.text))
 for w in warnings:
     log(u"Warning: %s" % w)
