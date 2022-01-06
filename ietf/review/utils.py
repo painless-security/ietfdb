@@ -801,7 +801,6 @@ def send_reminder_unconfirmed_assignments(remind_date):
     accepted or rejected, if enabled in ReviewTeamSettings.
     """
     log = []
-    days_since_origin = (remind_date - ORIGIN_DATE_PERIODIC_REMINDERS).days
     relevant_review_team_settings = ReviewTeamSettings.objects.filter(
         remind_days_unconfirmed_assignments__isnull=False)
 
