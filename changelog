@@ -1,4 +1,47 @@
+ietfdb (7.42.0) ietf; urgency=medium
+
+  ** Bugfixes and minor features **
+
+  * Merged in [19786] from jennifer@painless-security.com:
+    Strip Unicode control characters out of feed content. Fixes #3398.  
+
+  * Merged in [19787] from rjsparks@nostrum.com:
+    Change to not serve any personalapikey metadata.  
+
+  * Merged in [19788] from jennifer@painless-security.com:
+    Import django.conf.settings instead of ietf.settings. Fixes #3392.  
+
+  * Merged in [19790] from rjsparks@nostrum.com:
+    Provide and maintain an rsyncable bibxml-ids dataset.  
+
+  * Merged in [19793] from nick@staff.ietf.org:
+    misc: new README.md + docker dir cleanup 
+
+  * Merged in [19801] from nick@staff.ietf.org:
+    fix: missing dependencies in dockerfile from changeset #19767 
+
+  * Merged in [19804] from rjsparks@nostrum.com:
+    Pin tastypie at 0.14.3. Related to #3500.  
+
+  * Merged in [19806] from rjsparks@nostrum.com:
+    Correct the url for the bibtex button. Provide a pdfized button. Fixes
+    #3501.
+
+  * Merged in [19811] from lars@eggert.org:
+    When using Docker, the runserver isn't being accessed over loopback,
+    so we need to initialize INTERNAL_IPS based on the current interface 
+    configuration.
+
+  * Merged in [19813] from rjsparks@nostrum.com:
+    Improve robustness of pdfization. Tune the test crawler. Don't show
+    htmlized and pdfized buttons when that genration will fail.
+
+ -- Robert Sparks <rjsparks@nostrum.com>  07 Jan 2022 15:23:26 +0000
+
+
 ietfdb (7.41.0) ietf; urgency=medium
+
+  ** improved markdown uploads, js testing, prep for move to github, pdfized documents **
 
   * Merged in [19672] from jennifer@painless-security.com:
     Add tests of meeting forms for the new session purpose work and a few 
