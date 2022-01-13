@@ -76,7 +76,7 @@ class Note:
                 r = requests.get(
                     urljoin(self.base_url, f'{self.id}/info'),
                     allow_redirects=True,
-                    timeout=settings.DOC_HREFS,
+                    timeout=settings.DEFAULT_REQUESTS_TIMEOUT,
                 )
             except requests.RequestException as exc:
                 raise ServerNoteError from exc
