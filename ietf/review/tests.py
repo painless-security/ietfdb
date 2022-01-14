@@ -412,7 +412,7 @@ class ReviewAssignmentReminderTests(TestCase):
         ).review_request.team
         second_team.reviewteamsettings.delete()  # prevent it from being sent reminders
 
-        # A assignment that is not yet overdue
+        # An assignment that is not yet overdue
         not_overdue = remind_date + datetime.timedelta(days=1)
         ReviewAssignmentFactory(
             review_request__team=self.team,
