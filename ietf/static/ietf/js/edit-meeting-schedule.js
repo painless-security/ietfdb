@@ -1,5 +1,7 @@
 /* globals alert, jQuery, moment */
 jQuery(document).ready(function () {
+    'use strict';
+    
     let content = jQuery(".edit-meeting-schedule");
     /* Drag data stored via the drag event dataTransfer interface is only accessible on
      * dragstart and dragend events. Other drag events can see only the MIME types that have
@@ -12,8 +14,9 @@ jQuery(document).ready(function () {
 
     function reportServerError(xhr, textStatus, error) {
         let errorText = error || textStatus;
-        if (xhr && xhr.responseText)
-            errorText += "\n\n" + xhr.responseText;
+        if (xhr && xhr.responseText) {
+            errorText += '\n\n' + xhr.responseText;
+        }
         alert("Error: " + errorText);
     }
 
@@ -35,7 +38,7 @@ jQuery(document).ready(function () {
     let officialSchedule = content.hasClass('official-schedule');
 
     // hack to work around lack of position sticky support in old browsers, see https://caniuse.com/#feat=css-sticky
-    if (content.find(".scheduling-panel").css("position") != "sticky") {
+    if (content.find(".scheduling-panel").css("position") !== "sticky") {
         content.find(".scheduling-panel").css("position", "fixed");
         content.css("padding-bottom", "14em");
     }
@@ -59,7 +62,7 @@ jQuery(document).ready(function () {
         let res = [];
 
         timeslots.each(function () {
-            var timeslot = jQuery(this);
+            const timeslot = jQuery(this);
             let start = startMoment(timeslot);
             let end = endMoment(timeslot);
 
@@ -97,10 +100,11 @@ jQuery(document).ready(function () {
                 let timeElement = jQuery(this).find(".time");
 
                 otherSessionElement.addClass("other-session-selected");
-                if (scheduledAt)
-                    timeElement.text(timeElement.data("scheduled").replace("{time}", scheduledAt));
-                else
-                    timeElement.text(timeElement.data("notscheduled"));
+                if (scheduledAt) {
+                    timeElement.text(timeElement.data('scheduled').replace('{time}', scheduledAt));
+                } else {
+                    timeElement.text(timeElement.data('notscheduled'));
+                }
             });
         }
         else {
@@ -278,9 +282,12 @@ jQuery(document).ready(function () {
     }
 
     content.on("click", function (event) {
-        if (jQuery(event.target).is(".session-info-container") || jQuery(event.target).closest(".session-info-container").length > 0)
-            return;
-        selectSessionElement(null);
+        if (!(
+            jQuery(event.target).is('.session-info-container') || 
+            jQuery(event.target).closest('.session-info-container').length > 0
+        )) { 
+            selectSessionElement(null); 
+        }
     });
 
     sessions.on("click", function (event) {
@@ -418,12 +425,14 @@ jQuery(document).ready(function () {
                 }
 
                 dropElement.append(sessionElement); // move element
-                if (response.tombstone)
+                if (response.tombstone) {
                     dragParent.append(response.tombstone);
+                }
 
                 updateCurrentSchedulingHints();
-                if (dropParent.hasClass("unassigned-sessions"))
+                if (dropParent.hasClass("unassigned-sessions")) {
                     sortUnassigned();
+                }
             }
 
             if (dropParent.hasClass("unassigned-sessions")) {
@@ -436,8 +445,7 @@ jQuery(document).ready(function () {
                         session: sessionElement.id.slice("session".length)
                     }
                 }).fail(failHandler).done(done);
-            }
-            else {
+            } else {
                 jQuery.ajax({
                     url: window.location.href,
                     method: "post",
@@ -489,7 +497,7 @@ jQuery(document).ready(function () {
         let swapDaysLabels = swapDaysModal.find(".modal-body label");
         let swapDaysRadios = swapDaysLabels.find('input[name=target_day]');
         let updateSwapDaysSubmitButton = function () {
-            updateSwapSubmitButton(swapDaysModal, 'target_day')
+            updateSwapSubmitButton(swapDaysModal, 'target_day');
         };
         // handler to prep and open the modal
         content.find(".swap-days").on("click", function () {
@@ -505,7 +513,7 @@ jQuery(document).ready(function () {
             updateSwapDaysSubmitButton();
             swapDaysModal.modal('show'); // show via JS so it won't open until it is initialized
         });
-        swapDaysRadios.on("change", function () {updateSwapDaysSubmitButton()});
+        swapDaysRadios.on("change", function () {updateSwapDaysSubmitButton();});
 
         // swap timeslot columns
         let swapTimeslotsModal = content.find('#swap-timeslot-col-modal');
@@ -534,7 +542,7 @@ jQuery(document).ready(function () {
             updateSwapTimeslotsSubmitButton();
             swapTimeslotsModal.modal('show');
         });
-        swapTimeslotsRadios.on("change", function () {updateSwapTimeslotsSubmitButton()});
+        swapTimeslotsRadios.on("change", function () {updateSwapTimeslotsSubmitButton();});
     }
 
     // hints for the current schedule
@@ -557,22 +565,44 @@ jQuery(document).ready(function () {
         });
 
         scheduledSessions.sort(function (a, b) {
-            if (a.start < b.start)
+            if (a.start < b.start) {
                 return -1;
-            if (a.start > b.start)
+            }
+            if (a.start > b.start) {
                 return 1;
+            }
             return 0;
         });
 
         let currentlyOpen = {};
         let openedIndex = 0;
+        let markSessionConstraintViolations = function (sess, currentlyOpen) {
+            sess.element.find(".constraints > span").each(function() {
+                let sessionIds = this.dataset.sessions;
+
+                let violated = sessionIds && sessionIds.split(",").filter(function (v) {
+                    return (
+                      v !== sess.id &&
+                      v in currentlyOpen &&
+                      // ignore errors within the same timeslot
+                      // under the assumption that the sessions
+                      // in the timeslot happen sequentially
+                      sess.timeslot !== currentlyOpen[v].timeslot
+                    );
+                }).length > 0;
+
+                jQuery(this).toggleClass("violated-hint", violated);
+            });
+        };
+
         for (let i = 0; i < scheduledSessions.length; ++i) {
             let s = scheduledSessions[i];
 
             // prune
             for (let sessionIdStr in currentlyOpen) {
-                if (currentlyOpen[sessionIdStr].end <= s.start)
+                if (currentlyOpen[sessionIdStr].end <= s.start) {
                     delete currentlyOpen[sessionIdStr];
+                }
             }
 
             // expand
@@ -583,20 +613,7 @@ jQuery(document).ready(function () {
             }
 
             // check for violated constraints
-            s.element.find(".constraints > span").each(function () {
-                let sessionIds = this.dataset.sessions;
-
-                let violated = sessionIds && sessionIds.split(",").filter(function (v) {
-                    return (v != s.id
-                            && v in currentlyOpen
-                            // ignore errors within the same timeslot
-                            // under the assumption that the sessions
-                            // in the timeslot happen sequentially
-                            && s.timeslot != currentlyOpen[v].timeslot);
-                }).length > 0;
-
-                jQuery(this).toggleClass("violated-hint", violated);
-            });
+            markSessionConstraintViolations(s, currentlyOpen);
         }
     }
 
@@ -614,8 +631,9 @@ jQuery(document).ready(function () {
     function updateAttendeesViolations() {
         sessions.each(function () {
             let roomCapacity = jQuery(this).closest(".timeslots").data("roomcapacity");
-            if (roomCapacity && this.dataset.attendees)
+            if (roomCapacity && this.dataset.attendees) {
                 jQuery(this).toggleClass("too-many-attendees", +this.dataset.attendees > +roomCapacity);
+            }
         });
     }
 
@@ -634,10 +652,12 @@ jQuery(document).ready(function () {
                 let ai = a[i];
                 let bi = b[i];
 
-                if (ai > bi)
+                if (ai > bi) {
                     return 1;
-                else if (ai < bi)
+                }
+                else if (ai < bi) {
                     return -1;
+                }
             }
 
             return 0;
@@ -645,8 +665,9 @@ jQuery(document).ready(function () {
 
         let arrayWithSortKeys = array.map(function (a) {
             let res = [a];
-            for (let i = 0; i < keyFunctions.length; ++i)
+            for (let i = 0; i < keyFunctions.length; ++i) {
                 res.push(keyFunctions[i](a));
+            }
             return res;
         });
 
@@ -693,8 +714,9 @@ jQuery(document).ready(function () {
         let unassignedSessionsContainer = content.find(".unassigned-sessions .drop-target");
 
         let sortedSessions = sortArrayWithKeyFunctions(unassignedSessionsContainer.children(".session").toArray(), keyFunctions);
-        for (let i = 0; i < sortedSessions.length; ++i)
+        for (let i = 0; i < sortedSessions.length; ++i) {
             unassignedSessionsContainer.append(sortedSessions[i]);
+        }
     }
 
     content.find("select[name=sort_unassigned]").on("change click", function () {
@@ -756,7 +778,7 @@ jQuery(document).ready(function () {
 
     // Toggling session purposes
     let sessionPurposeInputs = content.find('.session-purpose-toggles input');
-    function updateSessionPurposeToggling(evt) {
+    function updateSessionPurposeToggling() {
         let checked = [];
         sessionPurposeInputs.filter(":checked").each(function () {
             checked.push(".purpose-" + this.value);
@@ -817,9 +839,9 @@ jQuery(document).ready(function () {
     setInterval(updatePastTimeslots, 10 * 1000 /* ms */);
 
     // session info
-    content.find(".session-info-container").on("mouseover", ".other-session", function (event) {
+    content.find(".session-info-container").on("mouseover", ".other-session", function () {
         sessions.filter("#session" + this.dataset.othersessionid).addClass("highlight");
-    }).on("mouseleave", ".other-session", function (event) {
+    }).on("mouseleave", ".other-session", function () {
         sessions.filter("#session" + this.dataset.othersessionid).removeClass("highlight");
     });
 });
