@@ -19,12 +19,9 @@
   {# style off-agenda sessions to indicate this #}
   .edit-meeting-schedule .session.off-agenda { filter: brightness(0.9); }
   {# type and purpose styling #}
-  .edit-meeting-schedule .edit-grid .timeslot.wrong-timeslot-type,
-  .edit-meeting-schedule .edit-grid .timeslot.hidden-timeslot-type { background-color: transparent; ); }
-  .edit-meeting-schedule .edit-grid .timeslot.wrong-timeslot-type .time-label,
-  .edit-meeting-schedule .edit-grid .timeslot.hidden-timeslot-type .time-label { color: transparent; ); }
-  .edit-meeting-schedule .session.hidden-purpose,
-  .edit-meeting-schedule .session.hidden-timeslot-type { filter: blur(3px); }
+  .edit-meeting-schedule .edit-grid .timeslot.wrong-timeslot-type { background-color: transparent; ); }
+  .edit-meeting-schedule .edit-grid .timeslot.wrong-timeslot-type .time-label { color: transparent; ); }
+  .edit-meeting-schedule .session.hidden-purpose { filter: blur(3px); }
 {% endblock morecss %}
 
 {% block title %}{{ schedule.name }}: IETF {{ meeting.number }} meeting agenda{% endblock %}

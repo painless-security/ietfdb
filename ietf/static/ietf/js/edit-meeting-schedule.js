@@ -758,6 +758,7 @@ jQuery(document).ready(function () {
         sessions.not(checked.join(",")).addClass('hidden-timeslot-type');
         timeslots.filter(checked.join(",")).removeClass('hidden-timeslot-type');
         timeslots.not(checked.join(",")).addClass('hidden-timeslot-type');
+        updateGridVisibility();
     }
     if (timeSlotTypeInputs.length > 0) {
         timeSlotTypeInputs.on("change", updateTimeSlotTypeToggling);
@@ -814,8 +815,7 @@ jQuery(document).ready(function () {
 
         timeslots.filter(checked.join(",")).removeClass("hidden-timeslot-group");
         timeslots.not(checked.join(",")).addClass("hidden-timeslot-group");
-        updateTimeSlotVisibility();
-        updateHeaderVisibility();
+        updateGridVisibility();
     }
 
     /**
@@ -824,7 +824,7 @@ jQuery(document).ready(function () {
      * Responsible for final determination of whether a timeslot is visible, invisible, or hidden.
      */
     function updateTimeSlotVisibility() {
-        const classes_to_hide = '.hidden-timeslot-group';
+        const classes_to_hide = '.hidden-timeslot-group,.hidden-timeslot-type';
         timeslots.not(classes_to_hide).removeClass('hidden');
         timeslots.filter(classes_to_hide).addClass('hidden');
     }
@@ -850,6 +850,16 @@ jQuery(document).ready(function () {
                 );
             });
         });
+    }
+
+    /**
+     * Update visibility of UI elements
+     * 
+     * Call this after changing 'hidden-*' classes on timeslots
+     */
+    function updateGridVisibility() {
+        updateTimeSlotVisibility();
+        updateHeaderVisibility();
     }
     
     timeSlotGroupInputs.on("click change", updateTimeSlotGroupToggling);
