@@ -131,7 +131,10 @@
                   <div class="time-header">
                     {# All rooms in a group have same timeslots; grab the first for the labels #}
                     {% for t in rgroup.0.timeslots %}
-                      <div class="time-label" style="width: {{ t.layout_width }}rem">
+                      <div class="time-label" 
+                           style="width: {{ t.layout_width }}rem"
+                           data-start="{{ t.utc_start_time.isoformat }}"
+                           data-end="{{ t.utc_end_time.isoformat }}">
                         <span>
                           {{ t.time|date:"G:i" }} - {{ t.end_time|date:"G:i" }}
                           <i class="fa fa-exchange swap-timeslot-col"

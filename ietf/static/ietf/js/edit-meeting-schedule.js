@@ -260,10 +260,10 @@ jQuery(document).ready(function () {
         // hide swap day/timeslot column buttons
         if (officialSchedule) {
             swapDaysButtons.filter(
-              (_, elt) => parseISOTimestamp(elt.dataset.start).isSameOrBefore(now, 'day')
+              (_, elt) => parseISOTimestamp(elt.closest('*[data-start]').dataset.start).isSameOrBefore(now, 'day')
             ).hide();
             swapTimeslotButtons.filter(
-              (_, elt) => parseISOTimestamp(elt.dataset.start).isSameOrBefore(now, 'minute')
+              (_, elt) => parseISOTimestamp(elt.closest('*[data-start]').dataset.start).isSameOrBefore(now, 'minute')
             ).hide();
         }
     }
@@ -812,14 +812,46 @@ jQuery(document).ready(function () {
             checked.push("." + this.value);
         });
 
-        timeslots.filter(checked.join(",")).removeClass("hidden");
-        timeslots.not(checked.join(",")).addClass("hidden");
-
-        days.each(function () {
-            jQuery(this).toggle(jQuery(this).find(".timeslot:not(.hidden)").length > 0);
-        });
+        timeslots.filter(checked.join(",")).removeClass("hidden-timeslot-group");
+        timeslots.not(checked.join(",")).addClass("hidden-timeslot-group");
+        updateTimeSlotVisibility();
+        updateHeaderVisibility();
     }
 
+    /**
+     * Make timeslots visible/invisible/hidden
+     * 
+     * Responsible for final determination of whether a timeslot is visible, invisible, or hidden.
+     */
+    function updateTimeSlotVisibility() {
+        const classes_to_hide = '.hidden-timeslot-group';
+        timeslots.not(classes_to_hide).removeClass('hidden');
+        timeslots.filter(classes_to_hide).addClass('hidden');
+    }
+
+    /**
+     * Make day / time headers visible / hidden to match visible grid contents
+     */
+    function updateHeaderVisibility() {
+        days.each(function () {
+            jQuery(this).toggle(jQuery(this).find(".timeslot").not(".hidden").length > 0);
+        });
+        
+        const rgs = content.find('.room-group');
+        rgs.each(function () {
+            const header_labels = jQuery(this).find('.time-header .time-label');
+            const rg_timeslots = jQuery(this).find('.timeslot');
+            header_labels.each(function() {
+                jQuery(this).toggle(
+                    rg_timeslots
+                        .filter('[data-start="' + this.dataset.start + '"][data-end="' + this.dataset.end + '"]')
+                        .not('.hidden')
+                        .length > 0
+                );
+            });
+        });
+    }
+    
     timeSlotGroupInputs.on("click change", updateTimeSlotGroupToggling);
     content.find('#timeslot-group-toggles-modal .timeslot-group-buttons .select-all').get(0).addEventListener(
       'click',
