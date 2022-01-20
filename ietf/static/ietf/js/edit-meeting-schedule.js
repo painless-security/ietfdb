@@ -837,14 +837,14 @@ jQuery(document).ready(function () {
             jQuery(this).toggle(jQuery(this).find(".timeslot").not(".hidden").length > 0);
         });
         
-        const rgs = content.find('.room-group');
-        rgs.each(function () {
-            const header_labels = jQuery(this).find('.time-header .time-label');
-            const rg_timeslots = jQuery(this).find('.timeslot');
-            header_labels.each(function() {
-                jQuery(this).toggle(
-                    rg_timeslots
-                        .filter('[data-start="' + this.dataset.start + '"][data-end="' + this.dataset.end + '"]')
+        const rgs = content.find('.day-flow .room-group');
+        rgs.each(function (index, roomGroup) {
+            const headerLabels = jQuery(roomGroup).find('.time-header .time-label');
+            const rgTimeslots = jQuery(roomGroup).find('.timeslot');
+            headerLabels.each(function(index, label) {
+                jQuery(label).toggle(
+                    rgTimeslots
+                        .filter('[data-start="' + label.dataset.start + '"][data-end="' + label.dataset.end + '"]')
                         .not('.hidden')
                         .length > 0
                 );
@@ -853,6 +853,38 @@ jQuery(document).ready(function () {
     }
 
     /**
+     * Update visibility of room rows
+     */
+    function updateRoomVisibility() {
+        const tsContainers = { toShow: [], toHide: [] };
+        const roomGroups = { toShow: [], toHide: [] };
+        let roomsWithVisibleSlots = content.find('.day-flow .timeslots')
+            .has('.timeslot:not(.hidden)')
+            .map((_, e) => e.dataset.roomId).get();
+        roomsWithVisibleSlots = [...new Set(roomsWithVisibleSlots)]; // unique-ify by converting to Set and back
+        
+        // loop over the containers that wrap .timeslot elements
+        content.find('.timeslots').each((_, e) => {
+            if (roomsWithVisibleSlots.indexOf(e.dataset.roomId) === -1) {
+                tsContainers.toHide.push(e);
+            } else {
+                tsContainers.toShow.push(e);
+            }
+        });
+        content.find('.room-group').each((_, e) => {
+            if (jQuery(e).has(tsContainers.toShow).length > 0) {
+                roomGroups.toShow.push(e);
+            } else {
+                roomGroups.toHide.push(e);
+            }
+        });
+        jQuery(roomGroups.toShow).show();
+        jQuery(roomGroups.toHide).hide();
+        jQuery(tsContainers.toShow).show();
+        jQuery(tsContainers.toHide).hide();
+    }
+    
+    /**
      * Update visibility of UI elements
      * 
      * Call this after changing 'hidden-*' classes on timeslots
@@ -860,6 +892,7 @@ jQuery(document).ready(function () {
     function updateGridVisibility() {
         updateTimeSlotVisibility();
         updateHeaderVisibility();
+        updateRoomVisibility();
     }
     
     timeSlotGroupInputs.on("click change", updateTimeSlotGroupToggling);

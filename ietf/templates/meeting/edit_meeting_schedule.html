@@ -96,7 +96,7 @@
                 <div class="room-group">
                   <div class="time-header"><div class="time-label"></div></div>
                   {% for room_data in rgroup %}{% with room_data.room as room %}
-                    <div class="timeslots">
+                    <div class="timeslots" data-room-id="{{ room.pk }}">
                       <div class="room-name">
                         <strong>{{ room.name }}</strong><br>
                         {% if room.capacity %}{{ room.capacity }} <i class="fa fa-user-o"></i>{% endif %}
@@ -143,7 +143,9 @@
                     {% endfor %}
                   </div>
                   {% for room_data in rgroup %}{% with room_data.room as room %}
-                    <div class="timeslots" data-roomcapacity="{{ room.capacity }}">
+                    <div class="timeslots"
+                         data-room-id="{{ room.pk }}"
+                         data-roomcapacity="{{ room.capacity }}">
                       {% for t in room_data.timeslots %}
                         <div id="timeslot{{ t.pk }}"
                              class="timeslot {{ t.start_end_group }}"
