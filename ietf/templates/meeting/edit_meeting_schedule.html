@@ -82,7 +82,7 @@
         </a>
       </p>
     {% else %}
-      <div class="edit-grid {% if not can_edit %}read-only{% endif %}">
+      <div class="edit-grid hidden {% if not can_edit %}read-only{% endif %}">
         {# using the same markup in both room labels and the actual days ensures they are aligned #}
         <div class="room-label-column">
           {% for day_data in days.values %}
@@ -246,7 +246,9 @@
             <div class="timeslots-by-type timeslot-type-toggles">
                 Type:
                 {% for type in timeslot_types %}
-                  <label class="timeslot-type-{{ type.slug }}"><input type="checkbox" checked value="{{ type.slug }}"> {{ type }}</label>
+                  <label class="timeslot-type-{{ type.slug }}">
+                      <input type="checkbox" value="{{ type.slug }}" {% if type.slug == 'regular' %}checked{% endif %}> {{ type }}
+                  </label>
                 {% endfor %}
                 <button type="button" class="btn btn-default select-all">Select all types</button>
                 <button type="button" class="btn btn-default clear-all">Clear types</button>

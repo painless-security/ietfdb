@@ -893,6 +893,7 @@ jQuery(document).ready(function () {
         updateTimeSlotVisibility();
         updateHeaderVisibility();
         updateRoomVisibility();
+        content.find('div.edit-grid').removeClass('hidden');
     }
     
     timeSlotGroupInputs.on("click change", updateTimeSlotGroupToggling);
