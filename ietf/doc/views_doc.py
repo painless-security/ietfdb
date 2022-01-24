@@ -80,7 +80,7 @@ from ietf.review.models import ReviewAssignment
 from ietf.review.utils import can_request_review_of_doc, review_assignments_to_list_for_docs
 from ietf.review.utils import no_review_from_teams_on_doc
 from ietf.utils import markup_txt, log, markdown
-from ietf.utils.draft import Draft
+from ietf.utils.draft import PlaintextDraft
 from ietf.utils.response import permission_denied
 from ietf.utils.text import maybe_split
 
@@ -1177,6 +1177,10 @@ def document_ballot_content(request, doc, ballot_id, editable=True):
     positions = ballot.all_positions()
 
     # put into position groups
+    #
+    # Each position group is a tuple (BallotPositionName, [BallotPositionDocEvent, ...])
+    # THe list contains the latest entry for each AD, possibly with a fake 'no record' entry
+    # for any ADs without an event. Blocking positions are earlier in the list than non-blocking.
     position_groups = []
     for n in BallotPositionName.objects.filter(slug__in=[p.pos_id for p in positions]).order_by('order'):
         g = (n, [p for p in positions if p.pos_id == n.slug])
@@ -1842,7 +1846,7 @@ def idnits2_state(request, name, rev=None):
     else:
         text = doc.text()
         if text:
-            parsed_draft = Draft(text=doc.text(), source=name, name_from_source=False)
+            parsed_draft = PlaintextDraft(text=doc.text(), source=name, name_from_source=False)
             doc.deststatus = parsed_draft.get_status()
         else:
             doc.deststatus="Unknown"
