@@ -36,6 +36,7 @@ jQuery(document).ready(function () {
     let swapTimeslotButtons = content.find('.swap-timeslot-col');
     let days = content.find(".day-flow .day");
     let officialSchedule = content.hasClass('official-schedule');
+    const classes_to_hide = '.hidden-timeslot-group,.hidden-timeslot-type';
 
     // hack to work around lack of position sticky support in old browsers, see https://caniuse.com/#feat=css-sticky
     if (content.find(".scheduling-panel").css("position") !== "sticky") {
@@ -760,6 +761,19 @@ jQuery(document).ready(function () {
         timeslots.not(checked.join(",")).addClass('hidden-timeslot-type');
         updateGridVisibility();
     }
+
+    // Toggling session purposes
+    let sessionPurposeInputs = content.find('.session-purpose-toggles input');
+    function updateSessionPurposeToggling() {
+        let checked = [];
+        sessionPurposeInputs.filter(":checked").each(function () {
+            checked.push(".purpose-" + this.value);
+        });
+
+        sessions.filter(checked.join(",")).removeClass('hidden-purpose');
+        sessions.not(checked.join(",")).addClass('hidden-purpose');
+    }
+
     if (timeSlotTypeInputs.length > 0) {
         timeSlotTypeInputs.on("change", updateTimeSlotTypeToggling);
         updateTimeSlotTypeToggling();
@@ -777,17 +791,6 @@ jQuery(document).ready(function () {
           });
     }
 
-    // Toggling session purposes
-    let sessionPurposeInputs = content.find('.session-purpose-toggles input');
-    function updateSessionPurposeToggling() {
-        let checked = [];
-        sessionPurposeInputs.filter(":checked").each(function () {
-            checked.push(".purpose-" + this.value);
-        });
-
-        sessions.filter(checked.join(",")).removeClass('hidden-purpose');
-        sessions.not(checked.join(",")).addClass('hidden-purpose');
-    }
     if (sessionPurposeInputs.length > 0) {
         sessionPurposeInputs.on("change", updateSessionPurposeToggling);
         updateSessionPurposeToggling();
@@ -818,15 +821,37 @@ jQuery(document).ready(function () {
         updateGridVisibility();
     }
 
+    function updateSessionPurposeOptions() {
+        sessionPurposeInputs.each((_, purpose_input) => {
+            if (sessions
+                .filter('.purpose-' + purpose_input.value)
+                .not('.hidden')
+                .length === 0) {
+                purpose_input.setAttribute('disabled', 'disabled');
+            } else {
+                purpose_input.removeAttribute('disabled');
+            }
+        });
+    }
+    
     /**
      * Make timeslots visible/invisible/hidden
      * 
      * Responsible for final determination of whether a timeslot is visible, invisible, or hidden.
      */
     function updateTimeSlotVisibility() {
-        const classes_to_hide = '.hidden-timeslot-group,.hidden-timeslot-type';
         timeslots.not(classes_to_hide).removeClass('hidden');
         timeslots.filter(classes_to_hide).addClass('hidden');
+    }
+
+    /**
+     * Make sessions visible/invisible/hidden
+     * 
+     * Responsible for final determination of whether a session is visible or hidden.
+     */
+    function updateSessionVisibility() {
+        sessions.not(classes_to_hide).removeClass('hidden');
+        sessions.filter(classes_to_hide).addClass('hidden');
     }
 
     /**
@@ -891,8 +916,10 @@ jQuery(document).ready(function () {
      */
     function updateGridVisibility() {
         updateTimeSlotVisibility();
+        updateSessionVisibility();
         updateHeaderVisibility();
         updateRoomVisibility();
+        updateSessionPurposeOptions();
         content.find('div.edit-grid').removeClass('hidden');
     }
     

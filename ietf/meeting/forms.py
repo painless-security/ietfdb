@@ -682,7 +682,7 @@ class SessionDetailsForm(forms.ModelForm):
     class Meta:
         model = Session
         fields = (
-            'name', 'short', 'purpose', 'type', 'requested_duration',
+            'purpose', 'name', 'short', 'type', 'requested_duration',
             'on_agenda', 'remote_instructions', 'attendees', 'comments',
         )
         labels = {'requested_duration': 'Length'}
