@@ -290,7 +290,7 @@
           <div class="modal-body">
             <div class="session-purpose-toggles">
               {% for purpose in session_purposes %}
-                <div>
+                <div class="session-purpose-toggle">
                   <label class="purpose-{{ purpose.slug }}"><input type="checkbox" checked value="{% firstof purpose.slug 'none' %}"> {{ purpose }}</label>
                 </div>
               {% endfor %}

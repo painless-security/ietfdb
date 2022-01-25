@@ -797,13 +797,13 @@ jQuery(document).ready(function () {
         content.find('#session-toggles-modal .select-all').get(0).addEventListener(
           'click',
           function() {
-              sessionPurposeInputs.prop('checked', true);
+              sessionPurposeInputs.not(':disabled').prop('checked', true);
               updateSessionPurposeToggling();
           });
         content.find('#session-toggles-modal .clear-all').get(0).addEventListener(
           'click',
           function() {
-              sessionPurposeInputs.prop('checked', false);
+              sessionPurposeInputs.not(':disabled').prop('checked', false);
               updateSessionPurposeToggling();
           });
     }
@@ -828,8 +828,10 @@ jQuery(document).ready(function () {
                 .not('.hidden')
                 .length === 0) {
                 purpose_input.setAttribute('disabled', 'disabled');
+                purpose_input.closest('.session-purpose-toggle').classList.add('hidden');
             } else {
                 purpose_input.removeAttribute('disabled');
+                purpose_input.closest('.session-purpose-toggle').classList.remove('hidden');
             }
         });
     }
@@ -927,13 +929,13 @@ jQuery(document).ready(function () {
     content.find('#timeslot-group-toggles-modal .timeslot-group-buttons .select-all').get(0).addEventListener(
       'click',
       function() {
-          timeSlotGroupInputs.prop('checked', true);
+          timeSlotGroupInputs.not(':disabled').prop('checked', true);
           updateTimeSlotGroupToggling();
       });
     content.find('#timeslot-group-toggles-modal .timeslot-group-buttons .clear-all').get(0).addEventListener(
       'click',
       function() {
-          timeSlotGroupInputs.prop('checked', false);
+          timeSlotGroupInputs.not(':disabled').prop('checked', false);
           updateTimeSlotGroupToggling();
       });
 
