@@ -207,9 +207,20 @@
           </span>
 
           {% if session_purposes|length > 1 %}
-            <button id="session-toggle-modal-open" class="btn btn-default" data-toggle="modal" data-target="#session-toggles-modal"><input type="checkbox" checked="checked" disabled> Sessions</button>
+            <button id="session-toggle-modal-open" 
+                    class="btn btn-default" 
+                    data-toggle="modal" 
+                    data-target="#session-toggles-modal">
+                <span class="fa fa-check-square"></span> Session Purposes
+            </button>
           {% endif %}
-          <button id="timeslot-toggle-modal-open" class="btn btn-default" data-toggle="modal" data-target="#timeslot-group-toggles-modal"><input type="checkbox" checked="checked" disabled> Timeslots</button>
+        
+        <button id="timeslot-toggle-modal-open" 
+                class="btn btn-default" 
+                data-toggle="modal" 
+                data-target="#timeslot-group-toggles-modal">
+            <span class="fa fa-check-square"></span> Show/Hide Timeslots
+        </button>
         </div>
       </div>
 
