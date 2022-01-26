@@ -36,6 +36,10 @@ jQuery(document).ready(function () {
     let swapTimeslotButtons = content.find('.swap-timeslot-col');
     let days = content.find(".day-flow .day");
     let officialSchedule = content.hasClass('official-schedule');
+    let timeSlotTypeInputs = content.find('.timeslot-type-toggles input');
+    let sessionPurposeInputs = content.find('.session-purpose-toggles input');
+    let timeSlotGroupInputs = content.find("#timeslot-group-toggles-modal .modal-body .individual-timeslots input");
+    let sessionParentInputs = content.find(".session-parent-toggles input");
     const classes_to_hide = '.hidden-timeslot-group,.hidden-timeslot-type';
 
     // hack to work around lack of position sticky support in old browsers, see https://caniuse.com/#feat=css-sticky
@@ -727,7 +731,6 @@ jQuery(document).ready(function () {
     sortUnassigned();
 
     // toggling visible sessions by session parents
-    let sessionParentInputs = content.find(".session-parent-toggles input");
 
     function setSessionHiddenParent(sess, hide) {
         sess.toggleClass('hidden-parent', hide);
@@ -748,7 +751,6 @@ jQuery(document).ready(function () {
     updateSessionParentToggling();
 
     // Toggling timeslot types
-    let timeSlotTypeInputs = content.find('.timeslot-type-toggles input');
     function updateTimeSlotTypeToggling() {
         let checked = [];
         timeSlotTypeInputs.filter(":checked").each(function () {
@@ -762,8 +764,8 @@ jQuery(document).ready(function () {
         updateGridVisibility();
     }
 
+    
     // Toggling session purposes
-    let sessionPurposeInputs = content.find('.session-purpose-toggles input');
     function updateSessionPurposeToggling() {
         let checked = [];
         sessionPurposeInputs.filter(":checked").each(function () {
@@ -777,13 +779,13 @@ jQuery(document).ready(function () {
     if (timeSlotTypeInputs.length > 0) {
         timeSlotTypeInputs.on("change", updateTimeSlotTypeToggling);
         updateTimeSlotTypeToggling();
-        content.find('#timeslot-group-toggles-modal .timeslot-type-toggles .select-all').get(0).addEventListener(
+        content.find('#timeslot-type-toggles-modal .timeslot-type-toggles .select-all').get(0).addEventListener(
           'click',
           function() {
               timeSlotTypeInputs.prop('checked', true);
               updateTimeSlotTypeToggling();
           });
-        content.find('#timeslot-group-toggles-modal .timeslot-type-toggles .clear-all').get(0).addEventListener(
+        content.find('#timeslot-type-toggles-modal .timeslot-type-toggles .clear-all').get(0).addEventListener(
           'click',
           function() {
               timeSlotTypeInputs.prop('checked', false);
@@ -809,7 +811,6 @@ jQuery(document).ready(function () {
     }
 
     // toggling visible timeslots
-    let timeSlotGroupInputs = content.find("#timeslot-group-toggles-modal .modal-body .individual-timeslots input");
     function updateTimeSlotGroupToggling() {
         let checked = [];
         timeSlotGroupInputs.filter(":checked").each(function () {
@@ -836,6 +837,22 @@ jQuery(document).ready(function () {
         });
     }
     
+    /**
+     * Hide timeslot toggles for hidden timeslots
+     */
+    function updateTimeSlotOptions() {
+        timeSlotGroupInputs.each((_, timeslot_input) => {
+            if (timeslots
+                .filter('.' + timeslot_input.value)
+                .not('.hidden-timeslot-type')
+                .length === 0) {
+                timeslot_input.setAttribute('disabled', 'disabled');
+            } else {
+                timeslot_input.removeAttribute('disabled');
+            }
+        });
+    }
+
     /**
      * Make timeslots visible/invisible/hidden
      * 
@@ -921,6 +938,7 @@ jQuery(document).ready(function () {
         updateSessionVisibility();
         updateHeaderVisibility();
         updateRoomVisibility();
+        updateTimeSlotOptions();
         updateSessionPurposeOptions();
         content.find('div.edit-grid').removeClass('hidden');
     }
