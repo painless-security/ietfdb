@@ -829,10 +829,10 @@ jQuery(document).ready(function () {
                 .not('.hidden')
                 .length === 0) {
                 purpose_input.setAttribute('disabled', 'disabled');
-                purpose_input.closest('.session-purpose-toggle').classList.add('hidden');
+                purpose_input.closest('.session-purpose-toggle').classList.add('text-muted');
             } else {
                 purpose_input.removeAttribute('disabled');
-                purpose_input.closest('.session-purpose-toggle').classList.remove('hidden');
+                purpose_input.closest('.session-purpose-toggle').classList.remove('text-muted');
             }
         });
     }
