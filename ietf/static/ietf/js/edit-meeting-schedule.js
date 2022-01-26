@@ -489,7 +489,7 @@ jQuery(document).ready(function () {
                 // disable any that have passed
                 const now=effectiveNow();
                 const past_radios = radios.filter(
-                  (_, radio) => parseISOTimestamp(radio.dataset.start).isSameOrBefore(now, datePrecision)
+                  (_, radio) => parseISOTimestamp(radio.closest('*[data-start]').dataset.start).isSameOrBefore(now, datePrecision)
                 );
                 past_radios.parent().addClass('text-muted');
                 past_radios.prop('disabled', true);
