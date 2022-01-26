@@ -902,12 +902,17 @@ jQuery(document).ready(function () {
     function updateRoomVisibility() {
         const tsContainers = { toShow: [], toHide: [] };
         const roomGroups = { toShow: [], toHide: [] };
+        // roomsWithVisibleSlots is an array of room IDs that have at least one visible timeslot
         let roomsWithVisibleSlots = content.find('.day-flow .timeslots')
             .has('.timeslot:not(.hidden)')
             .map((_, e) => e.dataset.roomId).get();
         roomsWithVisibleSlots = [...new Set(roomsWithVisibleSlots)]; // unique-ify by converting to Set and back
         
-        // loop over the containers that wrap .timeslot elements
+        /* The "timeslots" class identifies elements (now and probably always <div>s) that are containers (i.e., 
+         * parents) of timeslots (elements with the "timeslot" class). Sort these containers based on whether
+         * their room has at least one timeslot visible - if so, we will show it, if not it will be hidden. 
+         * This will hide containers both in the day-flow and room label sections, so it will hide the room
+         * labels for rooms with no visible timeslots. */
         content.find('.timeslots').each((_, e) => {
             if (roomsWithVisibleSlots.indexOf(e.dataset.roomId) === -1) {
                 tsContainers.toHide.push(e);
@@ -915,6 +920,9 @@ jQuery(document).ready(function () {
                 tsContainers.toShow.push(e);
             }
         });
+        
+        /* Now check whether each room group has any rooms not being hidden. If not, entirely hide the
+         * room group so that all its headers, etc, do not take up space. */
         content.find('.room-group').each((_, e) => {
             if (jQuery(e).has(tsContainers.toShow).length > 0) {
                 roomGroups.toShow.push(e);
