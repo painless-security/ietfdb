@@ -71,7 +71,11 @@ class MeetechoAPI:
         return response
 
     def retrieve_wg_tokens(self, acronyms: Sequence[str]):
-        """Retrieve API tokens for one or more WGs"""
+        """Retrieve API tokens for one or more WGs
+
+        :param acronyms: list of WG acronyms for which tokens are requested 
+        :return: {'tokens': {acronym0: token0, acronym1: token1, ...}}
+        """
         return self._request(
             'POST', 'auth/ietfservice/tokens',
             json={
@@ -83,7 +87,31 @@ class MeetechoAPI:
 
     def schedule_meeting(self, wg_token: str, description: str, start_time: datetime, duration: timedelta,
                          extrainfo=''):
-        """Schedule a meeting session"""
+        """Schedule a meeting session
+        
+        Return structure is:
+          {
+            "rooms": {
+              "<session UUID>": {
+                "room": {
+                  "id": int,
+                  "start_time": datetime,
+                  "duration": timedelta
+                  description: str,
+                },
+                "url": str,
+                "deletion_token": str
+              }
+            }
+          }
+              
+        :param wg_token: token retrieved via retrieve_wg_tokens() 
+        :param description: str describing the meeting
+        :param start_time: starting time as a datetime
+        :param duration: duration as a timedelta
+        :param extrainfo: str with additional information for Meetecho staff
+        :return: scheduled meeting data dict
+        """
         return self._deserialize_meetings_response(
             self._request(
                 'POST', 'meeting/interim/createRoom',
@@ -98,11 +126,37 @@ class MeetechoAPI:
         )
 
     def fetch_meetings(self, wg_token: str):
+        """Fetch all meetings scheduled for a given wg
+
+        Return structure is:
+          {
+            "rooms": {
+              "<session UUID>": {
+                "room": {
+                  "id": int,
+                  "start_time": datetime,
+                  "duration": timedelta
+                  description: str,
+                },
+                "url": str,
+                "deletion_token": str
+              }
+            }
+          }
+
+        :param wg_token: token from retrieve_wg_tokens()
+        :return: meeting data dict
+        """
         return self._deserialize_meetings_response(
             self._request('GET', 'meeting/interim/fetchRooms', api_token=wg_token)
         )
 
     def delete_meeting(self, deletion_token: str):
+        """Remove a scheduled meeting
+
+        :param deletion_token: deletion_key from fetch_meetings() or schedule_meeting() return data
+        :return: {}
+        """
         return self._request('POST', 'meeting/interim/deleteRoom', api_token=deletion_token)
 
 
