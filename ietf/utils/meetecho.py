@@ -15,7 +15,7 @@ import debug  # pyflakes: ignore
 
 from datetime import datetime, timedelta
 from json import JSONDecodeError
-from typing import Sequence, Union
+from typing import List, Sequence, Type, TypeVar, Union
 from urllib.parse import urljoin
 
 
@@ -29,7 +29,7 @@ class MeetechoAPI:
 
     def _request(self, method, url, api_token=None, json=None):
         """Execute an API request"""
-        headers = {}
+        headers = {'Accept': 'application/json'}
         if api_token is not None:
             headers['Authorization'] = f'bearer {api_token}'
 
@@ -46,10 +46,13 @@ class MeetechoAPI:
         if response.status_code != 200:
             raise MeetechoAPIError(f'API request failed (HTTP status code = {response.status_code})')
 
-        try:
-            return response.json()
-        except JSONDecodeError as err:
-            raise MeetechoAPIError('Error decoding response as JSON') from err
+        if response.headers['Content-Type'].startswith('application/json'):
+            try:
+                return response.json()
+            except JSONDecodeError as err:
+                raise MeetechoAPIError('Error decoding response as JSON') from err
+        else:
+            return None
 
     def _deserialize_time(self, s: str) -> datetime:
         return datetime.strptime(s, '%Y-%m-%d %H:%M:%S')
@@ -170,6 +173,8 @@ class MeetechoAPIError(Exception):
     """Base class for MeetechoAPI exceptions"""
 
 
+_T = TypeVar('_T')
+
 class Conference:
     """Scheduled session/room representation"""
     def __init__(self, id, public_id, description, start_time, duration, url, deletion_token):
@@ -182,24 +187,56 @@ class Conference:
         self.deletion_token = deletion_token
 
     @classmethod
-    def from_api_dict(cls, api_dict, public_id=None):
-        return cls(
-            **api_dict['room'],
-            public_id=public_id,
-            url=api_dict['url'],
-            deletion_token=api_dict['deletion_token'],
-        )
+    def from_api_dict(cls: Type[_T], api_dict) -> List[_T]:
+        return [
+            cls(
+                **val['room'],
+                public_id=public_id,
+                url=val['url'],
+                deletion_token=val['deletion_token'],
+            ) for public_id, val in api_dict.items()
+        ]
+
+    def __str__(self):
+        return f'Meetecho conference {self.description}'
+
+    def __repr__(self):
+        props = [
+            f'description="{self.description}"',
+            f'start_time={repr(self.start_time)}',
+            f'duration={repr(self.duration)}',
+        ]
+        return f'Conference({", ".join(props)})'
 
 
 class ConferenceManager:
     def __init__(self, api_config: dict):
         self.api = MeetechoAPI(**api_config)
+        self.wg_tokens = {}
         
     def wg_token(self, group_acronym):
-        return self.api.retrieve_wg_tokens(group_acronym)['tokens'][group_acronym]
-    
+        if group_acronym not in self.wg_tokens:
+            self.wg_tokens[group_acronym] = self.api.retrieve_wg_tokens(
+                group_acronym
+            )['tokens'][group_acronym]
+        return self.wg_tokens[group_acronym]
+
     def fetch(self, group):
         group_acronym = group.acronym if hasattr(group, 'acronym') else group
         response = self.api.fetch_meetings(self.wg_token(group_acronym))
-        return [Conference.from_api_dict(val, pub_id) 
-                for pub_id, val in response['rooms'].items()]
+        return Conference.from_api_dict(response['rooms'])
+
+    def create(self, group, description, start_time, duration, extrainfo=''):
+        response = self.api.schedule_meeting(
+            wg_token=self.wg_token(group),
+            description=description,
+            start_time=start_time,
+            duration=duration,
+            extrainfo=extrainfo,
+        )
+        return Conference.from_api_dict(response['rooms'])
+    
+    def cancel(self, group, url):
+        for conf in self.fetch(group):
+            if conf.url == url:
+                self.api.delete_meeting(conf.deletion_token)
