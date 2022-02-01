@@ -1238,9 +1238,11 @@ DEFAULT_REQUESTS_TIMEOUT = 20  # seconds
 
 
 # Meetecho API setup
-MEETECHO_API_BASE = 'https://meetings.conf.meetecho.com/api/v1/'
-MEETECHO_CLIENT_ID = 'datatracker'
-MEETECHO_CLIENT_SECRET = 'some secret'
+MEETECHO_API_CONFIG = {
+    'api_base': 'https://meetings.conf.meetecho.com/api/v1/',
+    'client_id': 'datatracker',
+    'client_secret': 'some secreat',
+}
 
 
 # Put the production SECRET_KEY in settings_local.py, and also any other

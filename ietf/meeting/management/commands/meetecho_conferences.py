@@ -8,7 +8,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from ietf.meeting.models import Session
-from ietf.utils.meetecho import MeetechoAPI, MeetechoAPIError
+from ietf.utils.meetecho import ConferenceManager, MeetechoAPIError
 
 
 class Command(BaseCommand):
@@ -18,44 +18,26 @@ class Command(BaseCommand):
         parser.add_argument('group', type=str)
     
     def handle(self, group, *args, **options):
-        api = MeetechoAPI(
-            api_base=settings.MEETECHO_API_BASE,
-            client_id=settings.MEETECHO_CLIENT_ID,
-            client_secret=settings.MEETECHO_CLIENT_SECRET,
-        )
-        
+        conf_mgr = ConferenceManager(settings.MEETECHO_API_CONFIG)
         try:
-            result = api.retrieve_wg_tokens(group)
+            confs = conf_mgr.fetch(group)
         except MeetechoAPIError as err:
-            raise CommandError('Unable to retrieve wg tokens') from err
-        try:
-            token = result['tokens'][group]
-        except KeyError as err:
-            raise CommandError('Unexpected data returned when retrieving wg tokens') from err
-        
-        try:
-            result = api.fetch_meetings(token)
-        except MeetechoAPIError as err:
-            raise CommandError('Unable to fetch meetings') from err
-        try:
-            all_room_data = result['rooms']
-        except KeyError as err:
-            raise CommandError('Unexpected data returned from when fetching meetings') from err
-    
+            raise CommandError('API error fetching Meetecho conference data') from err
+
         self.stdout.write(f'Meetecho conferences for {group}:\n\n')
-        for uuid, data in all_room_data.items():
+        for conf in confs:
             sessions = Session.objects.filter(
                 group__acronym=group,
                 meeting__date__gte=datetime.date.today(),
-                remote_instructions__contains=data['url'],
+                remote_instructions__contains=conf.url,
             )
             sessions_desc = ', '.join(str(s.pk) for s in sessions) or None
             self.stdout.write(
                 dedent(f'''\
-                * {data['room']['description']}
-                    Start time: {data['room']['start_time']} 
-                    Duration: {int(data['room']['duration'].total_seconds() // 60)} minutes
-                    URL: {data['url']}
+                * {conf.description}
+                    Start time: {conf.start_time} 
+                    Duration: {int(conf.duration.total_seconds() // 60)} minutes
+                    URL: {conf.url}
                     Associated session PKs: {sessions_desc}
                 
                 ''')

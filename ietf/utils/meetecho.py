@@ -168,3 +168,38 @@ class MeetechoAPI:
 
 class MeetechoAPIError(Exception):
     """Base class for MeetechoAPI exceptions"""
+
+
+class Conference:
+    """Scheduled session/room representation"""
+    def __init__(self, id, public_id, description, start_time, duration, url, deletion_token):
+        self.id = id  # Meetecho system ID
+        self.public_id = public_id  # public session UUID
+        self.description = description
+        self.start_time = start_time
+        self.duration = duration
+        self.url = url
+        self.deletion_token = deletion_token
+
+    @classmethod
+    def from_api_dict(cls, api_dict, public_id=None):
+        return cls(
+            **api_dict['room'],
+            public_id=public_id,
+            url=api_dict['url'],
+            deletion_token=api_dict['deletion_token'],
+        )
+
+
+class ConferenceManager:
+    def __init__(self, api_config: dict):
+        self.api = MeetechoAPI(**api_config)
+        
+    def wg_token(self, group_acronym):
+        return self.api.retrieve_wg_tokens(group_acronym)['tokens'][group_acronym]
+    
+    def fetch(self, group):
+        group_acronym = group.acronym if hasattr(group, 'acronym') else group
+        response = self.api.fetch_meetings(self.wg_token(group_acronym))
+        return [Conference.from_api_dict(val, pub_id) 
+                for pub_id, val in response['rooms'].items()]
