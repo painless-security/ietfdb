@@ -11,9 +11,11 @@ in the Python API by datetime and timedelta objects, respectively.
 """
 import requests
 
+import debug  # pyflakes: ignore
+
 from datetime import datetime, timedelta
 from json import JSONDecodeError
-from typing import Sequence
+from typing import Sequence, Union
 from urllib.parse import urljoin
 
 
@@ -22,7 +24,8 @@ class MeetechoAPI:
         self.client_id = client_id
         self.client_secret = client_secret
         self._session = requests.Session()
-        self.api_base = api_base
+        # if needed, add a trailing slash so urljoin won't eat the trailing path component
+        self.api_base = api_base if api_base.endswith('/') else f'{api_base}/'
 
     def _request(self, method, url, api_token=None, json=None):
         """Execute an API request"""
@@ -70,7 +73,7 @@ class MeetechoAPI:
             session_data['room']['duration'] = self._deserialize_duration(session_data['room']['duration'])
         return response
 
-    def retrieve_wg_tokens(self, acronyms: Sequence[str]):
+    def retrieve_wg_tokens(self, acronyms: Union[str, Sequence[str]]):
         """Retrieve API tokens for one or more WGs
 
         :param acronyms: list of WG acronyms for which tokens are requested 
@@ -81,7 +84,7 @@ class MeetechoAPI:
             json={
                 'client': self.client_id,
                 'secret': self.client_secret,
-                'wgs': acronyms,
+                'wgs': [acronyms] if isinstance(acronyms, str) else acronyms,
             }
         )
 
@@ -136,13 +139,16 @@ class MeetechoAPI:
                   "id": int,
                   "start_time": datetime,
                   "duration": timedelta
-                  description: str,
+                  "description": str,
                 },
                 "url": str,
                 "deletion_token": str
               }
             }
           }
+          
+        As of 2022-01-31, the return structure also includes a 'group' key whose
+        value is the group acronym. This is not shown in the documentation.
 
         :param wg_token: token from retrieve_wg_tokens()
         :return: meeting data dict
