@@ -207,7 +207,14 @@ class InterimSessionModelForm(forms.ModelForm):
     time = forms.TimeField(widget=forms.TimeInput(format='%H:%M'), required=True)
     requested_duration = CustomDurationField(required=True)
     end_time = forms.TimeField(required=False)
-    remote_instructions = forms.CharField(max_length=1024, required=True)
+    remote_participation = forms.ChoiceField(
+        choices=(
+            ('meetecho', 'Automatically create Meetecho conference'),
+            ('manual', 'Manually specify remote instructions...'),
+        ),
+        required=False,
+    )
+    remote_instructions = forms.CharField(max_length=1024, required=False)
     agenda = forms.CharField(required=False, widget=forms.Textarea, strip=False)
     agenda_note = forms.CharField(max_length=255, required=False)
 
@@ -233,7 +240,6 @@ class InterimSessionModelForm(forms.ModelForm):
                 doc = self.instance.agenda()
                 content = doc.text_or_error()
                 self.initial['agenda'] = content
-                
 
     def clean_date(self):
         '''Date field validator.  We can't use required on the input because
@@ -250,6 +256,11 @@ class InterimSessionModelForm(forms.ModelForm):
         if not duration or duration < datetime.timedelta(minutes=min_minutes) or duration > datetime.timedelta(minutes=max_minutes):
             raise forms.ValidationError('Provide a duration, %s-%smin.' % (min_minutes, max_minutes))
         return duration
+
+    def clean(self):
+        if not (self.cleaned_data['remote_participation'] == 'meetecho' or self.cleaned_data['remote_instructions']):
+            self.add_error('remote_instructions', 'This field is required')
+        return self.cleaned_data
 
     def save(self, *args, **kwargs):
         """NOTE: as the baseform of an inlineformset self.save(commit=True)

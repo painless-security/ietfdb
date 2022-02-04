@@ -12,6 +12,7 @@ from tempfile import mkstemp
 from django.http import Http404
 from django.db.models import F, Prefetch
 from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth.models import AnonymousUser
 from django.urls import reverse
 from django.shortcuts import get_object_or_404
@@ -29,7 +30,7 @@ from ietf.person.models  import Person
 from ietf.meeting.models import Meeting, Schedule, TimeSlot, SchedTimeSessAssignment, ImportantDate, SchedulingEvent, Session
 from ietf.meeting.utils import session_requested_by, add_event_info_to_session_qs
 from ietf.name.models import ImportantDateName, SessionPurposeName
-from ietf.utils import log
+from ietf.utils import log, meetecho
 from ietf.utils.history import find_history_replacements_active_at
 from ietf.utils.mail import send_mail
 from ietf.utils.pipe import pipe
@@ -1052,6 +1053,9 @@ def send_interim_minutes_reminder(meeting):
 def sessions_post_save(request, forms):
     """Helper function to perform various post save operations on each form of a
     InterimSessionModelForm formset"""
+    meetecho_manager = meetecho.ConferenceManager(settings.MEETECHO_API_CONFIG)
+    meetecho_error_occurred = False
+
     for form in forms:
         if not form.has_changed():
             continue
@@ -1071,6 +1075,33 @@ def sessions_post_save(request, forms):
             update_interim_session_assignment(form)
         if 'agenda' in form.changed_data:
             form.save_agenda()
+
+        if form.cleaned_data['remote_participation'] == 'meetecho':
+            ts = form.instance.official_timeslotassignment().timeslot
+            try:
+                confs = meetecho_manager.create(
+                    group=form.instance.group,
+                    description=str(form.instance),
+                    start_time=ts.time,
+                    duration=ts.duration,
+                )
+            except Exception as err:
+                log.log(f'Exception creating Meetecho conference for {form.instance}: {err}')
+                confs = []
+
+            if len(confs) == 1:
+                form.instance.remote_instructions = confs[0].url
+                form.instance.save()
+            else:
+                meetecho_error_occurred = True
+
+        if meetecho_error_occurred:
+            messages.warning(
+                request,
+                'An error occurred while creating a Meetecho conference. The interim meeting request '
+                'has been created without complete remote participation information. '
+                'Please edit the request to add this or contact the secretariat if you require assistance.',
+            )
 
 
 def update_interim_session_assignment(form):
