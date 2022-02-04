@@ -210,6 +210,15 @@ class Conference:
         ]
         return f'Conference({", ".join(props)})'
 
+    def __eq__(self, other):
+        return isinstance(other, type(self)) and all(
+            getattr(self, attr) == getattr(other, attr)
+            for attr in [
+                'id', 'public_id', 'description', 'start_time',
+                'duration', 'url', 'deletion_token'
+            ]
+        )
+
     def delete(self):
         self._manager.delete_conference(self)
 

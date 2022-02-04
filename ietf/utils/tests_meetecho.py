@@ -1,14 +1,16 @@
 # Copyright The IETF Trust 2021, All Rights Reserved
 # -*- coding: utf-8 -*-
 import datetime
-from urllib.parse import urljoin
-
 import requests
 import requests_mock
+
+from unittest.mock import patch
+from urllib.parse import urljoin
+
 from django.conf import settings
 
 from ietf.utils.tests import TestCase
-from .meetecho import MeetechoAPI, MeetechoAPIError
+from .meetecho import Conference, ConferenceManager, MeetechoAPI, MeetechoAPIError
 
 API_BASE = 'https://meetecho-api.example.com'
 CLIENT_ID = 'datatracker'
@@ -252,3 +254,150 @@ class APITests(TestCase):
         time = datetime.datetime.now().replace(microsecond=0)  # cut off to 0 microseconds
         api = MeetechoAPI(API_BASE, CLIENT_ID, CLIENT_SECRET)
         self.assertEqual(api._deserialize_time(api._serialize_time(time)), time)
+
+
+class ConferenceManagerTests(TestCase):
+    def test_conference_from_api_dict(self):
+        confs = Conference.from_api_dict(
+            None,
+            {
+                'session-1-uuid': {
+                    'room': {
+                        'id': 1,
+                        'start_time': datetime.datetime(2022,2,4,1,2,3),
+                        'duration': datetime.timedelta(minutes=45),
+                        'description': 'some-description',
+                    },
+                    'url': 'https://example.com/some/url',
+                    'deletion_token': 'delete-me',
+                },
+                'session-2-uuid': {
+                    'room': {
+                        'id': 2,
+                        'start_time': datetime.datetime(2022,2,5,4,5,6),
+                        'duration': datetime.timedelta(minutes=90),
+                        'description': 'another-description',
+                    },
+                    'url': 'https://example.com/another/url',
+                    'deletion_token': 'delete-me-too',
+                },
+            }
+        )
+        self.assertCountEqual(
+            confs,
+            [
+                Conference(
+                    manager=None,
+                    id=1,
+                    public_id='session-1-uuid',
+                    description='some-description',
+                    start_time=datetime.datetime(2022,2,4,1,2,3),
+                    duration=datetime.timedelta(minutes=45),
+                    url='https://example.com/some/url',
+                    deletion_token='delete-me',
+                ),
+                Conference(
+                    manager=None,
+                    id=2,
+                    public_id='session-2-uuid',
+                    description='another-description',
+                    start_time=datetime.datetime(2022,2,5,4,5,6),
+                    duration=datetime.timedelta(minutes=90),
+                    url='https://example.com/another/url',
+                    deletion_token='delete-me-too',
+                ),
+            ]
+        )
+
+    @patch.object(ConferenceManager, 'wg_token', return_value='atoken')
+    @patch('ietf.utils.meetecho.MeetechoAPI.fetch_meetings')
+    def test_fetch(self, mock_fetch, _):
+        mock_fetch.return_value = {
+            'rooms': {
+                'session-1-uuid': {
+                    'room': {
+                        'id': 1,
+                        'start_time': datetime.datetime(2022,2,4,1,2,3),
+                        'duration': datetime.timedelta(minutes=45),
+                        'description': 'some-description',
+                    },
+                    'url': 'https://example.com/some/url',
+                    'deletion_token': 'delete-me',
+                },
+            }
+        }
+
+        cm = ConferenceManager(settings.MEETECHO_API_CONFIG)
+        fetched = cm.fetch('acronym')
+        self.assertEqual(
+            fetched,
+            [Conference(
+                manager=cm,
+                id=1,
+                public_id='session-1-uuid',
+                description='some-description',
+                start_time=datetime.datetime(2022,2,4,1,2,3),
+                duration=datetime.timedelta(minutes=45),
+                url='https://example.com/some/url',
+                deletion_token='delete-me',
+            )],
+        )
+        self.assertEqual(mock_fetch.call_args[0], ('atoken',))
+
+    @patch.object(ConferenceManager, 'wg_token', return_value='atoken')
+    @patch('ietf.utils.meetecho.MeetechoAPI.schedule_meeting')
+    def test_create(self, mock_schedule, _):
+        mock_schedule.return_value = {
+            'rooms': {
+                'session-1-uuid': {
+                    'room': {
+                        'id': 1,
+                        'start_time': datetime.datetime(2022,2,4,1,2,3),
+                        'duration': datetime.timedelta(minutes=45),
+                        'description': 'some-description',
+                    },
+                    'url': 'https://example.com/some/url',
+                    'deletion_token': 'delete-me',
+                },
+            },
+        }
+        cm = ConferenceManager(settings.MEETECHO_API_CONFIG)
+        result = cm.create('group', 'desc', 'starttime', 'dur', 'extra')
+        self.assertEqual(
+            result,
+            [Conference(
+                manager=cm,
+                id=1,
+                public_id='session-1-uuid',
+                description='some-description',
+                start_time=datetime.datetime(2022,2,4,1,2,3),
+                duration=datetime.timedelta(minutes=45),
+                url='https://example.com/some/url',
+                deletion_token='delete-me',
+            )]
+        )
+        args, kwargs = mock_schedule.call_args
+        self.assertEqual(
+            kwargs,
+            {
+                'wg_token': 'atoken',
+                'description': 'desc',
+                'start_time': 'starttime',
+                'duration': 'dur',
+                'extrainfo': 'extra',
+            })
+
+    @patch('ietf.utils.meetecho.MeetechoAPI.delete_meeting')
+    def test_delete_conference(self, mock_delete):
+        cm = ConferenceManager(settings.MEETECHO_API_CONFIG)
+        cm.delete_conference(Conference(None, None, None, None, None, None, None, 'delete-this'))
+        args, kwargs = mock_delete.call_args
+        self.assertEqual(args, ('delete-this',))
+
+
+    @patch('ietf.utils.meetecho.MeetechoAPI.delete_meeting')
+    def test_delete_by_url(self, mock_delete):
+        cm = ConferenceManager(settings.MEETECHO_API_CONFIG)
+        cm.delete_conference(Conference(None, None, None, None, None, None, 'the-url', 'delete-this'))
+        args, kwargs = mock_delete.call_args
+        self.assertEqual(args, ('delete-this',))
