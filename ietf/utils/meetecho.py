@@ -177,7 +177,8 @@ _T = TypeVar('_T')
 
 class Conference:
     """Scheduled session/room representation"""
-    def __init__(self, id, public_id, description, start_time, duration, url, deletion_token):
+    def __init__(self, manager, id, public_id, description, start_time, duration, url, deletion_token):
+        self._manager = manager
         self.id = id  # Meetecho system ID
         self.public_id = public_id  # public session UUID
         self.description = description
@@ -187,13 +188,14 @@ class Conference:
         self.deletion_token = deletion_token
 
     @classmethod
-    def from_api_dict(cls: Type[_T], api_dict) -> List[_T]:
+    def from_api_dict(cls: Type[_T], manager, api_dict) -> List[_T]:
         return [
             cls(
                 **val['room'],
                 public_id=public_id,
                 url=val['url'],
                 deletion_token=val['deletion_token'],
+                manager=manager,
             ) for public_id, val in api_dict.items()
         ]
 
@@ -208,13 +210,17 @@ class Conference:
         ]
         return f'Conference({", ".join(props)})'
 
+    def delete(self):
+        self._manager.delete_conference(self)
+
 
 class ConferenceManager:
     def __init__(self, api_config: dict):
         self.api = MeetechoAPI(**api_config)
         self.wg_tokens = {}
         
-    def wg_token(self, group_acronym):
+    def wg_token(self, group):
+        group_acronym = group.acronym if hasattr(group, 'acronym') else group
         if group_acronym not in self.wg_tokens:
             self.wg_tokens[group_acronym] = self.api.retrieve_wg_tokens(
                 group_acronym
@@ -222,9 +228,8 @@ class ConferenceManager:
         return self.wg_tokens[group_acronym]
 
     def fetch(self, group):
-        group_acronym = group.acronym if hasattr(group, 'acronym') else group
-        response = self.api.fetch_meetings(self.wg_token(group_acronym))
-        return Conference.from_api_dict(response['rooms'])
+        response = self.api.fetch_meetings(self.wg_token(group))
+        return Conference.from_api_dict(self, response['rooms'])
 
     def create(self, group, description, start_time, duration, extrainfo=''):
         response = self.api.schedule_meeting(
@@ -234,9 +239,12 @@ class ConferenceManager:
             duration=duration,
             extrainfo=extrainfo,
         )
-        return Conference.from_api_dict(response['rooms'])
+        return Conference.from_api_dict(self, response['rooms'])
     
-    def cancel(self, group, url):
+    def delete_by_url(self, group, url):
         for conf in self.fetch(group):
             if conf.url == url:
                 self.api.delete_meeting(conf.deletion_token)
+
+    def delete_conference(self, conf: Conference):
+        self.api.delete_meeting(conf.deletion_token)
