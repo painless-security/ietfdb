@@ -16,6 +16,7 @@ from django.core import validators
 from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.forms import BaseInlineFormSet
+from django.utils.functional import cached_property
 
 import debug                            # pyflakes:ignore
 
@@ -263,6 +264,14 @@ class InterimSessionModelForm(forms.ModelForm):
         ):
             self.add_error('remote_instructions', 'This field is required')
         return self.cleaned_data
+
+    # Override to ignore the non-model 'remote_participation' field when computing has_changed()
+    @cached_property
+    def changed_data(self):
+        data = super().changed_data
+        if 'remote_participation' in data:
+            data.remove('remote_participation')
+        return data
 
     def save(self, *args, **kwargs):
         """NOTE: as the baseform of an inlineformset self.save(commit=True)
