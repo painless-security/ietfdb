@@ -1104,6 +1104,17 @@ def sessions_post_save(request, forms):
             )
 
 
+def delete_interim_session_conference(session):
+    """Delete Meetecho conference for the session, if any"""
+    if session.remote_instructions:
+        meetecho_manager = meetecho.ConferenceManager(settings.MEETECHO_API_CONFIG)
+        for conference in meetecho_manager.fetch(session.group):
+            if conference.url == session.remote_instructions:
+                conference.delete()
+                return conference
+    return None
+
+
 def update_interim_session_assignment(form):
     """Helper function to create / update timeslot assigned to interim session"""
     time = datetime.datetime.combine(

@@ -4699,7 +4699,7 @@ class InterimTests(TestCase):
         mock_create = mock_conf_mgr.return_value.create
         mock_create.side_effect = [
             [Conference(
-                mock_conf_mgr,
+                mock_conf_mgr.return_value,
                 id=1,
                 public_id='this-is-a-uuid',
                 description='the-description',
@@ -4709,7 +4709,7 @@ class InterimTests(TestCase):
                 deletion_token='delete-me',
             )],
             [Conference(
-                mock_conf_mgr,
+                mock_conf_mgr.return_value,
                 id=2,
                 public_id='this-is-another-uuid',
                 description='the-description',
@@ -5217,6 +5217,35 @@ class InterimTests(TestCase):
         self.assertEqual(len(outbox), length_before + 1)
         self.assertIn('Interim Meeting Cancelled', outbox[-1]['Subject'])
 
+    @patch('ietf.utils.meetecho.ConferenceManager')
+    def test_interim_request_cancel_meetecho(self, mock_conf_mgr):
+        make_interim_test_data()
+        meeting = Session.objects.with_current_status(
+        ).filter(
+            meeting__type='interim',
+            group__acronym='mars',
+            current_status='apprw',
+        ).first().meeting
+
+        # set up the ConferenceManager mock to yield a conference matching the interim
+        session = meeting.session_set.first()
+        ts = session.official_timeslotassignment().timeslot
+        session.remote_instructions = 'fake-meetecho-url'
+        session.save()
+        mock_fetch = mock_conf_mgr.return_value.fetch
+        the_conference = Conference(
+            manager=mock_conf_mgr.return_value, id=1, public_id='some-uuid', description='desc',
+            start_time=ts.time, duration = ts.duration, url='fake-meetecho-url',
+            deletion_token='please-delete-me',
+        )
+        mock_fetch.return_value = [the_conference]
+        mock_delete_conference = mock_conf_mgr.return_value.delete_conference
+
+        url = urlreverse('ietf.meeting.views.interim_request_cancel', kwargs={'number': meeting.number})
+        self.client.login(username="marschairman", password="marschairman+password")
+        r = self.client.post(url)
+        self.assertEqual(mock_delete_conference.call_args[0], (the_conference,))
+
     def test_interim_request_session_cancel(self):
         """Test that interim meeting session cancellation functions
 
@@ -5293,6 +5322,44 @@ class InterimTests(TestCase):
         )
         self.assertEqual(len(outbox), length_before + 1)     # email notice sent
         self.assertIn('session cancelled', outbox[-1]['Subject'])
+
+    @patch('ietf.utils.meetecho.ConferenceManager')
+    def test_interim_request_session_cancel_meetecho(self, mock_conf_mgr):
+        make_interim_test_data()
+        meeting = Session.objects.with_current_status(
+        ).filter(
+            meeting__type='interim',
+            group__acronym='mars',
+            current_status='apprw',
+        ).first().meeting
+
+        # set up the ConferenceManager mock to yield a conference matching the first interim session
+        session = meeting.session_set.first()
+        ts = session.official_timeslotassignment().timeslot
+        session.remote_instructions = 'fake-meetecho-url'
+        session.save()
+        # Add a second session
+        SessionFactory(meeting=meeting, status_id='apprw', remote_instructions='another-fake-meetecho-url')
+
+        mock_fetch = mock_conf_mgr.return_value.fetch
+        the_conference = Conference(
+            manager=mock_conf_mgr.return_value, id=1, public_id='some-uuid', description='desc',
+            start_time=ts.time, duration = ts.duration, url='fake-meetecho-url',
+            deletion_token='please-delete-me',
+        )
+        other_conference = Conference(
+            manager=mock_conf_mgr.return_value, id=2, public_id='some-uuid-2', description='desc',
+            start_time=ts.time, duration = ts.duration, url='other-fake-meetecho-url',
+            deletion_token='please-delete-me-as-well',
+        )
+        mock_fetch.return_value = [the_conference, other_conference]
+        mock_delete_conference = mock_conf_mgr.return_value.delete_conference
+
+        url = urlreverse('ietf.meeting.views.interim_request_cancel', kwargs={'number': meeting.number})
+        self.client.login(username="marschairman", password="marschairman+password")
+        r = self.client.post(url)
+        self.assertEqual(mock_delete_conference.call_count, 1)
+        self.assertEqual(mock_delete_conference.call_args[0], (the_conference,))
 
     def test_interim_request_edit_no_notice(self):
         '''Edit a request.  No notice should go out if it hasn't been announced yet'''

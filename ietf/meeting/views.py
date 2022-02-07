@@ -71,7 +71,7 @@ from ietf.meeting.helpers import sessions_post_save, is_interim_meeting_approved
 from ietf.meeting.helpers import send_interim_meeting_cancellation_notice, send_interim_session_cancellation_notice
 from ietf.meeting.helpers import send_interim_approval
 from ietf.meeting.helpers import send_interim_approval_request
-from ietf.meeting.helpers import send_interim_announcement_request
+from ietf.meeting.helpers import send_interim_announcement_request, delete_interim_session_conference
 from ietf.meeting.utils import finalize, sort_accept_tuple, condition_slide_order
 from ietf.meeting.utils import add_event_info_to_session_qs
 from ietf.meeting.utils import session_time_for_sorting
@@ -3185,6 +3185,7 @@ def interim_request_cancel(request, number):
 
             result_status = SessionStatusName.objects.get(slug='canceled' if was_scheduled else 'canceledpa')
             for session in meeting.session_set.not_canceled():
+                delete_interim_session_conference(session)
                 SchedulingEvent.objects.create(
                     session=session,
                     status=result_status,
@@ -3231,6 +3232,7 @@ def interim_request_session_cancel(request, sessionid):
 
             was_scheduled = session_status.slug == 'sched'
 
+            delete_interim_session_conference(session)
             result_status = SessionStatusName.objects.get(slug='canceled' if was_scheduled else 'canceledpa')
             SchedulingEvent.objects.create(
                 session=session,
