@@ -49,6 +49,7 @@ from ietf.meeting.views import session_draft_list, parse_agenda_filter_params
 from ietf.name.models import SessionStatusName, ImportantDateName, RoleName, ProceedingsMaterialTypeName
 from ietf.utils.decorators import skip_coverage
 from ietf.utils.mail import outbox, empty_outbox, get_payload_text
+from ietf.utils.meetecho import Conference
 from ietf.utils.test_utils import TestCase, login_testing_unauthorized, unicontent
 from ietf.utils.text import xslugify
 
@@ -4640,6 +4641,129 @@ class InterimTests(TestCase):
 
         r = self.client.post(urlreverse("ietf.meeting.views.interim_request"),data)
         self.assertContains(r, 'days must be consecutive')
+
+    def do_interim_request_meetecho_test(self, mock_conf_mgr, meeting_type):
+        """Helper to run interim_request_meetecho tests for various meeting types"""
+        make_meeting_test_data()
+        date = datetime.date.today() + datetime.timedelta(days=30)
+        date2 = date + datetime.timedelta(days=1)
+        time = datetime.datetime.now().time().replace(microsecond=0, second=0)
+        dt = datetime.datetime.combine(date, time)
+        dt2 = datetime.datetime.combine(date2, time)
+        group = Group.objects.get(acronym='mars')
+        time_zone = 'America/Los_Angeles'
+        self.client.login(username="secretary", password="secretary+password")
+        data = {
+            'group': group.pk,
+            'meeting_type': meeting_type,
+            'time_zone': time_zone,
+            'session_set-0-date': date.strftime("%Y-%m-%d"),
+            'session_set-0-time': time.strftime('%H:%M'),
+            'session_set-0-requested_duration': '03:00:00',
+            'session_set-0-remote_instructions': '',
+            'session_set-INITIAL_FORMS':0,
+        }
+        if meeting_type == 'single':
+            data['session_set-TOTAL_FORMS'] = 1
+        else:
+            data.update({
+                'session_set-1-date': date2.strftime("%Y-%m-%d"),
+                'session_set-1-time': time.strftime('%H:%M'),
+                'session_set-1-requested_duration': '03:00:00',
+                'session_set-1-remote_instructions': '',
+                'session_set-TOTAL_FORMS':2,
+            })
+
+        # check that calling with no value for remote_properties or remote_instructions
+        # generates an error
+        r = self.client.post(urlreverse('ietf.meeting.views.interim_request'), data)
+        self.assertFormsetError(r, 'formset', 0, 'remote_instructions', 'This field is required')
+        if meeting_type != 'single':
+            self.assertFormsetError(r, 'formset', 1, 'remote_instructions', 'This field is required')
+
+        # check that calling with no value for remote_instructions and remote_properties
+        # set to 'manual' generates an error
+        data['session_set-0-remote_participation'] = 'manual'
+        if meeting_type != 'single':
+            data['session_set-1-remote_participation'] = 'manual'
+        r = self.client.post(urlreverse('ietf.meeting.views.interim_request'), data)
+        self.assertFormsetError(r, 'formset', 0, 'remote_instructions', 'This field is required')
+        if meeting_type != 'single':
+            self.assertFormsetError(r, 'formset', 1, 'remote_instructions', 'This field is required')
+
+        # now ask to automatically create a meetecho session and mock the necessary
+        # manager method to make it work
+        data['session_set-0-remote_participation'] = 'meetecho'
+        if meeting_type != 'single':
+            data['session_set-1-remote_participation'] = 'meetecho'
+        mock_create = mock_conf_mgr.return_value.create
+        mock_create.side_effect = [
+            [Conference(
+                mock_conf_mgr,
+                id=1,
+                public_id='this-is-a-uuid',
+                description='the-description',
+                start_time=dt,
+                duration=datetime.timedelta(hours=3),
+                url='https://example.com/faked-meetecho/this-is-a-uuid',
+                deletion_token='delete-me',
+            )],
+            [Conference(
+                mock_conf_mgr,
+                id=2,
+                public_id='this-is-another-uuid',
+                description='the-description',
+                start_time=dt2,
+                duration=datetime.timedelta(hours=3),
+                url='https://example.com/faked-meetecho/this-is-another-uuid',
+                deletion_token='delete-me-too',
+            )],
+        ]
+        # Get sessions directly - if the interims were created as a series, there will
+        # be a new meeting for each session so using meeting.session_set won't work.
+        sessions_before = list(Session.objects.values_list('pk', flat=True))
+        r = self.client.post(urlreverse('ietf.meeting.views.interim_request'), data)
+        self.assertRedirects(r,urlreverse('ietf.meeting.views.upcoming'))
+        sessions = Session.objects.exclude(pk__in=sessions_before)
+        self.assertEqual(sessions[0].remote_instructions,
+                         'https://example.com/faked-meetecho/this-is-a-uuid')
+        if meeting_type != 'single':
+            self.assertEqual(sessions[1].remote_instructions,
+                             'https://example.com/faked-meetecho/this-is-another-uuid')
+        expected = [
+            ({
+                 'group': group,
+                 'description': sessions[0].meeting.number,
+                 'start_time': dt,
+                 'duration': datetime.timedelta(hours=3),
+             },),
+        ]
+        if meeting_type != 'single':
+            expected.append((
+                {
+                    'group': group,
+                    'description': sessions[1].meeting.number,
+                    'start_time': dt2,
+                    'duration': datetime.timedelta(hours=3),
+                },
+            ))
+        self.assertCountEqual(mock_create.call_args_list, expected,
+            'Incorrect call to meetecho.ConferenceManager create() method')
+
+    @patch('ietf.utils.meetecho.ConferenceManager')
+    def test_interim_request_meetecho_single(self, mock_conf_mgr):
+        """Create a Meetecho conference for a single-session interim request"""
+        self.do_interim_request_meetecho_test(mock_conf_mgr, 'single')
+
+    @patch('ietf.utils.meetecho.ConferenceManager')
+    def test_interim_request_meetecho_multi_day(self, mock_conf_mgr):
+        """Create a Meetecho conference for a multi-day interim request"""
+        self.do_interim_request_meetecho_test(mock_conf_mgr, 'multi-day')
+
+    @patch('ietf.utils.meetecho.ConferenceManager')
+    def test_interim_request_meetecho_series(self, mock_conf_mgr):
+        """Create a Meetecho conference for a series interim request"""
+        self.do_interim_request_meetecho_test(mock_conf_mgr, 'series')
 
     def test_interim_request_multi_day_cancel(self):
         """All sessions of a multi-day interim request should be canceled"""

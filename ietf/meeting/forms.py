@@ -258,7 +258,9 @@ class InterimSessionModelForm(forms.ModelForm):
         return duration
 
     def clean(self):
-        if not (self.cleaned_data['remote_participation'] == 'meetecho' or self.cleaned_data['remote_instructions']):
+        if not (self.cleaned_data.get('remote_participation', None) == 'meetecho'
+                or self.cleaned_data['remote_instructions']
+        ):
             self.add_error('remote_instructions', 'This field is required')
         return self.cleaned_data
 
