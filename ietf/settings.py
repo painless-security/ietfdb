@@ -1241,7 +1241,8 @@ DEFAULT_REQUESTS_TIMEOUT = 20  # seconds
 MEETECHO_API_CONFIG = {
     'api_base': 'https://meetings.conf.meetecho.com/api/v1/',
     'client_id': 'datatracker',
-    'client_secret': 'some secreat',
+    'client_secret': 'some secret',
+    'request_timeout': 3.01,  # python-requests doc recommend slightly > a multiple of 3 seconds
 }
 
 

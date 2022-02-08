@@ -20,9 +20,10 @@ from urllib.parse import urljoin
 
 
 class MeetechoAPI:
-    def __init__(self, api_base: str, client_id: str, client_secret: str):
+    def __init__(self, api_base: str, client_id: str, client_secret: str, request_timeout=3.01):
         self.client_id = client_id
         self.client_secret = client_secret
+        self.request_timeout = request_timeout  # python-requests doc recommend slightly > a multiple of 3 seconds
         self._session = requests.Session()
         # if needed, add a trailing slash so urljoin won't eat the trailing path component
         self.api_base = api_base if api_base.endswith('/') else f'{api_base}/'
@@ -39,20 +40,21 @@ class MeetechoAPI:
                 urljoin(self.api_base, url),
                 headers=headers,
                 json=json,
-                timeout=3.01,  # python-requests doc recommend slightly > a multiple of 3 seconds
+                timeout=self.request_timeout,
             )
         except requests.RequestException as err:
             raise MeetechoAPIError(str(err)) from err
         if response.status_code != 200:
             raise MeetechoAPIError(f'API request failed (HTTP status code = {response.status_code})')
 
-        if response.headers['Content-Type'].startswith('application/json'):
-            try:
-                return response.json()
-            except JSONDecodeError as err:
+        # try parsing the result as JSON in case the server failed to set the Content-Type header
+        try:
+            return response.json()
+        except JSONDecodeError as err:
+            if response.headers['Content-Type'].startswith('application/json'):
+                # complain if server told us to expect JSON and it was invalid
                 raise MeetechoAPIError('Error decoding response as JSON') from err
-        else:
-            return None
+        return None
 
     def _deserialize_time(self, s: str) -> datetime:
         return datetime.strptime(s, '%Y-%m-%d %H:%M:%S')

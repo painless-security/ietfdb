@@ -231,11 +231,12 @@ class APITests(TestCase):
         self.assertCountEqual(api_response, data_to_fetch)
 
     def test_request_helper_failed_requests(self):
-        self.requests_mock.register_uri(requests_mock.ANY, urljoin(API_BASE, 'unauthorized/url/endpoint'), status_code=403)
+        self.requests_mock.register_uri(requests_mock.ANY, urljoin(API_BASE, 'unauthorized/url/endpoint'), status_code=401)
+        self.requests_mock.register_uri(requests_mock.ANY, urljoin(API_BASE, 'forbidden/url/endpoint'), status_code=403)
         self.requests_mock.register_uri(requests_mock.ANY, urljoin(API_BASE, 'notfound/url/endpoint'), status_code=404)
         api = MeetechoAPI(API_BASE, CLIENT_ID, CLIENT_SECRET)
         for method in ['POST', 'GET']:
-            for code, endpoint in ((403, 'unauthorized/url/endpoint'), (404, 'notfound/url/endpoint')):
+            for code, endpoint in ((401, 'unauthorized/url/endpoint'), (403, 'forbidden/url/endpoint'), (404, 'notfound/url/endpoint')):
                 with self.assertRaises(Exception) as context:
                     api._request(method, endpoint)
                 self.assertIsInstance(context.exception, MeetechoAPIError)
