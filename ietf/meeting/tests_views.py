@@ -5176,7 +5176,8 @@ class InterimTests(TestCase):
     def test_interim_request_disapprove_with_extra_and_canceled_sessions(self):
         self.do_interim_request_disapprove_test(extra_session=True, canceled_session=True)
 
-    def test_interim_request_cancel(self):
+    @patch('ietf.meeting.views.sessions_post_cancel')
+    def test_interim_request_cancel(self, mock):
         """Test that interim request cancel function works
         
         Does not test that UI buttons are present, that is handled elsewhere.
@@ -5195,6 +5196,7 @@ class InterimTests(TestCase):
         self.client.login(username="ameschairman", password="ameschairman+password")
         r = self.client.post(url, {'comments': comments})
         self.assertEqual(r.status_code, 403)
+        self.assertFalse(mock.called, 'Should not cancel sessions if request rejected')
 
         # test cancelling before announcement
         self.client.login(username="marschairman", password="marschairman+password")
@@ -5205,8 +5207,11 @@ class InterimTests(TestCase):
             self.assertEqual(session.current_status,'canceledpa')
             self.assertEqual(session.agenda_note, comments)
         self.assertEqual(len(outbox), length_before)     # no email notice
+        self.assertTrue(mock.called, 'Should cancel sessions if request handled')
+        self.assertCountEqual(mock.call_args[0][1], meeting.session_set.all())
 
         # test cancelling after announcement
+        mock.reset_mock()
         meeting = add_event_info_to_session_qs(Session.objects.filter(meeting__type='interim', group__acronym='mars')).filter(current_status='sched').first().meeting
         url = urlreverse('ietf.meeting.views.interim_request_cancel', kwargs={'number': meeting.number})
         r = self.client.post(url, {'comments': comments})
@@ -5216,61 +5221,11 @@ class InterimTests(TestCase):
             self.assertEqual(session.agenda_note, comments)
         self.assertEqual(len(outbox), length_before + 1)
         self.assertIn('Interim Meeting Cancelled', outbox[-1]['Subject'])
+        self.assertTrue(mock.called, 'Should cancel sessions if request handled')
+        self.assertCountEqual(mock.call_args[0][1], meeting.session_set.all())
 
-    @patch('ietf.utils.meetecho.ConferenceManager')
-    def test_interim_request_cancel_meetecho(self, mock_conf_mgr):
-        make_interim_test_data()
-        meeting = Session.objects.with_current_status(
-        ).filter(
-            meeting__type='interim',
-            group__acronym='mars',
-            current_status='apprw',
-        ).first().meeting
-
-        # set up the ConferenceManager mock to yield a conference matching the interim
-        session = meeting.session_set.first()
-        ts = session.official_timeslotassignment().timeslot
-        session.remote_instructions = 'fake-meetecho-url'
-        session.save()
-        mock_fetch = mock_conf_mgr.return_value.fetch
-        the_conference = Conference(
-            manager=mock_conf_mgr.return_value, id=1, public_id='some-uuid', description='desc',
-            start_time=ts.time, duration = ts.duration, url='fake-meetecho-url',
-            deletion_token='please-delete-me',
-        )
-        mock_fetch.return_value = [the_conference]
-        mock_delete_conference = mock_conf_mgr.return_value.delete_conference
-
-        url = urlreverse('ietf.meeting.views.interim_request_cancel', kwargs={'number': meeting.number})
-        self.client.login(username="marschairman", password="marschairman+password")
-        self.client.post(url)
-        self.assertEqual(mock_delete_conference.call_args[0], (the_conference,))
-
-    @patch('ietf.utils.meetecho.ConferenceManager')
-    def test_interim_request_cancel_meetecho_handles_error(self, mock_conf_mgr):
-        """Can cancel an interim request even if Meetecho calls fail"""
-        make_interim_test_data()
-        meeting = Session.objects.with_current_status(
-        ).filter(
-            meeting__type='interim',
-            group__acronym='mars',
-            current_status='apprw',
-        ).first().meeting
-
-        # set up the ConferenceManager mock to yield a conference matching the interim
-        session = meeting.session_set.first()
-        session.remote_instructions = 'fake-meetecho-url'
-        session.save()
-        mock_fetch = mock_conf_mgr.return_value.fetch
-        mock_fetch.side_effect = RuntimeError('some error')
-        url = urlreverse('ietf.meeting.views.interim_request_cancel', kwargs={'number': meeting.number})
-        self.client.login(username="marschairman", password="marschairman+password")
-        r = self.client.post(url)
-        self.assertRedirects(r, urlreverse('ietf.meeting.views.upcoming'))
-        for session in meeting.session_set.with_current_status():
-            self.assertEqual(session.current_status,'canceledpa')
-
-    def test_interim_request_session_cancel(self):
+    @patch('ietf.meeting.views.sessions_post_cancel')
+    def test_interim_request_session_cancel(self, mock):
         """Test that interim meeting session cancellation functions
 
         Does not test that UI buttons are present, that is handled elsewhere.
@@ -5286,6 +5241,7 @@ class InterimTests(TestCase):
         url = urlreverse('ietf.meeting.views.interim_request_session_cancel', kwargs={'sessionid': session.pk})
         r = self.client.post(url, {'comments': comments})
         self.assertEqual(r.status_code, 409)
+        self.assertFalse(mock.called, 'Should not cancel sessions if request rejected')
 
         # Add a second session
         SessionFactory(meeting=meeting, status_id='apprw')
@@ -5295,7 +5251,8 @@ class InterimTests(TestCase):
         self.client.login(username="ameschairman", password="ameschairman+password")
         r = self.client.post(url, {'comments': comments})
         self.assertEqual(r.status_code, 403)
-        
+        self.assertFalse(mock.called, 'Should not cancel sessions if request rejected')
+
         # test cancelling before announcement
         self.client.login(username="marschairman", password="marschairman+password")
         length_before = len(outbox)
@@ -5304,6 +5261,9 @@ class InterimTests(TestCase):
         r = self.client.post(url, {'comments': comments})
         self.assertRedirects(r, urlreverse('ietf.meeting.views.interim_request_details', 
                                            kwargs={'number': meeting.number}))
+        self.assertTrue(mock.called, 'Should cancel sessions if request handled')
+        self.assertCountEqual(mock.call_args[0][1], [session])
+
         # This session should be canceled...
         sessions = meeting.session_set.with_current_status()
         session = sessions.filter(id=session.pk).first()  # reload our session info
@@ -5317,6 +5277,7 @@ class InterimTests(TestCase):
         self.assertEqual(len(outbox), length_before)     # no email notice
 
         # test cancelling after announcement
+        mock.reset_mock()
         session = Session.objects.with_current_status().filter(
             meeting__type='interim', group__acronym='mars', current_status='sched').first()
         meeting = session.meeting
@@ -5325,6 +5286,7 @@ class InterimTests(TestCase):
         url = urlreverse('ietf.meeting.views.interim_request_session_cancel', kwargs={'sessionid': session.pk})
         r = self.client.post(url, {'comments': comments})
         self.assertEqual(r.status_code, 409)
+        self.assertFalse(mock.called, 'Should not cancel sessions if request rejected')
 
         # Add another session
         SessionFactory(meeting=meeting, status_id='sched')  # two sessions so canceling a session makes sense
@@ -5334,6 +5296,9 @@ class InterimTests(TestCase):
         r = self.client.post(url, {'comments': comments})
         self.assertRedirects(r, urlreverse('ietf.meeting.views.interim_request_details',
                                            kwargs={'number': meeting.number}))
+        self.assertTrue(mock.called, 'Should cancel sessions if request handled')
+        self.assertCountEqual(mock.call_args[0][1], [session])
+
         # This session should be canceled...
         sessions = meeting.session_set.with_current_status()
         session = sessions.filter(id=session.pk).first()  # reload our session info
@@ -5346,95 +5311,6 @@ class InterimTests(TestCase):
         )
         self.assertEqual(len(outbox), length_before + 1)     # email notice sent
         self.assertIn('session cancelled', outbox[-1]['Subject'])
-
-    @patch('ietf.utils.meetecho.ConferenceManager')
-    def test_interim_request_session_cancel_meetecho(self, mock_conf_mgr):
-        make_interim_test_data()
-        meeting = Session.objects.with_current_status(
-        ).filter(
-            meeting__type='interim',
-            group__acronym='mars',
-            current_status='apprw',
-        ).first().meeting
-
-        # set up the ConferenceManager mock to yield a conference matching the first interim session
-        session = meeting.session_set.first()
-        ts = session.official_timeslotassignment().timeslot
-        session.remote_instructions = 'fake-meetecho-url'
-        session.save()
-        # Add a second session
-        SessionFactory(meeting=meeting, status_id='apprw', remote_instructions='another-fake-meetecho-url')
-
-        mock_fetch = mock_conf_mgr.return_value.fetch
-        the_conference = Conference(
-            manager=mock_conf_mgr.return_value, id=1, public_id='some-uuid', description='desc',
-            start_time=ts.time, duration = ts.duration, url='fake-meetecho-url',
-            deletion_token='please-delete-me',
-        )
-        other_conference = Conference(
-            manager=mock_conf_mgr.return_value, id=2, public_id='some-uuid-2', description='desc',
-            start_time=ts.time, duration = ts.duration, url='other-fake-meetecho-url',
-            deletion_token='please-delete-me-as-well',
-        )
-        mock_fetch.return_value = [the_conference, other_conference]
-        mock_delete_conference = mock_conf_mgr.return_value.delete_conference
-
-        url = urlreverse('ietf.meeting.views.interim_request_cancel', kwargs={'number': meeting.number})
-        self.client.login(username="marschairman", password="marschairman+password")
-        self.client.post(url)
-        self.assertEqual(mock_delete_conference.call_count, 1)
-        self.assertEqual(mock_delete_conference.call_args[0], (the_conference,))
-
-    @patch('ietf.utils.meetecho.ConferenceManager')
-    def test_interim_request_session_cancel_meetecho_handles_error(self, mock_conf_mgr):
-        make_interim_test_data()
-        meeting = Session.objects.with_current_status(
-        ).filter(
-            meeting__type='interim',
-            group__acronym='mars',
-            current_status='apprw',
-        ).first().meeting
-
-        # set up the ConferenceManager mock to yield a conference matching the first interim session
-        session = meeting.session_set.first()
-        ts = session.official_timeslotassignment().timeslot
-        session.remote_instructions = 'fake-meetecho-url'
-        session.save()
-        # Add a second session
-        SessionFactory(meeting=meeting, status_id='apprw', remote_instructions='another-fake-meetecho-url')
-
-        mock_fetch = mock_conf_mgr.return_value.fetch
-        the_conference = Conference(
-            manager=mock_conf_mgr.return_value, id=1, public_id='some-uuid', description='desc',
-            start_time=ts.time, duration = ts.duration, url='fake-meetecho-url',
-            deletion_token='please-delete-me',
-        )
-        other_conference = Conference(
-            manager=mock_conf_mgr.return_value, id=2, public_id='some-uuid-2', description='desc',
-            start_time=ts.time, duration = ts.duration, url='other-fake-meetecho-url',
-            deletion_token='please-delete-me-as-well',
-        )
-        mock_fetch.return_value = [the_conference, other_conference]
-        mock_delete_conference = mock_conf_mgr.return_value.delete_conference
-        mock_delete_conference.side_effect = RuntimeError('some error')
-
-        canceled_count_before = meeting.session_set.with_current_status().filter(
-            current_status__in=['canceled', 'canceledpa']).count()
-        url = urlreverse('ietf.meeting.views.interim_request_cancel', kwargs={'number': meeting.number})
-        self.client.login(username="marschairman", password="marschairman+password")
-        r = self.client.post(url)
-        self.assertRedirects(r, urlreverse('ietf.meeting.views.interim_request_details',
-                                           kwargs={'number': meeting.number}))
-        # This session should be canceled...
-        sessions = meeting.session_set.with_current_status()
-        session = sessions.filter(id=session.pk).first()  # reload our session info
-        self.assertEqual(session.current_status, 'canceled')
-        self.assertEqual(session.agenda_note)
-        # But others should not - count should have changed by only 1
-        self.assertEqual(
-            sessions.filter(current_status__in=['canceled', 'canceledpa']).count(),
-            canceled_count_before + 1
-        )
 
     def test_interim_request_edit_no_notice(self):
         '''Edit a request.  No notice should go out if it hasn't been announced yet'''

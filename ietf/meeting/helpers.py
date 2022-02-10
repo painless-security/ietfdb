@@ -1120,6 +1120,11 @@ def delete_interim_session_conferences(sessions):
 
 
 def sessions_post_cancel(request, sessions):
+    """Clean up after session cancellation
+
+    When this is called, the session has already been canceled, so exceptions should
+    not be raised.
+    """
     try:
         delete_interim_session_conferences(sessions)
     except Exception as err:
