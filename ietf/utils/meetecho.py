@@ -15,7 +15,7 @@ import debug  # pyflakes: ignore
 
 from datetime import datetime, timedelta
 from json import JSONDecodeError
-from typing import List, Sequence, Type, TypeVar, Union
+from typing import Dict, Sequence, Union
 from urllib.parse import urljoin
 
 
@@ -175,8 +175,6 @@ class MeetechoAPIError(Exception):
     """Base class for MeetechoAPI exceptions"""
 
 
-_T = TypeVar('_T')
-
 class Conference:
     """Scheduled session/room representation"""
     def __init__(self, manager, id, public_id, description, start_time, duration, url, deletion_token):
@@ -190,7 +188,8 @@ class Conference:
         self.deletion_token = deletion_token
 
     @classmethod
-    def from_api_dict(cls: Type[_T], manager, api_dict) -> List[_T]:
+    def from_api_dict(cls, manager, api_dict):
+        # Returns a list of Conferences
         return [
             cls(
                 **val['room'],
@@ -228,7 +227,7 @@ class Conference:
 class ConferenceManager:
     def __init__(self, api_config: dict):
         self.api = MeetechoAPI(**api_config)
-        self.wg_tokens = {}
+        self.wg_tokens: Dict[str, str] = {}
         
     def wg_token(self, group):
         group_acronym = group.acronym if hasattr(group, 'acronym') else group

@@ -1053,8 +1053,11 @@ def send_interim_minutes_reminder(meeting):
 def sessions_post_save(request, forms):
     """Helper function to perform various post save operations on each form of a
     InterimSessionModelForm formset"""
-    meetecho_manager = meetecho.ConferenceManager(settings.MEETECHO_API_CONFIG)
     meetecho_error_occurred = False
+    if hasattr(settings, 'MEETECHO_API_CONFIG'):  # do nothing if not configured
+        meetecho_manager = meetecho.ConferenceManager(settings.MEETECHO_API_CONFIG)
+    else:
+        meetecho_manager = None
 
     for form in forms:
         if not form.has_changed():
@@ -1076,7 +1079,7 @@ def sessions_post_save(request, forms):
         if 'agenda' in form.changed_data:
             form.save_agenda()
 
-        if form.cleaned_data['remote_participation'] == 'meetecho':
+        if meetecho_manager and form.cleaned_data['remote_participation'] == 'meetecho':
             ts = form.instance.official_timeslotassignment().timeslot
             try:
                 confs = meetecho_manager.create(
@@ -1104,15 +1107,30 @@ def sessions_post_save(request, forms):
             )
 
 
-def delete_interim_session_conference(session):
+def delete_interim_session_conferences(sessions):
     """Delete Meetecho conference for the session, if any"""
-    if session.remote_instructions:
+    if hasattr(settings, 'MEETECHO_API_CONFIG'):  # do nothing if Meetecho API not configured
         meetecho_manager = meetecho.ConferenceManager(settings.MEETECHO_API_CONFIG)
-        for conference in meetecho_manager.fetch(session.group):
-            if conference.url == session.remote_instructions:
-                conference.delete()
-                return conference
-    return None
+        for session in sessions:
+            if session.remote_instructions:
+                for conference in meetecho_manager.fetch(session.group):
+                    if conference.url == session.remote_instructions:
+                        conference.delete()
+                        break
+
+
+def sessions_post_cancel(request, sessions):
+    try:
+        delete_interim_session_conferences(sessions)
+    except Exception as err:
+        sess_pks = ', '.join(str(s.pk) for s in sessions)
+        log.log(f'Exception deleting Meetecho conferences for sessions [{sess_pks}]: {err}')
+        messages.warning(
+            request,
+            'An error occurred while cleaning up Meetecho conferences for the canceled sessions. '
+            'The session or sessions have been canceled, but Meetecho conferences may not have been cleaned '
+            'up properly.',
+        )
 
 
 def update_interim_session_assignment(form):
