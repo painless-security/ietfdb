@@ -1053,12 +1053,6 @@ def send_interim_minutes_reminder(meeting):
 def sessions_post_save(request, forms):
     """Helper function to perform various post save operations on each form of a
     InterimSessionModelForm formset"""
-    meetecho_error_occurred = False
-    if hasattr(settings, 'MEETECHO_API_CONFIG'):  # do nothing if not configured
-        meetecho_manager = meetecho.ConferenceManager(settings.MEETECHO_API_CONFIG)
-    else:
-        meetecho_manager = None
-
     for form in forms:
         if not form.has_changed():
             continue
@@ -1079,32 +1073,44 @@ def sessions_post_save(request, forms):
         if 'agenda' in form.changed_data:
             form.save_agenda()
 
-        if meetecho_manager and form.cleaned_data['remote_participation'] == 'meetecho':
-            ts = form.instance.official_timeslotassignment().timeslot
-            try:
-                confs = meetecho_manager.create(
-                    group=form.instance.group,
-                    description=str(form.instance),
-                    start_time=ts.time,
-                    duration=ts.duration,
-                )
-            except Exception as err:
-                log.log(f'Exception creating Meetecho conference for {form.instance}: {err}')
-                confs = []
-
-            if len(confs) == 1:
-                form.instance.remote_instructions = confs[0].url
-                form.instance.save()
-            else:
-                meetecho_error_occurred = True
-
-        if meetecho_error_occurred:
+        try:
+            create_interim_session_conferences(
+                form.instance for form in forms
+                if form.cleaned_data['remote_participation'] == 'meetecho'
+            )
+        except RuntimeError:
             messages.warning(
                 request,
                 'An error occurred while creating a Meetecho conference. The interim meeting request '
                 'has been created without complete remote participation information. '
                 'Please edit the request to add this or contact the secretariat if you require assistance.',
             )
+
+
+def create_interim_session_conferences(sessions):
+    error_occurred = False
+    if hasattr(settings, 'MEETECHO_API_CONFIG'):  # do nothing if not configured
+        meetecho_manager = meetecho.ConferenceManager(settings.MEETECHO_API_CONFIG)
+        for session in sessions:
+            ts = session.official_timeslotassignment().timeslot
+            try:
+                confs = meetecho_manager.create(
+                    group=session.group,
+                    description=str(session),
+                    start_time=ts.time,
+                    duration=ts.duration,
+                )
+            except Exception as err:
+                log.log(f'Exception creating Meetecho conference for {session}: {err}')
+                confs = []
+
+            if len(confs) == 1:
+                session.remote_instructions = confs[0].url
+                session.save()
+            else:
+                error_occurred = True
+    if error_occurred:
+        raise RuntimeError('error creating meetecho conferences')
 
 
 def delete_interim_session_conferences(sessions):
